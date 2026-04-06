@@ -17,6 +17,7 @@ mod coordination;
 mod intelligence;
 mod metacognition;
 mod genesis;
+mod provisioning;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -59,6 +60,8 @@ pub fn run() {
             models::run_local_inference,
             genesis::generate_wallet_keys,
             genesis::record_voice_imprint,
+            provisioning::check_beta_slots,
+            provisioning::provision_sovereign_genesis,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
