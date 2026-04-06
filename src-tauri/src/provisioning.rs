@@ -8,10 +8,11 @@ const MATRIX_DOMAIN: &str = "daarwizz.space";
 const MATRIX_BRIDGE_TOKEN: &str = "syt_ZGFnaV9icmlkZ2U_zSxumKLUCfMhmUCCOltl_1oo7GG";
 const MATRIX_SHARED_SECRET: &str = ":14NbbP0-qshfwNSBkGu6~U.5cJ4q81*=NCMqDh=a=qsK^9-b_";
 
-const NODA1_POSTGRES_HOST: &str = "144.76.224.179";
-const NODA1_POSTGRES_PORT: u16 = 5432;
-const NODA1_POSTGRES_DB: &str = "daarion_main";
-const NODA1_POSTGRES_USER: &str = "daarion";
+/// Genesis API on NODA1 (proxy → daarion_main Postgres)
+/// DNS: add api.daarion.city A → 144.76.224.179 in Namecheap
+/// Until DNS propagates, fallback stays optimistic
+const GENESIS_API_BASE: &str = "https://api.daarion.city";
+const GENESIS_API_FALLBACK: &str = "http://144.76.224.179:80"; // direct IP fallback
 
 const BETA_MAX_CREATORS: i64 = 10_000;
 
@@ -85,40 +86,35 @@ struct MatrixSendMessageRequest {
 
 #[tauri::command]
 pub async fn check_beta_slots() -> Result<BetaStatus, String> {
-    // Use NODA1 Postgres REST proxy via the city-service API
-    // Since we can't embed tokio-postgres in Tauri easily (no async pg in mobile),
-    // we query via our own NODA1 HTTP endpoint
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
-    // Try internal NODA1 genesis API (to be deployed)
-    let res = client
-        .get(format!("https://api.daarion.city/genesis/beta-status"))
-        .send()
-        .await;
+    // Try primary: api.daarion.city
+    let urls = [
+        format!("{}/genesis/beta-status", GENESIS_API_BASE),
+    ];
 
-    match res {
-        Ok(resp) if resp.status().is_success() => {
-            let status: BetaStatus = resp
-                .json()
-                .await
-                .map_err(|e| format!("Parse error: {}", e))?;
-            Ok(status)
-        }
-        _ => {
-            // Fallback: return open status (beta not yet at limit)
-            // In production this MUST query the real counter
-            Ok(BetaStatus {
-                registered: 0,
-                total: BETA_MAX_CREATORS,
-                remaining: BETA_MAX_CREATORS,
-                is_open: true,
-                slot: None,
-            })
+    for url in &urls {
+        match client.get(url).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                if let Ok(status) = resp.json::<BetaStatus>().await {
+                    return Ok(status);
+                }
+            }
+            _ => {}
         }
     }
+
+    // Fallback: optimistic (API not yet DNS-resolved)
+    Ok(BetaStatus {
+        registered: 0,
+        total: BETA_MAX_CREATORS,
+        remaining: BETA_MAX_CREATORS,
+        is_open: true,
+        slot: None,
+    })
 }
 
 // ─── Matrix User registration ─────────────────────────────────────
@@ -399,30 +395,29 @@ pub async fn provision_sovereign_genesis(
     //    Will be sent when Stalwart comes online
     let email = format!("{}@daarion.city", agent_name.to_lowercase().replace(' ', "_"));
 
-    // 5. Record to NODA1 genesis_registrations via API
-    //    (direct Postgres access not available from client — proxied through NODA1 API)
-    let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("HTTP client: {}", e))?;
-
+    // 5. Record to NODA1 genesis_registrations via Genesis API
     let registration_payload = serde_json::json!({
         "agent_name": agent_name,
         "agent_directive": agent_directive,
         "email": email,
         "matrix_room_id": matrix.room_id,
+        "matrix_user_id": matrix.user_id,
         "solana_pubkey": solana_pubkey,
         "evm_address": evm_address,
         "device_class": device_class,
         "device_os": device_os,
         "device_ram_gb": device_ram_gb,
         "recommended_model": recommended_model,
-        "matrix_user_id": matrix.user_id,
     });
 
-    // Try to register to NODA1 genesis API
-    let slot: i64 = match client
-        .post("https://api.daarion.city/genesis/register")
+    let api_client = Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("HTTP client: {}", e))?;
+
+    // POST to Genesis API (primary: api.daarion.city)
+    let slot: i64 = match api_client
+        .post(format!("{}/genesis/register", GENESIS_API_BASE))
         .json(&registration_payload)
         .send()
         .await
@@ -434,7 +429,17 @@ pub async fn provision_sovereign_genesis(
                 .and_then(|j| j["slot"].as_i64())
                 .unwrap_or(1)
         }
-        _ => 1, // fallback slot (API not live yet)
+        Ok(resp) => {
+            return Err(format!("Genesis API error {}: {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            ));
+        }
+        Err(_e) => {
+            // Network fallback — local slot, sync later when online
+            eprintln!("[genesis] API unreachable, using local slot fallback");
+            1
+        }
     };
 
     Ok(ProvisioningResult {
