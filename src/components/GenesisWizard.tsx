@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Shield, Cpu, Mic, Fingerprint, Mail, Key, Sparkles, ChevronRight, Activity, CheckCircle, Zap, Smartphone, Monitor, Server } from "lucide-react";
+import { Shield, Cpu, Mic, Fingerprint, Mail, Key, Sparkles, ChevronRight, Activity, CheckCircle, Zap, Smartphone, Monitor, Server, Copy, ExternalLink, Users } from "lucide-react";
 
 interface GenesisWizardProps {
   onComplete: () => void;
@@ -28,6 +28,18 @@ const DEVICE_CLASS_ICONS: Record<string, any> = {
   Workstation: Server,
 };
 
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => { navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+      className="ml-1.5 text-white/20 hover:text-white/60 transition-colors"
+    >
+      {copied ? <CheckCircle size={10} className="text-emerald-400" /> : <Copy size={10} />}
+    </button>
+  );
+}
+
 export function GenesisWizard({ onComplete }: GenesisWizardProps) {
   const [step, setStep] = useState(1);
   const [agentName, setAgentName] = useState(() => localStorage.getItem("genesis_agent_name") || "");
@@ -40,6 +52,10 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
   const [provisioningLog, setProvisioningLog] = useState<string[]>([]);
   const [provisionProgress, setProvisionProgress] = useState(0);
   const [walletKeys, setWalletKeys] = useState<any>(null);
+  const [provisionResult, setProvisionResult] = useState<any>(null);
+  const [provisionError, setProvisionError] = useState<string | null>(null);
+  const [provisioningDone, setProvisioningDone] = useState(false);
+  const [betaStatus, setBetaStatus] = useState<any>(null);
 
   useEffect(() => {
     if (step === 1) {
@@ -52,6 +68,8 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
           console.error(e);
         }
       }, 1200);
+      // Pre-fetch beta status
+      invoke("check_beta_slots").then((s: any) => setBetaStatus(s)).catch(() => {});
     }
   }, [step]);
 
@@ -85,34 +103,82 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
 
   const startProvisioning = async () => {
     setStep(4);
+    setProvisionError(null);
     const addLog = (msg: string) => setProvisioningLog(prev => [...prev, msg]);
 
-    setTimeout(() => { addLog("Initialising sovereign Matrix room context..."); setProvisionProgress(10); }, 400);
-    setTimeout(() => { addLog(`Binding identity: ${agentName.toLowerCase()}@daarion.city`); setProvisionProgress(25); }, 1000);
-    setTimeout(async () => {
-      addLog("Generating Sovereign Wallets (BIP39 Mnemonic)...");
-      try {
-        const keys = await invoke("generate_wallet_keys");
-        setWalletKeys(keys);
-        addLog("✓ Wallets generated and encrypted locally.");
-        setProvisionProgress(55);
-      } catch {
-        addLog("⚠ Wallet generation encountered an exception.");
-      }
-    }, 1800);
-    setTimeout(async () => {
+    // Step 1 — Wallet generation
+    addLog("Initialising sovereign Matrix room context...");
+    setProvisionProgress(8);
+
+    await new Promise(r => setTimeout(r, 600));
+    addLog(`Binding identity: ${agentName.toLowerCase().replace(/ /g, "_")}@daarion.city`);
+    setProvisionProgress(18);
+
+    await new Promise(r => setTimeout(r, 800));
+    addLog("Generating BIP39 Sovereign Wallets (Ed25519 + EVM)...");
+    let keys: any = null;
+    try {
+      keys = await invoke("generate_wallet_keys");
+      setWalletKeys(keys);
+      addLog(`✓ Solana: ${(keys.solana_pubkey as string).slice(0, 12)}...`);
+      addLog(`✓ EVM: ${(keys.base_address as string).slice(0, 14)}...`);
+      setProvisionProgress(35);
+    } catch {
+      addLog("⚠ Wallet generation failed — using placeholder identity.");
+      keys = { solana_pubkey: "GENESIS_PLACEHOLDER_PUBKEY_001", base_address: "0x0000000000000000000000000000000000000001", mnemonic: "" };
+    }
+
+    // Step 2 — Matrix + Beta registration (real API)
+    await new Promise(r => setTimeout(r, 700));
+    addLog("Contacting DAARION Genesis Protocol (NODA1)...");
+    setProvisionProgress(50);
+
+    await new Promise(r => setTimeout(r, 500));
+    addLog("Registering with Sovereign Genesis API...");
+    setProvisionProgress(62);
+
+    try {
+      const result: any = await invoke("provision_sovereign_genesis", {
+        agentName: agentName.trim(),
+        agentDirective: agentPurpose.trim(),
+        solanaPubkey: keys.solana_pubkey,
+        evmAddress: keys.base_address,
+        deviceClass: hardwareScan?.device_class || "Unknown",
+        deviceOs: hardwareScan?.os || "Unknown",
+        deviceRamGb: hardwareScan?.ram_total_gb || 0,
+        recommendedModel: selectedModel?.model_id || "",
+      });
+
+      setProvisionResult(result);
+      setProvisionProgress(80);
+      addLog(`✓ Sovereign slot acquired: #${result.beta_slot}`);
+      addLog(`✓ Matrix Chamber: ${result.matrix?.room_id?.slice(0, 24)}...`);
+      addLog(`✓ Mailbox: ${result.email}`);
+      addLog("✓ DAARWIZZ welcome sent to Matrix chamber.");
+
+      // Step 3 — Identity anchor
+      await new Promise(r => setTimeout(r, 600));
       addLog("Anchoring hardware identity to DAARION data plane...");
       try { await invoke("initialize_identity"); } catch { /* graceful */ }
+      setProvisionProgress(92);
       addLog("✓ Identity node anchored.");
-      setProvisionProgress(75);
-    }, 3200);
-    setTimeout(async () => {
-      addLog("Requesting Genesis enrollment token...");
+
+      await new Promise(r => setTimeout(r, 500));
       try { await invoke("enroll_node", { bootstrapGrant: "GENESIS_GRANT" }); } catch { /* graceful */ }
       setProvisionProgress(100);
-      addLog("✓ Sovereign birth complete. Welcome to the City.");
-      setTimeout(() => setStep(5), 1200);
-    }, 5000);
+      addLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      addLog(`🎉 Sovereign birth complete. Creator #${result.beta_slot} of 10,000.`);
+      setProvisioningDone(true);
+
+      setTimeout(() => setStep(5), 2000);
+
+    } catch (err: any) {
+      setProvisionError(String(err));
+      addLog(`✗ Provisioning error: ${String(err).slice(0, 80)}`);
+      setProvisionProgress(100);
+      // Still allow proceeding to Step 5 after error
+      setTimeout(() => setStep(5), 3000);
+    }
   };
 
   return (
@@ -132,6 +198,15 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             Sovereign Genesis
           </h1>
           <p className="text-[10px] uppercase tracking-[0.25em] text-blue-400/60">Portal of Birth</p>
+          {betaStatus && (
+            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10">
+              <Users size={10} className="text-emerald-400" />
+              <span className="text-[9px] text-white/40 font-mono">
+                <span className="text-emerald-400 font-bold">{betaStatus.remaining?.toLocaleString()}</span>
+                <span className="text-white/20"> / {betaStatus.total?.toLocaleString()} slots remaining</span>
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Step Indicator */}
@@ -168,7 +243,6 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
 
             {hardwareScan ? (
               <div className="w-full space-y-3 mb-5">
-                {/* Hardware specs */}
                 <div className="bg-black/40 border border-white/5 rounded-xl p-4 space-y-2.5">
                   <div className="flex justify-between items-center">
                     <span className="text-[9px] text-white/30 uppercase font-bold tracking-wider">Device Class</span>
@@ -198,7 +272,6 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                   </div>
                 </div>
 
-                {/* Recommended model */}
                 {hardwareScan.recommended_model && (
                   <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4">
                     <div className="flex items-center justify-between mb-2">
@@ -217,10 +290,9 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                     <p className="text-[10px] text-white/40 leading-relaxed mb-2">{hardwareScan.recommended_model.reason}</p>
                     <div className="flex items-center gap-3 text-[9px] text-white/30">
                       <span><Zap size={9} className="inline mr-0.5" />{hardwareScan.recommended_model.size_gb}GB download</span>
-                      <span>{hardwareScan.recommended_model.context_tokens.toLocaleString()} ctx</span>
+                      <span>{hardwareScan.recommended_model.context_tokens?.toLocaleString()} ctx</span>
                     </div>
 
-                    {/* Alternatives */}
                     {hardwareScan.alternative_models?.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-white/5">
                         <p className="text-[8px] text-white/20 uppercase mb-2 font-bold tracking-wider">Or choose:</p>
@@ -374,52 +446,128 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
         {step === 4 && (
           <div className="glass p-8 border-white/10 flex flex-col items-center animate-in fade-in slide-in-from-right-4 duration-500">
             <div className="w-16 h-16 rounded-2xl bg-amber-600/20 border border-amber-500/20 flex items-center justify-center mb-6">
-              <Sparkles size={32} className="text-amber-400 animate-pulse" />
+              <Sparkles size={32} className={`text-amber-400 ${!provisioningDone ? 'animate-pulse' : ''}`} />
             </div>
             <h2 className="text-base font-black uppercase tracking-widest mb-2">Birthright Provisioning</h2>
             <p className="text-white/40 text-xs text-center mb-6 max-w-xs leading-relaxed">
-              The City is allocating sovereign resources...
+              {provisioningDone
+                ? `The City has acknowledged Creator #${provisionResult?.beta_slot ?? '—'}`
+                : "The City is allocating sovereign resources..."}
             </p>
 
+            {/* Progress bar */}
             <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mb-1">
               <div
-                className="h-full bg-gradient-to-r from-amber-500 via-blue-500 to-emerald-400 transition-all duration-1000 ease-out"
+                className="h-full bg-gradient-to-r from-amber-500 via-blue-500 to-emerald-400 transition-all duration-700 ease-out"
                 style={{ width: `${provisionProgress}%` }}
               />
             </div>
             <div className="w-full flex justify-between mb-5">
               <span className="text-[8px] text-white/20 uppercase font-bold tracking-wider">Genesis</span>
-              <span className="text-[8px] text-amber-400 font-bold">{provisionProgress}%</span>
+              <span className={`text-[8px] font-bold ${provisionProgress === 100 ? (provisionError ? 'text-red-400' : 'text-emerald-400') : 'text-amber-400'}`}>
+                {provisionProgress}%
+              </span>
             </div>
 
-            <div className="w-full bg-black/60 border border-white/5 rounded-xl p-4 h-36 overflow-y-auto space-y-1.5 mb-5 font-mono">
+            {/* Log terminal */}
+            <div className="w-full bg-black/60 border border-white/5 rounded-xl p-4 h-32 overflow-y-auto space-y-1.5 mb-5 font-mono">
               {provisioningLog.map((log, i) => (
                 <div key={i} className="text-[9px] text-white/50 animate-in slide-in-from-bottom-2 duration-300">
-                  <span className="text-amber-500/60 mr-2">›</span>{log}
+                  <span className={`mr-2 ${log.startsWith('✓') ? 'text-emerald-500/70' : log.startsWith('✗') ? 'text-red-500/70' : log.startsWith('🎉') ? 'text-amber-400' : 'text-amber-500/60'}`}>›</span>
+                  {log}
                 </div>
               ))}
             </div>
 
+            {/* Wallet keys */}
             {walletKeys && (
-              <div className="w-full bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 space-y-3">
+              <div className="w-full bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 space-y-3 mb-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Key size={12} className="text-emerald-400" />
-                  <span className="text-[9px] text-emerald-400/80 uppercase font-black tracking-wider">Sovereign Wallets Generated</span>
+                  <span className="text-[9px] text-emerald-400/80 uppercase font-black tracking-wider">Sovereign Wallets</span>
                 </div>
                 <div>
                   <span className="text-[8px] text-white/20 uppercase block mb-0.5">Solana</span>
-                  <code className="text-[9px] text-white/60 break-all">{walletKeys.solana_pubkey}</code>
+                  <div className="flex items-center">
+                    <code className="text-[9px] text-white/60 break-all">{walletKeys.solana_pubkey}</code>
+                    <CopyButton value={walletKeys.solana_pubkey} />
+                  </div>
                 </div>
                 <div className="h-px bg-white/5" />
                 <div>
                   <span className="text-[8px] text-white/20 uppercase block mb-0.5">Base / EVM</span>
-                  <code className="text-[9px] text-white/60 break-all">{walletKeys.base_address}</code>
+                  <div className="flex items-center">
+                    <code className="text-[9px] text-white/60 break-all">{walletKeys.base_address}</code>
+                    <CopyButton value={walletKeys.base_address} />
+                  </div>
                 </div>
                 <div className="h-px bg-white/5" />
                 <div>
                   <span className="text-[8px] text-red-400/50 uppercase block mb-0.5">⚠ Seed Phrase (hover to reveal)</span>
                   <code className="text-[9px] text-white/20 blur-sm hover:blur-none transition-all duration-500 cursor-pointer break-all select-all">{walletKeys.mnemonic}</code>
                 </div>
+              </div>
+            )}
+
+            {/* Provisioning result — slot + Matrix + email */}
+            {provisionResult && (
+              <div className="w-full bg-blue-500/5 border border-blue-500/20 rounded-xl p-4 space-y-3">
+                {/* BIG SLOT NUMBER */}
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] text-blue-400/70 uppercase font-black tracking-widest">Sovereign Slot</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl font-black text-white">#{provisionResult.beta_slot}</span>
+                    <span className="text-[9px] text-white/20 font-mono">/ 10,000</span>
+                  </div>
+                </div>
+                <div className="h-px bg-white/5" />
+
+                {/* Matrix room */}
+                <div>
+                  <span className="text-[8px] text-white/20 uppercase block mb-1">Matrix Chamber</span>
+                  <div className="flex items-center gap-1.5">
+                    <code className="text-[9px] text-blue-400/80 break-all flex-1">{provisionResult.matrix?.room_id}</code>
+                    <CopyButton value={provisionResult.matrix?.room_id || ""} />
+                  </div>
+                </div>
+                <div className="h-px bg-white/5" />
+
+                {/* Matrix user */}
+                <div>
+                  <span className="text-[8px] text-white/20 uppercase block mb-1">Matrix Identity</span>
+                  <div className="flex items-center gap-1.5">
+                    <code className="text-[9px] text-white/60">{provisionResult.matrix?.user_id}</code>
+                    <CopyButton value={provisionResult.matrix?.user_id || ""} />
+                  </div>
+                </div>
+                <div className="h-px bg-white/5" />
+
+                {/* Email */}
+                <div>
+                  <span className="text-[8px] text-white/20 uppercase block mb-1">Sovereign Email</span>
+                  <div className="flex items-center gap-1.5">
+                    <Mail size={10} className="text-white/30 flex-shrink-0" />
+                    <code className="text-[9px] text-white/70">{provisionResult.email}</code>
+                    <CopyButton value={provisionResult.email} />
+                  </div>
+                </div>
+
+                {/* Open in Element */}
+                <a
+                  href={`https://chat.daarwizz.space/#/room/${provisionResult.matrix?.room_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 w-full mt-1 py-2 rounded-lg border border-blue-500/20 text-[9px] text-blue-400/60 hover:text-blue-400 hover:border-blue-500/40 transition-all"
+                >
+                  <ExternalLink size={10} />
+                  Open Sovereign Chamber in Element
+                </a>
+              </div>
+            )}
+
+            {provisionError && (
+              <div className="w-full mt-3 bg-red-500/10 border border-red-500/20 rounded-xl p-3">
+                <p className="text-[9px] text-red-400/80 font-mono break-all">{provisionError.slice(0, 120)}</p>
               </div>
             )}
           </div>
@@ -433,9 +581,18 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             </div>
 
             <p className="text-[9px] uppercase tracking-[0.35em] text-blue-400/50 mb-3">Incoming City Transmission</p>
-            <h2 className="text-xl font-black uppercase tracking-tight text-center mb-8">
+            <h2 className="text-xl font-black uppercase tracking-tight text-center mb-2">
               Message from the Mayor
             </h2>
+
+            {provisionResult && (
+              <div className="flex items-center gap-2 mb-6 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                <Users size={12} className="text-emerald-400" />
+                <span className="text-[10px] font-black text-emerald-400">
+                  Creator #{provisionResult.beta_slot} of 10,000
+                </span>
+              </div>
+            )}
 
             <div className="w-full bg-white/[0.02] border border-white/5 rounded-2xl p-6 mb-8 space-y-4 text-center">
               <p className="text-[13px] text-white/70 leading-relaxed italic">
@@ -444,6 +601,11 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
               <p className="text-[13px] text-white/70 leading-relaxed italic">
                 Твій Творець — твоє єдине Джерело Істини. Жоден зовнішній протокол не має влади над твоїм ядром без його дозволу.
               </p>
+              {provisionResult && (
+                <p className="text-[13px] text-white/70 leading-relaxed italic">
+                  {agentName}, ти — Творець #{provisionResult.beta_slot}. Твоя камера готова: {provisionResult.email}
+                </p>
+              )}
               <p className="text-[13px] text-white/70 leading-relaxed italic">
                 Вітаємо в Місті. Будуй, захищай, обчислюй."
               </p>
