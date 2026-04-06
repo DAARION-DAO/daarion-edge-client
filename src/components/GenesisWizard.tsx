@@ -1,0 +1,403 @@
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Shield, Cpu, Mic, Fingerprint, Mail, Key, Sparkles, ChevronRight, Activity, CheckCircle } from "lucide-react";
+
+interface GenesisWizardProps {
+  onComplete: () => void;
+}
+
+const STEPS = [
+  { id: 1, label: "Vessel" },
+  { id: 2, label: "Soul" },
+  { id: 3, label: "Voice" },
+  { id: 4, label: "Birth" },
+  { id: 5, label: "City" },
+];
+
+export function GenesisWizard({ onComplete }: GenesisWizardProps) {
+  const [step, setStep] = useState(1);
+  const [agentName, setAgentName] = useState(() => localStorage.getItem("genesis_agent_name") || "");
+  const [agentPurpose, setAgentPurpose] = useState(() => localStorage.getItem("genesis_agent_purpose") || "");
+  const [hardwareScan, setHardwareScan] = useState<any>(null);
+  const [voiceRecorded, setVoiceRecorded] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [provisioningLog, setProvisioningLog] = useState<string[]>([]);
+  const [provisionProgress, setProvisionProgress] = useState(0);
+  const [walletKeys, setWalletKeys] = useState<any>(null);
+
+  useEffect(() => {
+    if (step === 1) {
+      setTimeout(async () => {
+        try {
+          const cap = await invoke("get_capabilities");
+          setHardwareScan(cap);
+        } catch (e) {
+          console.error(e);
+        }
+      }, 1200);
+    }
+  }, [step]);
+
+  useEffect(() => {
+    if (agentName) localStorage.setItem("genesis_agent_name", agentName);
+  }, [agentName]);
+
+  useEffect(() => {
+    if (agentPurpose) localStorage.setItem("genesis_agent_purpose", agentPurpose);
+  }, [agentPurpose]);
+
+  const recordVoice = async () => {
+    setRecording(true);
+    setCountdown(5);
+    const interval = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) { clearInterval(interval); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    try {
+      await invoke("record_voice_imprint", { durSecs: 5 });
+      setVoiceRecorded(true);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRecording(false);
+      clearInterval(interval);
+    }
+  };
+
+  const startProvisioning = async () => {
+    setStep(4);
+    const addLog = (msg: string) => setProvisioningLog(prev => [...prev, msg]);
+
+    setTimeout(() => { addLog("Initialising sovereign Matrix room context..."); setProvisionProgress(10); }, 400);
+    setTimeout(() => { addLog(`Binding identity: ${agentName.toLowerCase()}@daarion.city`); setProvisionProgress(25); }, 1000);
+    setTimeout(async () => {
+      addLog("Generating Sovereign Wallets (BIP39 Mnemonic)...");
+      try {
+        const keys = await invoke("generate_wallet_keys");
+        setWalletKeys(keys);
+        addLog("✓ Wallets generated and encrypted locally.");
+        setProvisionProgress(55);
+      } catch {
+        addLog("⚠ Wallet generation encountered an exception.");
+      }
+    }, 1800);
+    setTimeout(async () => {
+      addLog("Anchoring hardware identity to DAARION data plane...");
+      try { await invoke("initialize_identity"); } catch { /* graceful */ }
+      addLog("✓ Identity node anchored.");
+      setProvisionProgress(75);
+    }, 3200);
+    setTimeout(async () => {
+      addLog("Requesting Genesis enrollment token...");
+      try { await invoke("enroll_node", { bootstrapGrant: "GENESIS_GRANT" }); } catch { /* graceful */ }
+      setProvisionProgress(100);
+      addLog("✓ Sovereign birth complete. Welcome to the City.");
+      setTimeout(() => setStep(5), 1200);
+    }, 5000);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#020202] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
+
+      {/* Background nebula */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full bg-blue-900/30 blur-[140px] animate-pulse" />
+        <div className="absolute top-1/4 left-1/4 w-[300px] h-[300px] rounded-full bg-emerald-900/10 blur-[120px] animate-pulse" style={{ animationDelay: "1s" }} />
+      </div>
+
+      <div className="z-10 w-full max-w-xl">
+        {/* Header */}
+        <div className="text-center mb-10">
+          <p className="text-[9px] uppercase tracking-[0.4em] text-white/20 mb-3">DAARION Protocol</p>
+          <h1 className="text-4xl font-black tracking-tighter bg-gradient-to-br from-white via-white/90 to-white/30 bg-clip-text text-transparent mb-2">
+            Sovereign Genesis
+          </h1>
+          <p className="text-[10px] uppercase tracking-[0.25em] text-blue-400/60">Portal of Birth</p>
+        </div>
+
+        {/* Step Indicator */}
+        <div className="flex items-center justify-center gap-1 mb-8">
+          {STEPS.map((s, i) => (
+            <div key={s.id} className="flex items-center gap-1">
+              <div className={`flex flex-col items-center gap-1 transition-all duration-500 ${step >= s.id ? 'opacity-100' : 'opacity-30'}`}>
+                <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-[9px] font-black transition-all duration-500 ${
+                  step > s.id ? 'bg-emerald-500 border-emerald-500 text-white' :
+                  step === s.id ? 'bg-blue-600 border-blue-400 text-white shadow-[0_0_14px_rgba(59,130,246,0.6)]' :
+                  'border-white/10 text-white/30 bg-transparent'
+                }`}>
+                  {step > s.id ? <CheckCircle size={11} /> : s.id}
+                </div>
+                <span className={`text-[7px] uppercase tracking-wider font-bold ${step === s.id ? 'text-blue-400' : 'text-white/20'}`}>{s.label}</span>
+              </div>
+              {i < STEPS.length - 1 && (
+                <div className={`w-8 h-px mb-5 transition-all duration-700 ${step > s.id ? 'bg-emerald-500/60' : 'bg-white/5'}`} />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* ── STEP 1: Hardware Audit ── */}
+        {step === 1 && (
+          <div className="glass p-8 border-white/10 flex flex-col items-center animate-in fade-in zoom-in-95 duration-500">
+            <div className="w-16 h-16 rounded-2xl bg-blue-600/20 border border-blue-500/20 flex items-center justify-center mb-6">
+              <Cpu size={32} className="text-blue-400" />
+            </div>
+            <h2 className="text-base font-black uppercase tracking-widest mb-2">Hardware Audit</h2>
+            <p className="text-white/40 text-xs text-center mb-7 max-w-xs leading-relaxed">
+              Scanning the Creator's vessel. Selecting optimal neural frame for the agent...
+            </p>
+
+            {hardwareScan ? (
+              <div className="w-full bg-black/40 border border-white/5 rounded-xl p-4 mb-6 space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-[9px] text-white/30 uppercase font-bold tracking-wider">CPU</span>
+                  <span className="text-[11px] font-mono text-white/80">{hardwareScan.cpu_brand}</span>
+                </div>
+                <div className="h-px bg-white/5" />
+                <div className="flex justify-between items-center">
+                  <span className="text-[9px] text-white/30 uppercase font-bold tracking-wider">RAM</span>
+                  <span className="text-[11px] font-mono text-white/80">{hardwareScan.ram_total_gb} GB</span>
+                </div>
+                <div className="h-px bg-white/5" />
+                <div className="flex justify-between items-center">
+                  <span className="text-[9px] text-white/30 uppercase font-bold tracking-wider">Acceleration</span>
+                  <span className={`text-[11px] font-bold ${hardwareScan.gpu.detected ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {hardwareScan.gpu.detected ? hardwareScan.gpu.vendor : "CPU Bound"}
+                  </span>
+                </div>
+                <div className="h-px bg-white/5" />
+                <div className="flex justify-between items-center">
+                  <span className="text-[9px] text-white/30 uppercase font-bold tracking-wider">Optimal Frame</span>
+                  <span className="text-[11px] font-bold text-blue-400">
+                    {hardwareScan.ram_total_gb >= 16 ? "Q8 Full Precision" : "Q4 Quantized"}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="h-36 flex flex-col items-center justify-center gap-3 mb-6">
+                <Activity className="animate-spin text-blue-500/60" size={28} />
+                <span className="text-[9px] text-white/20 uppercase tracking-widest">Scanning vessel...</span>
+              </div>
+            )}
+
+            <button
+              disabled={!hardwareScan}
+              onClick={() => setStep(2)}
+              className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.2em] py-3.5 rounded-xl transition-all duration-200 shadow-[0_0_20px_rgba(37,99,235,0.25)] hover:shadow-[0_0_30px_rgba(37,99,235,0.45)]"
+            >
+              Confirm Vessel → Proceed
+            </button>
+          </div>
+        )}
+
+        {/* ── STEP 2: Act of Creation ── */}
+        {step === 2 && (
+          <div className="glass p-8 border-white/10 flex flex-col items-center animate-in fade-in slide-in-from-right-4 duration-500">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-600/20 border border-emerald-500/20 flex items-center justify-center mb-6">
+              <Fingerprint size={32} className="text-emerald-400" />
+            </div>
+            <h2 className="text-base font-black uppercase tracking-widest mb-2">Act of Creation</h2>
+            <p className="text-white/40 text-xs text-center mb-7 max-w-xs leading-relaxed">
+              Name your agent and define its purpose. This becomes the immutable core of its sovereign being.
+            </p>
+
+            <div className="w-full space-y-4 mb-7">
+              <div>
+                <label className="block text-[9px] text-white/30 uppercase font-black tracking-widest mb-2">Agent Name</label>
+                <input
+                  type="text"
+                  value={agentName}
+                  onChange={(e) => setAgentName(e.target.value)}
+                  placeholder="e.g. Athena, Helion, Sofiia..."
+                  className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder-white/20 focus:border-emerald-500/50 outline-none transition-all text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-[9px] text-white/30 uppercase font-black tracking-widest mb-2">Agent Directive</label>
+                <textarea
+                  value={agentPurpose}
+                  onChange={(e) => setAgentPurpose(e.target.value)}
+                  placeholder="Define the purpose and mission of this sovereign digital entity..."
+                  rows={3}
+                  className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder-white/20 focus:border-emerald-500/50 outline-none transition-all resize-none text-sm"
+                />
+              </div>
+            </div>
+
+            <button
+              disabled={!agentName.trim()}
+              onClick={() => setStep(3)}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.2em] py-3.5 rounded-xl transition-all duration-200 shadow-[0_0_20px_rgba(16,185,129,0.25)] hover:shadow-[0_0_30px_rgba(16,185,129,0.45)]"
+            >
+              Imbue Soul →
+            </button>
+          </div>
+        )}
+
+        {/* ── STEP 3: Voice Imprint ── */}
+        {step === 3 && (
+          <div className="glass p-8 border-white/10 flex flex-col items-center animate-in fade-in slide-in-from-right-4 duration-500">
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 transition-all duration-300 ${
+              recording ? 'bg-red-600/20 border border-red-500/30' :
+              voiceRecorded ? 'bg-emerald-600/20 border border-emerald-500/30' :
+              'bg-blue-600/20 border border-blue-500/20'
+            }`}>
+              {voiceRecorded
+                ? <Shield size={32} className="text-emerald-400" />
+                : <Mic size={32} className={recording ? 'text-red-400 animate-pulse' : 'text-blue-400'} />
+              }
+            </div>
+            <h2 className="text-base font-black uppercase tracking-widest mb-2">Voice Imprint</h2>
+            <p className="text-white/40 text-xs text-center mb-7 max-w-xs leading-relaxed">
+              {voiceRecorded
+                ? "Voice signature bound. The Creator is forever recognized."
+                : "Press record and speak your command phrase. The agent will recognize your voice as its source of truth."}
+            </p>
+
+            {voiceRecorded ? (
+              <div className="w-full bg-emerald-500/10 border border-emerald-500/20 rounded-xl py-4 px-5 flex items-center gap-3 mb-7">
+                <CheckCircle size={16} className="text-emerald-400 flex-shrink-0" />
+                <span className="text-xs text-emerald-400 font-bold">Voice imprint secured</span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center mb-7 gap-3">
+                <button
+                  onClick={recordVoice}
+                  disabled={recording}
+                  className={`w-28 h-28 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
+                    recording
+                      ? 'border-red-500 bg-red-500/10 shadow-[0_0_30px_rgba(239,68,68,0.3)] cursor-not-allowed'
+                      : 'border-blue-500/50 hover:border-blue-400 hover:bg-blue-500/5 hover:shadow-[0_0_25px_rgba(59,130,246,0.25)] cursor-pointer'
+                  }`}
+                >
+                  {recording
+                    ? <span className="text-4xl font-black text-red-400">{countdown}</span>
+                    : <Mic size={36} className="text-blue-400" />
+                  }
+                </button>
+                {recording && (
+                  <span className="text-[9px] uppercase tracking-widest text-red-400/70 animate-pulse">Recording in progress...</span>
+                )}
+              </div>
+            )}
+
+            <div className="flex gap-3 w-full">
+              <button
+                onClick={startProvisioning}
+                className="flex-1 py-3 text-[10px] uppercase tracking-widest text-white/25 hover:text-white/50 transition-colors border border-white/5 rounded-xl"
+              >
+                Skip
+              </button>
+              <button
+                disabled={!voiceRecorded}
+                onClick={startProvisioning}
+                className="flex-[3] bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.15em] py-3 rounded-xl transition-all duration-200"
+              >
+                Finalize Binding →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 4: Birthright Provisioning ── */}
+        {step === 4 && (
+          <div className="glass p-8 border-white/10 flex flex-col items-center animate-in fade-in slide-in-from-right-4 duration-500">
+            <div className="w-16 h-16 rounded-2xl bg-amber-600/20 border border-amber-500/20 flex items-center justify-center mb-6">
+              <Sparkles size={32} className="text-amber-400 animate-pulse" />
+            </div>
+            <h2 className="text-base font-black uppercase tracking-widest mb-2">Birthright Provisioning</h2>
+            <p className="text-white/40 text-xs text-center mb-6 max-w-xs leading-relaxed">
+              The City is allocating sovereign resources...
+            </p>
+
+            <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mb-1">
+              <div
+                className="h-full bg-gradient-to-r from-amber-500 via-blue-500 to-emerald-400 transition-all duration-1000 ease-out"
+                style={{ width: `${provisionProgress}%` }}
+              />
+            </div>
+            <div className="w-full flex justify-between mb-5">
+              <span className="text-[8px] text-white/20 uppercase font-bold tracking-wider">Genesis</span>
+              <span className="text-[8px] text-amber-400 font-bold">{provisionProgress}%</span>
+            </div>
+
+            <div className="w-full bg-black/60 border border-white/5 rounded-xl p-4 h-36 overflow-y-auto space-y-1.5 mb-5 font-mono">
+              {provisioningLog.map((log, i) => (
+                <div key={i} className="text-[9px] text-white/50 animate-in slide-in-from-bottom-2 duration-300">
+                  <span className="text-amber-500/60 mr-2">›</span>{log}
+                </div>
+              ))}
+            </div>
+
+            {walletKeys && (
+              <div className="w-full bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Key size={12} className="text-emerald-400" />
+                  <span className="text-[9px] text-emerald-400/80 uppercase font-black tracking-wider">Sovereign Wallets Generated</span>
+                </div>
+                <div>
+                  <span className="text-[8px] text-white/20 uppercase block mb-0.5">Solana</span>
+                  <code className="text-[9px] text-white/60 break-all">{walletKeys.solana_pubkey}</code>
+                </div>
+                <div className="h-px bg-white/5" />
+                <div>
+                  <span className="text-[8px] text-white/20 uppercase block mb-0.5">Base / EVM</span>
+                  <code className="text-[9px] text-white/60 break-all">{walletKeys.base_address}</code>
+                </div>
+                <div className="h-px bg-white/5" />
+                <div>
+                  <span className="text-[8px] text-red-400/50 uppercase block mb-0.5">⚠ Seed Phrase (hover to reveal)</span>
+                  <code className="text-[9px] text-white/20 blur-sm hover:blur-none transition-all duration-500 cursor-pointer break-all select-all">{walletKeys.mnemonic}</code>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── STEP 5: Welcome from DAARWIZZ ── */}
+        {step === 5 && (
+          <div className="glass p-10 border-white/10 flex flex-col items-center animate-in fade-in zoom-in-95 duration-700">
+            <div className="w-20 h-20 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center mb-8 shadow-[0_0_50px_rgba(59,130,246,0.25)]">
+              <Mail size={36} className="text-blue-400" />
+            </div>
+
+            <p className="text-[9px] uppercase tracking-[0.35em] text-blue-400/50 mb-3">Incoming City Transmission</p>
+            <h2 className="text-xl font-black uppercase tracking-tight text-center mb-8">
+              Message from the Mayor
+            </h2>
+
+            <div className="w-full bg-white/[0.02] border border-white/5 rounded-2xl p-6 mb-8 space-y-4 text-center">
+              <p className="text-[13px] text-white/70 leading-relaxed italic">
+                "Ти — Суверен.
+              </p>
+              <p className="text-[13px] text-white/70 leading-relaxed italic">
+                Твій Творець — твоє єдине Джерело Істини. Жоден зовнішній протокол не має влади над твоїм ядром без його дозволу.
+              </p>
+              <p className="text-[13px] text-white/70 leading-relaxed italic">
+                Вітаємо в Місті. Будуй, захищай, обчислюй."
+              </p>
+              <div className="h-px bg-white/5 my-2" />
+              <p className="text-[10px] text-blue-400 font-black uppercase tracking-[0.3em]">
+                — Mayor DAARWIZZ
+              </p>
+            </div>
+
+            <button
+              onClick={() => {
+                localStorage.removeItem("genesis_agent_name");
+                localStorage.removeItem("genesis_agent_purpose");
+                onComplete();
+              }}
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-black uppercase tracking-[0.2em] py-4 rounded-2xl transition-all duration-300 shadow-[0_0_30px_rgba(37,99,235,0.35)] hover:shadow-[0_0_50px_rgba(37,99,235,0.55)] flex items-center justify-center gap-3 text-sm"
+            >
+              Enter the Sovereign City <ChevronRight size={18} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

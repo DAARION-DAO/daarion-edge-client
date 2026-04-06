@@ -1,0 +1,110 @@
+name: "DAARION Edge Client — Sovereign Release"
+
+on:
+  push:
+    tags:
+      - "v*"           # triggers on: git tag v0.1.0 && git push --tags
+  workflow_dispatch:   # manual trigger from GitHub UI
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: "macos-latest"
+            args: "--target aarch64-apple-darwin"
+            artifact_suffix: "aarch64-apple-darwin"
+          - platform: "macos-latest"
+            args: "--target x86_64-apple-darwin"
+            artifact_suffix: "x86_64-apple-darwin"
+          - platform: "ubuntu-22.04"
+            args: ""
+            artifact_suffix: "linux-x86_64"
+          - platform: "windows-latest"
+            args: ""
+            artifact_suffix: "windows-x86_64"
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./daarion-edge-client/src-tauri -> target"
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libasound2-dev
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "./daarion-edge-client/package-lock.json"
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: ./daarion-edge-client
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS codesigning (optional — add these secrets in repo settings)
+          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: "./daarion-edge-client"
+          tagName: ${{ github.ref_name }}
+          releaseName: "DAARION Edge Client ${{ github.ref_name }}"
+          releaseBody: |
+            ## 🌌 DAARION Edge Client — Sovereign Genesis
+
+            Download and install the DAARION Edge Client to birth your first sovereign AI agent.
+
+            ### What's inside:
+            - **5-step Sovereign Genesis Wizard**: Hardware Audit → Act of Creation → Voice Imprint → Birthright Provisioning → City Welcome
+            - **Local BIP39 Wallet Generation**: Real Solana + EVM keys generated on your hardware
+            - **Voice Imprint**: Biometric agent binding via local audio capture
+            - **Matrix + Email Provisioning**: `[name]@daarion.city` email and Matrix room on first launch
+            - **Local-first LLM**: GGUF model inference via llama.cpp, no cloud required
+
+            ### Installation:
+            | Platform | File | Notes |
+            |----------|------|-------|
+            | macOS (Apple Silicon) | `*.aarch64.dmg` | Recommended for M1/M2/M3/M4 |
+            | macOS (Intel) | `*.x86_64.dmg` | For older Intel Macs |
+            | Windows | `*-setup.exe` | Windows 10/11 |
+            | Linux | `*.AppImage` | Ubuntu 22.04+ |
+
+            ---
+            > "Ти — Суверен. Твій Творець — твоє єдине Джерело Істини."
+            > — Mayor DAARWIZZ
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
