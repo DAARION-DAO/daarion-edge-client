@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Shield, Cpu, Mic, Fingerprint, Mail, Key, Sparkles, ChevronRight, Activity, CheckCircle } from "lucide-react";
+import { Shield, Cpu, Mic, Fingerprint, Mail, Key, Sparkles, ChevronRight, Activity, CheckCircle, Zap, Smartphone, Monitor, Server } from "lucide-react";
 
 interface GenesisWizardProps {
   onComplete: () => void;
@@ -14,11 +14,26 @@ const STEPS = [
   { id: 5, label: "City" },
 ];
 
+const TIER_COLORS: Record<string, string> = {
+  "ultra-lite": "text-orange-400 border-orange-500/30 bg-orange-500/10",
+  "lite": "text-amber-400 border-amber-500/30 bg-amber-500/10",
+  "balanced": "text-blue-400 border-blue-500/30 bg-blue-500/10",
+  "full": "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
+};
+
+const DEVICE_CLASS_ICONS: Record<string, any> = {
+  Smartphone: Smartphone,
+  Tablet: Smartphone,
+  Laptop: Monitor,
+  Workstation: Server,
+};
+
 export function GenesisWizard({ onComplete }: GenesisWizardProps) {
   const [step, setStep] = useState(1);
   const [agentName, setAgentName] = useState(() => localStorage.getItem("genesis_agent_name") || "");
   const [agentPurpose, setAgentPurpose] = useState(() => localStorage.getItem("genesis_agent_purpose") || "");
   const [hardwareScan, setHardwareScan] = useState<any>(null);
+  const [selectedModel, setSelectedModel] = useState<any>(null);
   const [voiceRecorded, setVoiceRecorded] = useState(false);
   const [recording, setRecording] = useState(false);
   const [countdown, setCountdown] = useState(0);
@@ -32,6 +47,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
         try {
           const cap = await invoke("get_capabilities");
           setHardwareScan(cap);
+          setSelectedModel((cap as any).recommended_model);
         } catch (e) {
           console.error(e);
         }
@@ -147,37 +163,89 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             </div>
             <h2 className="text-base font-black uppercase tracking-widest mb-2">Hardware Audit</h2>
             <p className="text-white/40 text-xs text-center mb-7 max-w-xs leading-relaxed">
-              Scanning the Creator's vessel. Selecting optimal neural frame for the agent...
+              Scanning the Creator's vessel. Selecting the optimal sovereign model for this device...
             </p>
 
             {hardwareScan ? (
-              <div className="w-full bg-black/40 border border-white/5 rounded-xl p-4 mb-6 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-[9px] text-white/30 uppercase font-bold tracking-wider">CPU</span>
-                  <span className="text-[11px] font-mono text-white/80">{hardwareScan.cpu_brand}</span>
+              <div className="w-full space-y-3 mb-5">
+                {/* Hardware specs */}
+                <div className="bg-black/40 border border-white/5 rounded-xl p-4 space-y-2.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[9px] text-white/30 uppercase font-bold tracking-wider">Device Class</span>
+                    <span className="text-[11px] font-bold text-blue-400">
+                      {(() => {
+                        const Icon = DEVICE_CLASS_ICONS[hardwareScan.device_class] || Monitor;
+                        return <span className="flex items-center gap-1.5"><Icon size={11} />{hardwareScan.device_class}</span>;
+                      })()}
+                    </span>
+                  </div>
+                  <div className="h-px bg-white/5" />
+                  <div className="flex justify-between items-center">
+                    <span className="text-[9px] text-white/30 uppercase font-bold tracking-wider">CPU</span>
+                    <span className="text-[10px] font-mono text-white/70 max-w-[180px] text-right truncate">{hardwareScan.cpu_brand}</span>
+                  </div>
+                  <div className="h-px bg-white/5" />
+                  <div className="flex justify-between items-center">
+                    <span className="text-[9px] text-white/30 uppercase font-bold tracking-wider">RAM</span>
+                    <span className="text-[11px] font-mono text-white/80">{Math.round(hardwareScan.ram_total_gb)} GB</span>
+                  </div>
+                  <div className="h-px bg-white/5" />
+                  <div className="flex justify-between items-center">
+                    <span className="text-[9px] text-white/30 uppercase font-bold tracking-wider">Acceleration</span>
+                    <span className={`text-[11px] font-bold ${hardwareScan.gpu?.detected ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {hardwareScan.gpu?.acceleration_api || 'CPU'}
+                    </span>
+                  </div>
                 </div>
-                <div className="h-px bg-white/5" />
-                <div className="flex justify-between items-center">
-                  <span className="text-[9px] text-white/30 uppercase font-bold tracking-wider">RAM</span>
-                  <span className="text-[11px] font-mono text-white/80">{hardwareScan.ram_total_gb} GB</span>
-                </div>
-                <div className="h-px bg-white/5" />
-                <div className="flex justify-between items-center">
-                  <span className="text-[9px] text-white/30 uppercase font-bold tracking-wider">Acceleration</span>
-                  <span className={`text-[11px] font-bold ${hardwareScan.gpu.detected ? 'text-emerald-400' : 'text-amber-400'}`}>
-                    {hardwareScan.gpu.detected ? hardwareScan.gpu.vendor : "CPU Bound"}
-                  </span>
-                </div>
-                <div className="h-px bg-white/5" />
-                <div className="flex justify-between items-center">
-                  <span className="text-[9px] text-white/30 uppercase font-bold tracking-wider">Optimal Frame</span>
-                  <span className="text-[11px] font-bold text-blue-400">
-                    {hardwareScan.ram_total_gb >= 16 ? "Q8 Full Precision" : "Q4 Quantized"}
-                  </span>
-                </div>
+
+                {/* Recommended model */}
+                {hardwareScan.recommended_model && (
+                  <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[9px] text-blue-400/70 uppercase font-black tracking-widest">Recommended Model</span>
+                      <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${
+                        TIER_COLORS[hardwareScan.recommended_model.performance_tier] || 'text-white/50 border-white/10'
+                      }`}>
+                        {hardwareScan.recommended_model.performance_tier}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-2 mb-1">
+                      <span className="text-lg font-black text-white">{hardwareScan.recommended_model.display_name}</span>
+                      <span className="text-sm text-white/50 font-bold">{hardwareScan.recommended_model.params}</span>
+                      <span className="text-[9px] text-white/30">{hardwareScan.recommended_model.quantization}</span>
+                    </div>
+                    <p className="text-[10px] text-white/40 leading-relaxed mb-2">{hardwareScan.recommended_model.reason}</p>
+                    <div className="flex items-center gap-3 text-[9px] text-white/30">
+                      <span><Zap size={9} className="inline mr-0.5" />{hardwareScan.recommended_model.size_gb}GB download</span>
+                      <span>{hardwareScan.recommended_model.context_tokens.toLocaleString()} ctx</span>
+                    </div>
+
+                    {/* Alternatives */}
+                    {hardwareScan.alternative_models?.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-white/5">
+                        <p className="text-[8px] text-white/20 uppercase mb-2 font-bold tracking-wider">Or choose:</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {hardwareScan.alternative_models.map((m: any) => (
+                            <button
+                              key={m.model_id}
+                              onClick={() => setSelectedModel(m)}
+                              className={`text-[9px] px-2 py-1 rounded-lg border transition-all ${
+                                selectedModel?.model_id === m.model_id
+                                  ? 'border-blue-500/50 text-blue-400 bg-blue-500/10'
+                                  : 'border-white/10 text-white/30 hover:border-white/20'
+                              }`}
+                            >
+                              {m.display_name} {m.params}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
-              <div className="h-36 flex flex-col items-center justify-center gap-3 mb-6">
+              <div className="h-48 flex flex-col items-center justify-center gap-3 mb-5">
                 <Activity className="animate-spin text-blue-500/60" size={28} />
                 <span className="text-[9px] text-white/20 uppercase tracking-widest">Scanning vessel...</span>
               </div>

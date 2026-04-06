@@ -3,8 +3,8 @@ name: "DAARION Edge Client — Sovereign Release"
 on:
   push:
     tags:
-      - "v*"           # triggers on: git tag v0.1.0 && git push --tags
-  workflow_dispatch:   # manual trigger from GitHub UI
+      - "v*"
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,18 +17,38 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # ── Desktop ──────────────────────────────────────────────
           - platform: "macos-latest"
             args: "--target aarch64-apple-darwin"
-            artifact_suffix: "aarch64-apple-darwin"
+            rust_target: "aarch64-apple-darwin"
+            label: "macos-arm64"
+
           - platform: "macos-latest"
             args: "--target x86_64-apple-darwin"
-            artifact_suffix: "x86_64-apple-darwin"
+            rust_target: "x86_64-apple-darwin"
+            label: "macos-x86_64"
+
           - platform: "ubuntu-22.04"
             args: ""
-            artifact_suffix: "linux-x86_64"
+            rust_target: ""
+            label: "linux-x86_64"
+
           - platform: "windows-latest"
             args: ""
-            artifact_suffix: "windows-x86_64"
+            rust_target: ""
+            label: "windows-x86_64"
+
+          # ── Mobile ───────────────────────────────────────────────
+          - platform: "ubuntu-22.04"
+            args: "--target aarch64-linux-android"
+            rust_target: "aarch64-linux-android"
+            label: "android-arm64"
+
+          # iOS requires macOS + Xcode (self-hosted) — skipping free-tier
+          # - platform: "macos-latest"
+          #   args: "--target aarch64-apple-ios"
+          #   rust_target: "aarch64-apple-ios"
+          #   label: "ios-arm64"
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -38,15 +58,22 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: >-
+            ${{
+              matrix.label == 'macos-arm64' && 'aarch64-apple-darwin,x86_64-apple-darwin' ||
+              matrix.label == 'macos-x86_64' && 'aarch64-apple-darwin,x86_64-apple-darwin' ||
+              matrix.label == 'android-arm64' && 'aarch64-linux-android' ||
+              ''
+            }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri -> target"
 
-      - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+      # ── Linux system deps ──────────────────────────────────────
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04' && matrix.label == 'linux-x86_64'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -54,8 +81,37 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf \
-            libasound2-dev
+            libasound2-dev \
+            libssl-dev \
+            pkg-config
 
+      # ── Android setup ──────────────────────────────────────────
+      - name: Setup Java (Android)
+        if: matrix.label == 'android-arm64'
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Android NDK
+        if: matrix.label == 'android-arm64'
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android target
+        if: matrix.label == 'android-arm64'
+        run: |
+          rustup target add aarch64-linux-android
+          cargo install tauri-cli --version "^2" 2>/dev/null || true
+          # Install Android NDK tools
+          sdkmanager "ndk;27.0.12077973" "platforms;android-34" "build-tools;34.0.0" --sdk_root=$ANDROID_HOME
+
+      - name: Init Tauri Android project
+        if: matrix.label == 'android-arm64'
+        run: |
+          npm ci
+          cargo tauri android init 2>/dev/null || true
+
+      # ── Node.js setup ──────────────────────────────────────────
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -65,21 +121,14 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
-        working-directory: .
 
-      - name: Build Tauri app
+      # ── Desktop Build (tauri-action) ────────────────────────────
+      - name: Build Tauri Desktop App
+        if: matrix.label != 'android-arm64'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS codesigning (optional — add these secrets in repo settings)
-          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          projectPath: "."
           tagName: ${{ github.ref_name }}
           releaseName: "DAARION Edge Client ${{ github.ref_name }}"
           releaseBody: |
@@ -87,20 +136,30 @@ jobs:
 
             Download and install the DAARION Edge Client to birth your first sovereign AI agent.
 
-            ### What's inside:
-            - **5-step Sovereign Genesis Wizard**: Hardware Audit → Act of Creation → Voice Imprint → Birthright Provisioning → City Welcome
-            - **Local BIP39 Wallet Generation**: Real Solana + EVM keys generated on your hardware
-            - **Voice Imprint**: Biometric agent binding via local audio capture
-            - **Matrix + Email Provisioning**: `[name]@daarion.city` email and Matrix room on first launch
-            - **Local-first LLM**: GGUF model inference via llama.cpp, no cloud required
-
-            ### Installation:
+            ### 📱 Downloads
             | Platform | File | Notes |
             |----------|------|-------|
-            | macOS (Apple Silicon) | `*.aarch64.dmg` | Recommended for M1/M2/M3/M4 |
-            | macOS (Intel) | `*.x86_64.dmg` | For older Intel Macs |
+            | macOS (Apple Silicon) | `*.aarch64.dmg` | M1/M2/M3/M4 — Recommended |
+            | macOS (Intel) | `*.x86_64.dmg` | Intel Macs |
             | Windows | `*-setup.exe` | Windows 10/11 |
             | Linux | `*.AppImage` | Ubuntu 22.04+ |
+            | Android | `*.apk` | ARM64 devices |
+
+            ### ✨ Sovereign Genesis Wizard
+            - Hardware audit → Smart model selection (Gemma-4-Tiny / Qwen 3.5 / Gemma 4)
+            - Real BIP39 wallet generation (Solana + EVM) — locally on your device
+            - Voice Imprint biometric binding
+            - Matrix room + @daarion.city email provisioning
+            - DAARWIZZ welcoming message
+
+            ### 🤖 Supported Models (auto-selected by device)
+            | Device | RAM | Model |
+            |--------|-----|-------|
+            | Smartphone | < 3 GB | Gemma-4-Tiny (0.4B) |
+            | Smartphone | 3–5 GB | Qwen 3.5 (0.8B) |
+            | Tablet | 6–11 GB | Gemma 4 (2B) |
+            | Laptop | 12–23 GB | Qwen 3.5 (2B) |
+            | Workstation | ≥ 24 GB | Gemma 4 (4B+) Q8 |
 
             ---
             > "Ти — Суверен. Твій Творець — твоє єдине Джерело Істини."
@@ -108,3 +167,21 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+
+      # ── Android Build ────────────────────────────────────────────
+      - name: Build Tauri Android APK
+        if: matrix.label == 'android-arm64'
+        run: |
+          cargo tauri android build --apk 2>&1
+        env:
+          NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
+
+      - name: Upload Android APK to Release
+        if: matrix.label == 'android-arm64'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
