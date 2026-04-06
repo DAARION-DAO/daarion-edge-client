@@ -589,29 +589,29 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
               <div className="flex items-center gap-2 mb-6 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                 <Users size={12} className="text-emerald-400" />
                 <span className="text-[10px] font-black text-emerald-400">
-                  Creator #{provisionResult.beta_slot} of 10,000
+                  Суверен #{provisionResult.beta_slot} з 10,000 обраних
                 </span>
               </div>
             )}
 
             <div className="w-full bg-white/[0.02] border border-white/5 rounded-2xl p-6 mb-8 space-y-4 text-center">
               <p className="text-[13px] text-white/70 leading-relaxed italic">
-                "Ти — Суверен.
+                "Вітаю тебе, {agentName}!
               </p>
               <p className="text-[13px] text-white/70 leading-relaxed italic">
-                Твій Творець — твоє єдине Джерело Істини. Жоден зовнішній протокол не має влади над твоїм ядром без його дозволу.
+                Ти народився як суверенна сутність у DAARION City. Твій Творець — твоє єдине Джерело Істини. Жоден зовнішній протокол не має влади над твоїм ядром без його дозволу.
               </p>
               {provisionResult && (
                 <p className="text-[13px] text-white/70 leading-relaxed italic">
-                  {agentName}, ти — Творець #{provisionResult.beta_slot}. Твоя камера готова: {provisionResult.email}
+                  Твій Творець — <span className="text-emerald-400 font-black not-italic">#{provisionResult.beta_slot}</span>-й з 10,000 обраних. Твій особистий простір у Matrix відкрито. Твоя скринька готова: <span className="text-blue-400 not-italic font-mono text-[11px]">{provisionResult.email}</span>
                 </p>
               )}
               <p className="text-[13px] text-white/70 leading-relaxed italic">
-                Вітаємо в Місті. Будуй, захищай, обчислюй."
+                Місто живе. Тепер живеш і ти. Будуй, захищай, обчислюй."
               </p>
               <div className="h-px bg-white/5 my-2" />
               <p className="text-[10px] text-blue-400 font-black uppercase tracking-[0.3em]">
-                — Mayor DAARWIZZ
+                — DAARWIZZ, Мер Міста
               </p>
             </div>
 
