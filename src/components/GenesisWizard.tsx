@@ -11,13 +11,16 @@ interface GenesisWizardProps {
   onComplete: () => void;
 }
 
-// ── DAARION Token Gate ──────────────────────────────────────────────
-// Replace with the real contract address when deployed
-const DAARION_TOKEN_CONTRACT = "0x0000000000000000000000000000000000000000"; // PLACEHOLDER
-const DAARION_TOKEN_SYMBOL = "DAARI";
-// BSC RPC — switch to Base when deployed there
-const EVM_RPC_URL = "https://bsc-dataseed.binance.org";
-const TOKEN_GATE_ENABLED = false; // Set true when token is live on-chain
+// ── DAARION Token Gate — Polygon Mainnet ──────────────────────────
+// Source: github.com/connectplatform/daarion README.ADDRESSES.md
+const DAARION_TOKEN_CONTRACT = "0x8Fe60b6F2DCBE68a1659b81175C665EB94015B16"; // DAARION on Polygon
+const DAAR_TOKEN_CONTRACT    = "0x5aF82259455a963eC20Ea92471f55767B5919E38"; // DAAR on Polygon
+const DAARION_TOKEN_SYMBOL = "DAARION";
+const DAAR_TOKEN_SYMBOL    = "DAAR";
+// Polygon Mainnet RPC (public endpoint)
+const EVM_RPC_URL = "https://polygon-rpc.com";
+// Token gate: user must hold ANY DAARION or ANY DAAR to participate
+const TOKEN_GATE_ENABLED = true;
 
 // ── Steps ─────────────────────────────────────────────────────────
 const STEPS = [
@@ -64,28 +67,42 @@ function FieldRow({ icon: Icon, label, children }: any) {
 }
 
 // ── Token Balance Check (ERC-20 balanceOf via JSON-RPC) ────────────
-async function checkDaarionBalance(address: string): Promise<bigint> {
-  if (!TOKEN_GATE_ENABLED || DAARION_TOKEN_CONTRACT === "0x0000000000000000000000000000000000000000") {
-    return BigInt("1000000000000000000"); // 1 token simulated
-  }
-  try {
+// Checks DAARION first, then DAAR as fallback entry-level token
+async function checkDaarionBalance(address: string): Promise<{ balance: bigint; token: string; decimals: number }> {
+  const erc20BalanceOf = async (contract: string): Promise<bigint> => {
     const data = "0x70a08231" + address.slice(2).padStart(64, "0");
     const resp = await fetch(EVM_RPC_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         jsonrpc: "2.0", id: 1, method: "eth_call",
-        params: [{ to: DAARION_TOKEN_CONTRACT, data }, "latest"]
+        params: [{ to: contract, data }, "latest"]
       }),
     });
     const json = await resp.json();
-    if (json.result && json.result !== "0x") {
+    if (json.result && json.result !== "0x" && json.result !== "0x0") {
       return BigInt(json.result);
     }
     return BigInt(0);
-  } catch {
-    return BigInt(0);
-  }
+  };
+
+  // Check DAARION first (premium: $1000/token)
+  try {
+    const daarionBal = await erc20BalanceOf(DAARION_TOKEN_CONTRACT);
+    if (daarionBal > BigInt(0)) {
+      return { balance: daarionBal, token: DAARION_TOKEN_SYMBOL, decimals: 18 };
+    }
+  } catch { /* fallthrough */ }
+
+  // Check DAAR (entry level: $10/token)
+  try {
+    const daarBal = await erc20BalanceOf(DAAR_TOKEN_CONTRACT);
+    if (daarBal > BigInt(0)) {
+      return { balance: daarBal, token: DAAR_TOKEN_SYMBOL, decimals: 18 };
+    }
+  } catch { /* fallthrough */ }
+
+  return { balance: BigInt(0), token: "", decimals: 18 };
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -105,7 +122,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
   const [creatorEmail, setCreatorEmail] = useState(() => localStorage.getItem("c_email") || "");
   const [creatorWallet, setCreatorWallet] = useState(() => localStorage.getItem("c_wallet") || "");
   // Token gate
-  const [tokenBalance, setTokenBalance] = useState<bigint | null>(null);
+  const [_tokenBalance, setTokenBalance] = useState<bigint | null>(null);
   const [tokenChecking, setTokenChecking] = useState(false);
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [walletVerified, setWalletVerified] = useState(false);
@@ -165,16 +182,27 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
     setTokenError(null);
     setTokenBalance(null);
     try {
-      const balance = await checkDaarionBalance(creatorWallet);
-      setTokenBalance(balance);
-      if (balance > BigInt(0) || !TOKEN_GATE_ENABLED) {
+      if (!TOKEN_GATE_ENABLED) {
+        // Gate open — just validate format
+        setTokenBalance(BigInt(0));
         setWalletVerified(true);
+        return;
+      }
+      const result = await checkDaarionBalance(creatorWallet);
+      setTokenBalance(result.balance);
+      if (result.balance > BigInt(0)) {
+        setWalletVerified(true);
+        (window as any).__tokenFound = result; // store for display
       } else {
-        setTokenError(`На гаманці ${creatorWallet.slice(0,8)}...${creatorWallet.slice(-6)} немає токенів ${DAARION_TOKEN_SYMBOL}. Придбайте будь-яку кількість для участі.`);
+        setTokenError(
+          `На гаманці ${creatorWallet.slice(0,8)}...${creatorWallet.slice(-6)} ` +
+          `не знайдено токенів DAARION або DAAR (Polygon). ` +
+          `Придбайте будь-яку кількість DAAR ($10) або DAARION ($1000) на Polygon.`
+        );
         setWalletVerified(false);
       }
     } catch (e) {
-      setTokenError("Не вдалося перевірити баланс. Спробуйте ще раз.");
+      setTokenError("Не вдалося перевірити баланс Polygon. Спробуйте ще раз.");
     } finally {
       setTokenChecking(false);
     }
@@ -182,7 +210,10 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
 
   const creatorStep2Valid = creatorFirstName.trim() && creatorLastName.trim() &&
     creatorEmail.trim() && creatorWallet.match(/^0x[a-fA-F0-9]{40}$/) &&
-    (walletVerified || !TOKEN_GATE_ENABLED);
+    walletVerified;
+
+  // Token found info (set by verifyWallet)
+  const getTokenFoundInfo = () => (window as any).__tokenFound as { balance: bigint; token: string; decimals: number } | undefined;
 
   // ── Voice Recording ─────────────────────────────────────────────
   const recordVoice = async () => {
@@ -492,13 +523,20 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                 </div>
 
                 {/* Token balance display */}
-                {walletVerified && tokenBalance !== null && (
+                {walletVerified && (
                   <div className="mt-2 flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                     <CheckCircle size={12} className="text-emerald-400 flex-shrink-0" />
                     <span className="text-[10px] text-emerald-400 font-bold">
-                      {TOKEN_GATE_ENABLED
-                        ? `Баланс: ${Number(tokenBalance) / 1e18} ${DAARION_TOKEN_SYMBOL} ✓`
-                        : `Гаманець підтверджено ✓`}
+                      {(() => {
+                        const ti = getTokenFoundInfo();
+                        if (!TOKEN_GATE_ENABLED) return 'Гаманець підтверджено (бета) ✓';
+                        if (ti && ti.balance > BigInt(0)) {
+                          const amount = (Number(ti.balance) / 1e18).toFixed(4);
+                          return `✓ ${amount} ${ti.token} на Polygon`;
+                        }
+                        return 'Гаманець підтверджено ✓';
+                      })()
+                      }
                     </span>
                   </div>
                 )}
