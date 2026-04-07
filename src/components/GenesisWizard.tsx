@@ -4,8 +4,10 @@ import {
   Shield, Cpu, Mic, Fingerprint, Mail, Key, Sparkles, ChevronRight,
   Activity, CheckCircle, Zap, Smartphone, Monitor, Server, Copy,
   ExternalLink, Users, Wallet, User, AtSign, AlertTriangle, Lock,
-  Globe, FileText
+  Globe, FileText, Waves
 } from "lucide-react";
+import { activeCaptureAdapter } from "../lib/captureAdapters";
+import { fetchChallenge, uploadVoiceImprint, sealCeremony } from "../lib/voiceCeremonyApi";
 
 interface GenesisWizardProps {
   onComplete: () => void;
@@ -131,9 +133,13 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
   const [agentName, setAgentName] = useState(() => localStorage.getItem("genesis_agent_name") || "");
   const [agentPurpose, setAgentPurpose] = useState(() => localStorage.getItem("genesis_agent_purpose") || "");
 
-  // Step 4 — Voice
-  const [voiceRecorded, setVoiceRecorded] = useState(false);
-  const [recording, setRecording] = useState(false);
+  // Step 4 — Voice Ceremony (B-first / C-ready)
+  type VoiceState = "idle" | "fetching_challenge" | "ready" | "recording" | "uploading" | "sealed" | "error";
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [voiceChallenge, setVoiceChallenge] = useState<{ challenge_id: string; phrase: string } | null>(null);
+  const [_voiceImprintId, setVoiceImprintId] = useState<string | null>(null);
+  const [voiceSealId, setVoiceSealId] = useState<string | null>(null);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
 
   // Step 5 — Provisioning
@@ -215,16 +221,55 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
   // Token found info (set by verifyWallet)
   const getTokenFoundInfo = () => (window as any).__tokenFound as { balance: bigint; token: string; decimals: number } | undefined;
 
-  // ── Voice Recording ─────────────────────────────────────────────
-  const recordVoice = async () => {
-    setRecording(true);
-    setCountdown(5);
-    const interval = setInterval(() => {
-      setCountdown(prev => { if (prev <= 1) { clearInterval(interval); return 0; } return prev - 1; });
-    }, 1000);
-    try { await invoke("record_voice_imprint", { durSecs: 5 }); setVoiceRecorded(true); }
-    catch (e) { console.error(e); }
-    finally { setRecording(false); clearInterval(interval); }
+  // ── Voice Ceremony (B-first / C-ready) ──────────────────────────────────────
+  const RECORD_SECS = 5;
+
+  const startVoiceCeremony = async () => {
+    setVoiceError(null);
+    setVoiceState("fetching_challenge");
+    try {
+      const ch = await fetchChallenge(agentName.trim() || "Agent");
+      setVoiceChallenge({ challenge_id: ch.challenge_id, phrase: ch.phrase });
+      setVoiceState("ready");
+    } catch (e: any) {
+      setVoiceError(String(e));
+      setVoiceState("error");
+    }
+  };
+
+  const recordAndUpload = async () => {
+    if (!voiceChallenge) return;
+    setVoiceState("recording");
+    setCountdown(RECORD_SECS);
+    const interval = setInterval(() =>
+      setCountdown(prev => { if (prev <= 1) { clearInterval(interval); return 0; } return prev - 1; })
+    , 1000);
+
+    try {
+      const audioBlob = await activeCaptureAdapter.start(RECORD_SECS);
+      clearInterval(interval);
+      setVoiceState("uploading");
+
+      const uploaded = await uploadVoiceImprint(
+        voiceChallenge.challenge_id,
+        agentName.trim() || "Agent",
+        audioBlob,
+        creatorWallet || undefined,
+      );
+
+      const sealed = await sealCeremony(
+        uploaded.imprint_id,
+        voiceChallenge.challenge_id,
+      );
+
+      setVoiceImprintId(uploaded.imprint_id);
+      setVoiceSealId(sealed.seal_id);
+      setVoiceState("sealed");
+    } catch (e: any) {
+      clearInterval(interval);
+      setVoiceError(String(e));
+      setVoiceState("error");
+    }
   };
 
   // ── Main Provisioning ───────────────────────────────────────────
@@ -634,53 +679,129 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
           </div>
         )}
 
-        {/* ── STEP 4: Voice Imprint ── */}
+        {/* ── STEP 4: Voice Ceremony ── */}
         {step === 4 && (
           <div className="glass p-8 border-white/10 flex flex-col items-center animate-in fade-in slide-in-from-right-4 duration-500">
-            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 transition-all duration-300 ${
-              recording ? 'bg-red-600/20 border border-red-500/30' :
-              voiceRecorded ? 'bg-emerald-600/20 border border-emerald-500/30' :
-              'bg-blue-600/20 border border-blue-500/20'
+            {/* Icon */}
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 transition-all duration-500 ${
+              voiceState === "recording" ? "bg-red-600/20 border border-red-500/30" :
+              voiceState === "uploading" ? "bg-amber-600/20 border border-amber-500/30" :
+              voiceState === "sealed"    ? "bg-emerald-600/20 border border-emerald-500/30" :
+              voiceState === "error"     ? "bg-red-600/10 border border-red-500/20" :
+              "bg-blue-600/20 border border-blue-500/20"
             }`}>
-              {voiceRecorded ? <Shield size={32} className="text-emerald-400" /> :
-               <Mic size={32} className={recording ? 'text-red-400 animate-pulse' : 'text-blue-400'} />}
+              {voiceState === "sealed"    ? <Shield size={32} className="text-emerald-400" /> :
+               voiceState === "uploading" ? <Activity size={32} className="text-amber-400 animate-spin" /> :
+               voiceState === "recording" ? <Waves size={32} className="text-red-400 animate-pulse" /> :
+               <Mic size={32} className="text-blue-400" />}
             </div>
-            <h2 className="text-base font-black uppercase tracking-widest mb-2">Голосовий Відбиток</h2>
-            <p className="text-white/40 text-xs text-center mb-7 max-w-xs leading-relaxed">
-              {voiceRecorded
-                ? "Голосовий підпис зафіксовано. Творець буде впізнаний завжди."
-                : "Натисни запис і вимов командну фразу. Агент розпізнає лише голос свого Творця."}
-            </p>
 
-            {voiceRecorded ? (
-              <div className="w-full bg-emerald-500/10 border border-emerald-500/20 rounded-xl py-4 px-5 flex items-center gap-3 mb-7">
-                <CheckCircle size={16} className="text-emerald-400 flex-shrink-0" />
-                <span className="text-xs text-emerald-400 font-bold">Голосовий відбиток захищено</span>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center mb-7 gap-3">
+            <h2 className="text-base font-black uppercase tracking-widest mb-2">Голосова Церемонія</h2>
+
+            {/* ── idle: start button ── */}
+            {voiceState === "idle" && (
+              <>
+                <p className="text-white/40 text-xs text-center mb-7 max-w-xs leading-relaxed">
+                  Отримай церемоніальну фразу та вимов її вголос. Твій голос стане підписом агента.
+                </p>
                 <button
-                  onClick={recordVoice}
-                  disabled={recording}
-                  className={`w-28 h-28 rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
-                    recording
-                      ? 'border-red-500 bg-red-500/10 shadow-[0_0_30px_rgba(239,68,68,0.3)] cursor-not-allowed'
-                      : 'border-blue-500/50 hover:border-blue-400 hover:bg-blue-500/5 hover:shadow-[0_0_25px_rgba(59,130,246,0.25)] cursor-pointer'
-                  }`}
+                  onClick={startVoiceCeremony}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-[0.15em] py-4 rounded-xl transition-all duration-200 shadow-[0_0_20px_rgba(37,99,235,0.25)]"
                 >
-                  {recording ? <span className="text-4xl font-black text-red-400">{countdown}</span> : <Mic size={36} className="text-blue-400" />}
+                  Розпочати Церемонію →
                 </button>
-                {recording && <span className="text-[9px] uppercase tracking-widest text-red-400/70 animate-pulse">Запис триває...</span>}
+              </>
+            )}
+
+            {/* ── fetching challenge ── */}
+            {voiceState === "fetching_challenge" && (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <Activity className="animate-spin text-blue-500" size={28} />
+                <span className="text-[9px] uppercase tracking-widest text-white/30">Генерація церемоніальної фрази...</span>
               </div>
             )}
 
-            <div className="flex gap-3 w-full">
+            {/* ── ready: show phrase, record button ── */}
+            {voiceState === "ready" && voiceChallenge && (
+              <div className="w-full space-y-5">
+                <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-5">
+                  <p className="text-[9px] text-blue-400/70 uppercase font-black tracking-widest mb-3">Вимов вголос:</p>
+                  <p className="text-sm text-white/90 font-medium leading-relaxed italic">
+                    «{voiceChallenge.phrase}»
+                  </p>
+                </div>
+                <button
+                  onClick={recordAndUpload}
+                  className="w-full bg-red-600/80 hover:bg-red-500 text-white font-black uppercase tracking-[0.15em] py-4 rounded-xl transition-all duration-200 shadow-[0_0_20px_rgba(239,68,68,0.2)]"
+                >
+                  <Mic size={14} className="inline mr-2" />
+                  Записати Голос ({RECORD_SECS}с) →
+                </button>
+              </div>
+            )}
+
+            {/* ── recording countdown ── */}
+            {voiceState === "recording" && (
+              <div className="flex flex-col items-center gap-4 py-4">
+                <div className="w-24 h-24 rounded-full border-2 border-red-500 bg-red-500/10 shadow-[0_0_30px_rgba(239,68,68,0.3)] flex items-center justify-center">
+                  <span className="text-4xl font-black text-red-400">{countdown}</span>
+                </div>
+                <span className="text-[9px] uppercase tracking-widest text-red-400/70 animate-pulse">Запис триває...</span>
+                {voiceChallenge && (
+                  <p className="text-[10px] text-white/30 italic text-center max-w-xs">«{voiceChallenge.phrase}»</p>
+                )}
+              </div>
+            )}
+
+            {/* ── uploading ── */}
+            {voiceState === "uploading" && (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <Activity className="animate-spin text-amber-400" size={28} />
+                <span className="text-[9px] uppercase tracking-widest text-amber-400/70">Зберігаємо голосовий підпис...</span>
+              </div>
+            )}
+
+            {/* ── sealed ✓ ── */}
+            {voiceState === "sealed" && (
+              <div className="w-full space-y-4">
+                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl py-4 px-5 flex items-center gap-3">
+                  <CheckCircle size={16} className="text-emerald-400 flex-shrink-0" />
+                  <div>
+                    <p className="text-xs text-emerald-400 font-bold">Церемоніальне Прив'язування Завершено</p>
+                    <p className="text-[9px] text-emerald-400/60 font-mono mt-0.5">Voice Imprint Captured & Sealed</p>
+                  </div>
+                </div>
+                {voiceSealId && (
+                  <div className="bg-black/40 border border-white/5 rounded-xl p-3">
+                    <span className="text-[8px] text-white/20 uppercase block mb-1">Seal ID</span>
+                    <code className="text-[9px] text-white/40 break-all">{voiceSealId}</code>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── error ── */}
+            {voiceState === "error" && voiceError && (
+              <div className="w-full mt-2 bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-4">
+                <p className="text-[9px] text-red-400 font-mono break-all">{voiceError.slice(0, 120)}</p>
+                <button onClick={() => { setVoiceState("idle"); setVoiceError(null); }}
+                  className="mt-2 text-[9px] text-red-400/60 hover:text-red-400 underline">
+                  Спробувати ще раз
+                </button>
+              </div>
+            )}
+
+            {/* ── Bottom CTA ── */}
+            <div className="flex gap-3 w-full mt-6">
               <button onClick={startProvisioning}
                 className="flex-1 py-3 text-[10px] uppercase tracking-widest text-white/25 hover:text-white/50 transition-colors border border-white/5 rounded-xl">
                 Пропустити
               </button>
-              <button disabled={!voiceRecorded} onClick={startProvisioning}
-                className="flex-[3] bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.15em] py-3 rounded-xl transition-all duration-200">
+              <button
+                disabled={voiceState !== "sealed"}
+                onClick={startProvisioning}
+                className="flex-[3] bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.15em] py-3 rounded-xl transition-all duration-200"
+              >
                 Завершити Прив'язку →
               </button>
             </div>
