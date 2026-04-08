@@ -60,6 +60,11 @@ export interface PreflightResponse {
   reasons:           string[];
   recommended_audio: RecommendedAudio;
   upgrade?:          EdgeUpgrade;
+  /** Echo of the device field from the request — included for client-side mic gate UI */
+  device?: {
+    microphone_permission: "granted" | "denied" | "prompt" | "unknown";
+    [key: string]: unknown;
+  };
 }
 
 // ── Safe default (network unavailable / beta fallback) ───────────────────────

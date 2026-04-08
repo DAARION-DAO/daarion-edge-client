@@ -4,10 +4,12 @@ import {
   Shield, Cpu, Mic, Fingerprint, Mail, Key, Sparkles, ChevronRight,
   Activity, CheckCircle, Zap, Smartphone, Monitor, Server, Copy,
   ExternalLink, Users, Wallet, User, AtSign, AlertTriangle, Lock,
-  Globe, FileText, Waves
+  Globe, FileText, Waves, Download
 } from "lucide-react";
 import { activeCaptureAdapter } from "../lib/captureAdapters";
 import { fetchChallenge, uploadVoiceImprint, sealCeremony } from "../lib/voiceCeremonyApi";
+import { runPreflight, PreflightResponse, isEdgeCandidate, canRunVoiceCeremony } from "../lib/preflightApi";
+
 
 interface GenesisWizardProps {
   onComplete: () => void;
@@ -142,6 +144,9 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [countdown, setCountdown] = useState(0);
 
+  // Device Preflight — runs once on wizard mount
+  const [preflightData, setPreflightData] = useState<PreflightResponse | null>(null);
+
   // Step 5 — Provisioning
   const [provisioningLog, setProvisioningLog] = useState<string[]>([]);
   const [provisionProgress, setProvisionProgress] = useState(0);
@@ -173,6 +178,13 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
       invoke("check_beta_slots").then((s: any) => setBetaStatus(s)).catch(() => {});
     }
   }, [step]);
+
+  // Preflight — fetch once on wizard mount
+  useEffect(() => {
+    runPreflight("voice_ceremony", "/genesis")
+      .then((r) => setPreflightData(r))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -222,7 +234,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
   const getTokenFoundInfo = () => (window as any).__tokenFound as { balance: bigint; token: string; decimals: number } | undefined;
 
   // ── Voice Ceremony (B-first / C-ready) ──────────────────────────────────────
-  const RECORD_SECS = 5;
+  const RECORD_SECS = preflightData?.recommended_audio.max_duration_sec ?? 5;
 
   const startVoiceCeremony = async () => {
     setVoiceError(null);
@@ -698,20 +710,72 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
 
             <h2 className="text-base font-black uppercase tracking-widest mb-2">Голосова Церемонія</h2>
 
+            {/* ── preflight: edge upgrade CTA ── */}
+            {preflightData && isEdgeCandidate(preflightData) && voiceState === "idle" && preflightData.upgrade && (
+              <div className="w-full mb-5 px-4 py-3 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-start gap-3">
+                <Zap size={15} className="text-violet-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-black text-violet-300 uppercase tracking-widest mb-0.5">⚡ Edge Node Available</p>
+                  <p className="text-[10px] text-white/40 leading-relaxed">
+                    {preflightData.upgrade.reason} — рекомендовано <span className="text-violet-300 font-bold">{preflightData.upgrade.recommended_model}</span>{" "}
+                    (~{preflightData.upgrade.estimated_download_gb}GB)
+                  </p>
+                </div>
+                <a
+                  href="/install"
+                  className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-violet-600/30 hover:bg-violet-600/50 text-violet-300 text-[9px] font-black uppercase tracking-wider transition-all"
+                >
+                  <Download size={10} />
+                  Edge
+                </a>
+              </div>
+            )}
+
+            {/* ── preflight: mic permission CTA ── */}
+            {preflightData && preflightData.device?.microphone_permission === "denied" && voiceState === "idle" && (
+              <div className="w-full mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3">
+                <AlertTriangle size={15} className="text-red-400 flex-shrink-0 mt-0.5" />
+                <p className="text-[10px] text-red-300 leading-relaxed">
+                  Доступ до мікрофону заблоковано. Відкрийте налаштування браузера і дозвольте доступ до мікрофону для цього сайту.
+                </p>
+              </div>
+            )}
+
+            {/* ── preflight: ceremony unavailable ── */}
+            {preflightData && !canRunVoiceCeremony(preflightData) && voiceState === "idle" && (
+              <div className="w-full mb-5 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-3">
+                <AlertTriangle size={15} className="text-amber-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-[10px] font-black text-amber-300 uppercase tracking-widest mb-0.5">Церемонія недоступна</p>
+                  <p className="text-[10px] text-white/40 leading-relaxed">
+                    {preflightData.reasons[0] ?? "Ваш браузер або пристрій не підтримує голосовий запис."}
+                    {" "}Ви можете пропустити цей крок.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* ── idle: start button ── */}
             {voiceState === "idle" && (
               <>
                 <p className="text-white/40 text-xs text-center mb-7 max-w-xs leading-relaxed">
                   Отримай церемоніальну фразу та вимов її вголос. Твій голос стане підписом агента.
                 </p>
+                {preflightData && preflightData.device?.microphone_permission === "prompt" && (
+                  <p className="text-[9px] text-blue-300/60 text-center mb-4">
+                    Браузер запитає дозвіл на мікрофон при старті запису.
+                  </p>
+                )}
                 <button
                   onClick={startVoiceCeremony}
-                  className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-[0.15em] py-4 rounded-xl transition-all duration-200 shadow-[0_0_20px_rgba(37,99,235,0.25)]"
+                  disabled={preflightData !== null && !canRunVoiceCeremony(preflightData)}
+                  className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.15em] py-4 rounded-xl transition-all duration-200 shadow-[0_0_20px_rgba(37,99,235,0.25)]"
                 >
                   Розпочати Церемонію →
                 </button>
               </>
             )}
+
 
             {/* ── fetching challenge ── */}
             {voiceState === "fetching_challenge" && (
