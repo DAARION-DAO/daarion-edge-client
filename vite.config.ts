@@ -13,7 +13,8 @@ export default defineConfig(async () => ({
       // Use 'autoUpdate' so the SW updates silently in the background
       registerType: "autoUpdate",
       // Include generated assets in the manifest
-      includeAssets: ["icon-192.png", "icon-512.png", "favicon.ico"],
+      includeAssets: ["icon-192.png", "icon-512.png", "favicon.ico", "fallback_registry.json"],
+
       manifest: {
         name: "DAARION Edge",
         short_name: "DAARION",
@@ -53,7 +54,7 @@ export default defineConfig(async () => ({
       },
       // Workbox strategy: network-first for API, cache-first for assets
       workbox: {
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2,json}"],
         runtimeCaching: [
           {
             // Cache Genesis API responses briefly

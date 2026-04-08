@@ -767,7 +767,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                           )}
                         </div>
                         <span className={`font-mono ${m.is_recommended ? "text-violet-300 font-bold" : "text-white/30"}`}>
-                          ~{m.estimated_download_gb}GB
+                          ~{m.install_sources?.find(s => s.runtime === 'ollama')?.estimated_download_gb ?? m.install_sources?.[0]?.estimated_download_gb}GB
                         </span>
                       </div>
                       {/* Row 2: tier + role (small) */}

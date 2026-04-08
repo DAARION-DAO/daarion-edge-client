@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "registry_version": "2026.04.08",
+  "generated_at": "2026-04-08T12:00:00Z",
+  "_meta": {
+    "note": "Single source of truth for the DAARION edge model policy. Upstream tags are mapped into install_sources.",
+    "ollama_sources": {
+      "qwen":   "https://ollama.com/library/qwen3.5",
+      "gemma4": "https://ollama.com/library/gemma4"
+    }
+  },
+  "policy": {
+    "experimental_allowed": true,
+    "tiers": [
+      {
+        "name":       "A-low",
+        "min_cores":  0,
+        "min_ram_gb": 0,
+        "max_cores":  8,
+        "max_ram_gb": 8,
+        "recommended_tier": "light",
+        "experimental_ok":  true,
+        "pwa_fallback":     true
+      },
+      {
+        "name":       "B-mid",
+        "min_cores":  6,
+        "min_ram_gb": 8,
+        "max_cores":  12,
+        "max_ram_gb": 16,
+        "recommended_tier": "balanced",
+        "experimental_ok":  false,
+        "pwa_fallback":     false
+      },
+      {
+        "name":       "C-high",
+        "min_cores":  10,
+        "min_ram_gb": 16,
+        "max_cores":  999,
+        "max_ram_gb": 999,
+        "recommended_tier": "powerful",
+        "experimental_ok":  true,
+        "pwa_fallback":     false
+      }
+    ]
+  },
+  "families": ["qwen", "gemma4"],
+  "models": [
+    {
+      "id":           "qwen25-0.5b-exp",
+      "family":       "qwen",
+      "tier":         "tiny",
+      "role":         "helper",
+      "stability":    "experimental",
+      "ram_min_gb":   2,
+      "cores_min":    2,
+      "capabilities": ["text"],
+      "install_sources": [
+        {
+          "runtime": "ollama",
+          "upstream_tag": "qwen2.5:0.5b",
+          "local_alias": "qwen-tiny",
+          "estimated_download_gb": 0.5
+        }
+      ]
+    },
+    {
+      "id":           "qwen35-0.8b-exp",
+      "family":       "qwen",
+      "tier":         "ultra-light",
+      "role":         "helper",
+      "stability":    "experimental",
+      "ram_min_gb":   3,
+      "cores_min":    2,
+      "capabilities": ["text", "tools"],
+      "install_sources": [
+        {
+          "runtime": "ollama",
+          "upstream_tag": "qwen3.5:0.8b",
+          "local_alias": "qwen-ultra-light",
+          "estimated_download_gb": 0.8
+        }
+      ]
+    },
+    {
+      "id":           "qwen35-2b-stable",
+      "family":       "qwen",
+      "tier":         "light",
+      "role":         "agent",
+      "stability":    "stable",
+      "ram_min_gb":   4,
+      "cores_min":    4,
+      "capabilities": ["text", "tools", "code"],
+      "install_sources": [
+        {
+          "runtime": "ollama",
+          "upstream_tag": "qwen3.5:2b",
+          "local_alias": "qwen-light",
+          "estimated_download_gb": 1.6
+        }
+      ]
+    },
+    {
+      "id":           "qwen35-4b-prod",
+      "family":       "qwen",
+      "tier":         "balanced",
+      "role":         "agent",
+      "stability":    "production",
+      "ram_min_gb":   8,
+      "cores_min":    6,
+      "capabilities": ["text", "tools", "code", "reasoning"],
+      "install_sources": [
+        {
+          "runtime": "ollama",
+          "upstream_tag": "qwen3.5:4b",
+          "local_alias": "qwen-balanced",
+          "estimated_download_gb": 3.2
+        }
+      ]
+    },
+    {
+      "id":           "qwen35-14b-prod",
+      "family":       "qwen",
+      "tier":         "powerful",
+      "role":         "agent",
+      "stability":    "production",
+      "ram_min_gb":   14,
+      "cores_min":    10,
+      "capabilities": ["text", "tools", "code", "reasoning", "analysis"],
+      "install_sources": [
+        {
+          "runtime": "ollama",
+          "upstream_tag": "qwen3.5:14b",
+          "local_alias": "qwen-powerful",
+          "estimated_download_gb": 9.0
+        }
+      ]
+    },
+    {
+      "id":           "gemma4-e2b-stable",
+      "family":       "gemma4",
+      "tier":         "light-multimodal",
+      "role":         "agent",
+      "stability":    "stable",
+      "ram_min_gb":   8,
+      "cores_min":    6,
+      "capabilities": ["text", "vision", "tools"],
+      "install_sources": [
+        {
+          "runtime": "ollama",
+          "upstream_tag": "gemma4:e2b",
+          "local_alias": "gemma-light-mm",
+          "estimated_download_gb": 7.2
+        }
+      ]
+    },
+    {
+      "id":           "gemma4-e4b-stable",
+      "family":       "gemma4",
+      "tier":         "balanced-multimodal",
+      "role":         "agent",
+      "stability":    "stable",
+      "ram_min_gb":   10,
+      "cores_min":    8,
+      "capabilities": ["text", "vision", "tools", "reasoning"],
+      "install_sources": [
+        {
+          "runtime": "ollama",
+          "upstream_tag": "gemma4:e4b",
+          "local_alias": "gemma-balanced-mm",
+          "estimated_download_gb": 9.6
+        }
+      ]
+    },
+    {
+      "id":           "gemma4-26b-prod",
+      "family":       "gemma4",
+      "tier":         "powerful-multimodal",
+      "role":         "agent",
+      "stability":    "production",
+      "ram_min_gb":   18,
+      "cores_min":    12,
+      "capabilities": ["text", "vision", "tools", "reasoning", "analysis"],
+      "install_sources": [
+        {
+          "runtime": "ollama",
+          "upstream_tag": "gemma4:26b",
+          "local_alias": "gemma-powerful-moe",
+          "estimated_download_gb": 16.5
+        }
+      ]
+    }
+  ]
+}
