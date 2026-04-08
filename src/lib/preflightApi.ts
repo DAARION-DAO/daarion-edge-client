@@ -45,12 +45,22 @@ export interface RecommendedAudio {
   sample_path:      "none" | "browser_mediarecorder" | "browser_webrtc" | "tauri_capture";
 }
 
+/** A single model candidate for this device tier */
+export interface CandidateModel {
+  id:                    string;  // Ollama tag, e.g. "qwen3.5:4b"
+  family:                string;  // "qwen" | "gemma4" | ...
+  tier:                  string;  // "light" | "balanced" | "light-multimodal" | "balanced-multimodal" | "powerful" | ...
+  estimated_download_gb: number;
+  is_recommended:        boolean; // True for exactly one candidate per response
+}
+
 /** Present only when profile === "local_accel_candidate" */
 export interface EdgeUpgrade {
-  recommended_runtime:   string;  // "tauri"
-  recommended_model:     string;  // e.g. "qwen3.5:4b"
+  recommended_runtime:   string;          // "tauri"
+  recommended_model:     string;          // id of the is_recommended=True candidate
   estimated_download_gb: number;
-  reason:                string;  // "8 cores · ~16GB RAM · WebGPU: yes"
+  reason:                string;          // "10 cores · ~16GB RAM · WebGPU: yes"
+  candidate_models:      CandidateModel[]; // full device-to-model policy matrix
 }
 
 export interface PreflightResponse {

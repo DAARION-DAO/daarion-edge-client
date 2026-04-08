@@ -710,26 +710,55 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
 
             <h2 className="text-base font-black uppercase tracking-widest mb-2">Голосова Церемонія</h2>
 
-            {/* ── preflight: edge upgrade CTA ── */}
+            {/* ── preflight: edge upgrade CTA with model matrix ── */}
             {preflightData && isEdgeCandidate(preflightData) && voiceState === "idle" && preflightData.upgrade && (
-              <div className="w-full mb-5 px-4 py-3 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-start gap-3">
-                <Zap size={15} className="text-violet-400 flex-shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-black text-violet-300 uppercase tracking-widest mb-0.5">⚡ Edge Node Available</p>
-                  <p className="text-[10px] text-white/40 leading-relaxed">
-                    {preflightData.upgrade.reason} — рекомендовано <span className="text-violet-300 font-bold">{preflightData.upgrade.recommended_model}</span>{" "}
-                    (~{preflightData.upgrade.estimated_download_gb}GB)
-                  </p>
+              <div className="w-full mb-5 rounded-xl bg-violet-500/10 border border-violet-500/20 overflow-hidden">
+                {/* Header */}
+                <div className="px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Zap size={13} className="text-violet-400" />
+                    <span className="text-[10px] font-black text-violet-300 uppercase tracking-widest">⚡ Edge Node Available</span>
+                  </div>
+                  <a
+                    href="/install"
+                    className="flex items-center gap-1 px-3 py-1 rounded-lg bg-violet-600/40 hover:bg-violet-600/60 text-violet-200 text-[9px] font-black uppercase tracking-wider transition-all"
+                  >
+                    <Download size={9} />
+                    Install
+                  </a>
                 </div>
-                <a
-                  href="/install"
-                  className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg bg-violet-600/30 hover:bg-violet-600/50 text-violet-300 text-[9px] font-black uppercase tracking-wider transition-all"
-                >
-                  <Download size={10} />
-                  Edge
-                </a>
+                {/* Reason pill */}
+                <div className="px-4 pb-2">
+                  <span className="text-[9px] text-white/30">{preflightData.upgrade.reason}</span>
+                </div>
+                {/* Candidate models */}
+                <div className="px-3 pb-3 space-y-1">
+                  {preflightData.upgrade.candidate_models.map((m) => (
+                    <div
+                      key={m.id}
+                      className={`flex items-center justify-between px-3 py-2 rounded-lg text-[9px] ${
+                        m.is_recommended
+                          ? "bg-violet-600/20 border border-violet-500/30"
+                          : "bg-white/5 border border-white/5"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        {m.is_recommended && <span className="text-violet-400 font-black">★</span>}
+                        <span className={`font-mono font-bold ${m.is_recommended ? "text-violet-200" : "text-white/50"}`}>{m.id}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[8px] ${
+                          m.family === "gemma4" ? "bg-blue-500/20 text-blue-300" : "bg-emerald-500/20 text-emerald-300"
+                        }`}>{m.family}</span>
+                        <span className="text-white/25">{m.tier}</span>
+                      </div>
+                      <span className={m.is_recommended ? "text-violet-300 font-bold" : "text-white/30"}>
+                        ~{m.estimated_download_gb}GB
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
+
 
             {/* ── preflight: mic permission CTA ── */}
             {preflightData && preflightData.device?.microphone_permission === "denied" && voiceState === "idle" && (
