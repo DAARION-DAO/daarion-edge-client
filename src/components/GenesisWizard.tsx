@@ -731,31 +731,54 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                 <div className="px-4 pb-2">
                   <span className="text-[9px] text-white/30">{preflightData.upgrade.reason}</span>
                 </div>
-                {/* Candidate models */}
+                {/* Candidate models — from models_registry.json */}
                 <div className="px-3 pb-3 space-y-1">
                   {preflightData.upgrade.candidate_models.map((m) => (
                     <div
                       key={m.id}
-                      className={`flex items-center justify-between px-3 py-2 rounded-lg text-[9px] ${
+                      className={`px-3 py-2 rounded-lg text-[9px] ${
                         m.is_recommended
                           ? "bg-violet-600/20 border border-violet-500/30"
-                          : "bg-white/5 border border-white/5"
+                          : m.stability === "experimental"
+                            ? "bg-amber-500/5 border border-amber-500/15"
+                            : "bg-white/5 border border-white/5"
                       }`}
                     >
-                      <div className="flex items-center gap-2">
-                        {m.is_recommended && <span className="text-violet-400 font-black">★</span>}
-                        <span className={`font-mono font-bold ${m.is_recommended ? "text-violet-200" : "text-white/50"}`}>{m.id}</span>
-                        <span className={`px-1.5 py-0.5 rounded text-[8px] ${
-                          m.family === "gemma4" ? "bg-blue-500/20 text-blue-300" : "bg-emerald-500/20 text-emerald-300"
-                        }`}>{m.family}</span>
-                        <span className="text-white/25">{m.tier}</span>
+                      {/* Row 1: id + badges + size */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {m.is_recommended && <span className="text-violet-400 font-black text-[10px]">★</span>}
+                          <span className={`font-mono font-bold ${m.is_recommended ? "text-violet-200" : "text-white/60"}`}>
+                            {m.id}
+                          </span>
+                          {/* Family badge */}
+                          <span className={`px-1.5 py-0.5 rounded text-[7px] font-black uppercase ${
+                            m.family === "gemma4" ? "bg-blue-500/20 text-blue-300" : "bg-emerald-500/20 text-emerald-300"
+                          }`}>{m.family}</span>
+                          {/* Stability: only show if not production */}
+                          {m.stability === "experimental" && (
+                            <span className="px-1.5 py-0.5 rounded text-[7px] font-black uppercase bg-amber-500/20 text-amber-400">
+                              exp
+                            </span>
+                          )}
+                          {/* Multimodal indicator */}
+                          {m.capabilities?.includes("vision") && (
+                            <span className="px-1.5 py-0.5 rounded text-[7px] bg-sky-500/15 text-sky-400">👁 mm</span>
+                          )}
+                        </div>
+                        <span className={`font-mono ${m.is_recommended ? "text-violet-300 font-bold" : "text-white/30"}`}>
+                          ~{m.estimated_download_gb}GB
+                        </span>
                       </div>
-                      <span className={m.is_recommended ? "text-violet-300 font-bold" : "text-white/30"}>
-                        ~{m.estimated_download_gb}GB
-                      </span>
+                      {/* Row 2: tier + role (small) */}
+                      <div className="mt-0.5 flex gap-2 text-[7px] text-white/20">
+                        <span>{m.tier}</span>
+                        {m.role === "helper" && <span className="text-amber-400/50">helper only</span>}
+                      </div>
                     </div>
                   ))}
                 </div>
+
               </div>
             )}
 

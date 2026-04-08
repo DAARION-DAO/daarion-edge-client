@@ -45,13 +45,16 @@ export interface RecommendedAudio {
   sample_path:      "none" | "browser_mediarecorder" | "browser_webrtc" | "tauri_capture";
 }
 
-/** A single model candidate for this device tier */
+/** A single model candidate — populated from gateway models_registry.json */
 export interface CandidateModel {
-  id:                    string;  // Ollama tag, e.g. "qwen3.5:4b"
-  family:                string;  // "qwen" | "gemma4" | ...
-  tier:                  string;  // "light" | "balanced" | "light-multimodal" | "balanced-multimodal" | "powerful" | ...
+  id:                    string;    // Ollama tag e.g. "qwen3.5:4b"
+  family:                string;    // "qwen" | "gemma4" | ...
+  tier:                  string;    // "tiny" | "ultra-light" | "light" | "balanced" | "powerful" | ...
+  role:                  string;    // "agent" | "helper"
+  stability:             string;    // "experimental" | "stable" | "production"
   estimated_download_gb: number;
-  is_recommended:        boolean; // True for exactly one candidate per response
+  capabilities:          string[];  // ["text","vision","tools","code","reasoning"]
+  is_recommended:        boolean;
 }
 
 /** Present only when profile === "local_accel_candidate" */
