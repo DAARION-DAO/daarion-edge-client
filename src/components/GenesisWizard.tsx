@@ -155,6 +155,11 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
   const [provisionError, setProvisionError] = useState<string | null>(null);
   const [provisioningDone, setProvisioningDone] = useState(false);
 
+  // OUX-02 Factory Reset State
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
+
   const logRef = useRef<HTMLDivElement>(null);
 
   // Persistence
@@ -165,6 +170,43 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
   useEffect(() => { if (creatorWallet) localStorage.setItem("c_wallet", creatorWallet); }, [creatorWallet]);
   useEffect(() => { if (agentName) localStorage.setItem("genesis_agent_name", agentName); }, [agentName]);
   useEffect(() => { if (agentPurpose) localStorage.setItem("genesis_agent_purpose", agentPurpose); }, [agentPurpose]);
+
+  const handleFactoryReset = async () => {
+    setResetting(true);
+    setResetMessage("Скидання локального стану...");
+    try {
+      const result: any = await invoke("factory_reset_local_state");
+      if (result.success) {
+        // Clear onboarding storage
+        ["genesis_agent_name","genesis_agent_purpose","c_fname","c_lname","c_tg","c_email","c_wallet"]
+          .forEach(k => localStorage.removeItem(k));
+        
+        // Reset local UI states
+        setCreatorFirstName("");
+        setCreatorLastName("");
+        setCreatorTelegram("");
+        setCreatorEmail("");
+        setCreatorWallet("");
+        setAgentName("");
+        setAgentPurpose("");
+        setProvisionError(null);
+        setWalletKeys(null);
+        setProvisionResult(null);
+        setProvisioningLog([]);
+        setStep(1);
+        setShowResetConfirm(false);
+        setResetting(false);
+        setResetMessage(null);
+      } else {
+        // Partial failure
+        setResetMessage(`Помилка скидання. ${result.warnings.join(' | ')}`);
+        setResetting(false);
+      }
+    } catch (e: any) {
+      setResetMessage(`Критична помилка скидання: ${String(e)}`);
+      setResetting(false);
+    }
+  };
 
   useEffect(() => {
     if (step === 1) {
@@ -1026,7 +1068,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                 <p className="text-[9px] text-red-400/80 font-mono break-all">{provisionError.slice(0, 140)}</p>
                 <div className="flex gap-2 mt-3">
                   <button onClick={() => { setProvisionError(null); setProvisioningLog([]); startProvisioning(); }} className="px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 text-[10px] uppercase font-bold uppercase transition-colors">Retry</button>
-                  <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="px-3 py-1.5 rounded-lg border border-red-500/30 hover:bg-red-500/10 text-red-400 text-[10px] uppercase font-bold uppercase transition-colors">Reset Local State</button>
+                  <button onClick={() => setShowResetConfirm(true)} className="px-3 py-1.5 rounded-lg border border-red-500/30 hover:bg-red-500/10 text-red-400 text-[10px] uppercase font-bold uppercase transition-colors">Reset Local State</button>
                 </div>
               </div>
             )}
@@ -1106,6 +1148,46 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             >
               Увійти до Суверенного Міста <ChevronRight size={18} />
             </button>
+          </div>
+        )}
+
+        {/* ── OUX-02: Factory Reset Confirm Modal ── */}
+        {showResetConfirm && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-red-500/30 rounded-2xl p-6 max-w-sm w-full shadow-2xl relative shadow-[0_0_50px_rgba(2ef,68,68,0.15)]">
+              <div className="w-12 h-12 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center mb-4 text-red-500 mx-auto">
+                <AlertTriangle size={24} />
+              </div>
+              <h2 className="text-center text-lg justify-center font-black uppercase text-white mb-2">Factory Reset</h2>
+              <p className="text-xs text-white/60 text-center mb-4 leading-relaxed">
+                Local identity, enrollment state, and onboarding data will be permanently deleted from this device.
+                <br /><br />
+                <span className="text-red-400 font-bold">Note:</span> This does not automatically delete remote-side resources. Use only if provisioning failed or local state is corrupted.
+              </p>
+              
+              {resetMessage && (
+                <div className="mb-4 p-3 bg-black/40 border border-white/10 rounded-lg text-center">
+                  <span className="text-[10px] text-white/50">{resetMessage}</span>
+                </div>
+              )}
+
+              <div className="flex gap-3 mt-6">
+                <button 
+                  onClick={() => { setShowResetConfirm(false); setResetMessage(null); }}
+                  disabled={resetting}
+                  className="flex-1 py-2.5 rounded-xl border border-white/10 text-white/60 hover:text-white/90 text-xs font-bold uppercase transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleFactoryReset}
+                  disabled={resetting}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-black uppercase tracking-wider shadow-[0_0_15px_rgba(2ef,68,68,0.3)] disabled:opacity-50 flex justify-center items-center gap-2"
+                >
+                  {resetting ? <Activity size={12} className="animate-spin" /> : "Confirm Reset"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
