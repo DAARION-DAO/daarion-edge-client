@@ -18,7 +18,7 @@ pub enum ConnectivityState {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MessagingSession {
     pub session_id: String,
-    pub messaging_token: String,
+    pub session_ticket: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -89,7 +89,7 @@ pub async fn bootstrap_messaging(
 
     let session = MessagingSession {
         session_id: format!("sess_{}", uuid::Uuid::new_v4()),
-        messaging_token: format!("msg_{}", uuid::Uuid::new_v4()),
+        session_ticket: format!("msg_{}", uuid::Uuid::new_v4()),
     };
 
     let room_info = RoomInfo {

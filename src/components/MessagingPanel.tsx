@@ -18,7 +18,7 @@ interface RoomInfo {
 
 interface MessagingSession {
   session_id: string;
-  messaging_token: string;
+  session_ticket: string;
 }
 
 type ConnectivityState = 
