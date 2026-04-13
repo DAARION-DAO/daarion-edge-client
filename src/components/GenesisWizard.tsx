@@ -303,13 +303,18 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
     let keys: any = null;
     try {
       keys = await invoke("generate_wallet_keys");
+      if (!keys || !keys.solana_pubkey || keys.solana_pubkey === "GENESIS_OFFLINE_KEY" || keys.base_address === "0x0") {
+        throw new Error("Invalid or empty keys returned from system.");
+      }
       setWalletKeys(keys);
       addLog(`✓ Solana: ${(keys.solana_pubkey as string).slice(0, 14)}...`);
       addLog(`✓ EVM: ${(keys.base_address as string).slice(0, 16)}...`);
       setProvisionProgress(30);
-    } catch {
-      addLog("⚠ Wallet — використовуємо fallback identity.");
-      keys = { solana_pubkey: "GENESIS_OFFLINE_KEY", base_address: "0x0", mnemonic: "" };
+    } catch (err: any) {
+      setProvisionError("Secure identity generation failed. Local secure storage unavailable.");
+      addLog(`✗ Помилка: Secure identity generation failed.`);
+      setProvisionProgress(100);
+      return;
     }
 
     await new Promise(r => setTimeout(r, 600));
@@ -363,10 +368,10 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
 
       setProvisionProgress(92);
       try { await invoke("initialize_identity"); } catch { }
-      try { await invoke("enroll_node", { bootstrapGrant: "GENESIS_GRANT" }); } catch { }
+      try { await invoke("enroll_node", { bootstrapGrant: "" }); } catch { }
       setProvisionProgress(100);
       addLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      addLog(`🎉 ${agentName} народився! Творець: ${creatorFirstName} ${creatorLastName}. Слот: #${result.beta_slot}`);
+      addLog(`🎉 ${agentName} народився! Творець: ${creatorFirstName} ${creatorLastName}. Слот: #${result.beta_slot} [DEMO ENROLLMENT]`);
       setProvisioningDone(true);
       setTimeout(() => setStep(6), 2000);
 
@@ -1019,6 +1024,10 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             {provisionError && (
               <div className="w-full mt-3 bg-red-500/10 border border-red-500/20 rounded-xl p-3">
                 <p className="text-[9px] text-red-400/80 font-mono break-all">{provisionError.slice(0, 140)}</p>
+                <div className="flex gap-2 mt-3">
+                  <button onClick={() => { setProvisionError(null); setProvisioningLog([]); startProvisioning(); }} className="px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 text-[10px] uppercase font-bold uppercase transition-colors">Retry</button>
+                  <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="px-3 py-1.5 rounded-lg border border-red-500/30 hover:bg-red-500/10 text-red-400 text-[10px] uppercase font-bold uppercase transition-colors">Reset Local State</button>
+                </div>
               </div>
             )}
           </div>
