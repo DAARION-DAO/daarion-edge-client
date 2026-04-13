@@ -18,6 +18,7 @@ mod intelligence;
 mod metacognition;
 mod genesis;
 mod provisioning;
+mod reset;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -34,6 +35,7 @@ fn greet(name: &str) -> String {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(HeartbeatManager {
             status: Arc::new(Mutex::new(HeartbeatStatus::default())),
         })
@@ -51,8 +53,12 @@ pub fn run() {
             messaging::send_node_message,
             messaging::get_node_messages,
             messaging::reconnect_messaging,
-            models::get_supported_models,
-            models::get_local_models,
+            models::sync_registry,
+            models::detect_ollama,
+            models::get_ollama_status,
+            models::list_local_models,
+            models::pull_model,
+            models::run_smoke_inference,
             models::download_model,
             models::load_model,
             models::unload_model,
@@ -62,6 +68,7 @@ pub fn run() {
             genesis::record_voice_imprint,
             provisioning::check_beta_slots,
             provisioning::provision_sovereign_genesis,
+            reset::factory_reset_local_state,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
