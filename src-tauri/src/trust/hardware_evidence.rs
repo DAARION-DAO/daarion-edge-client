@@ -20,6 +20,9 @@ pub struct EvidencePayload {
     // Phase 11b: Transient Local Binding
     pub client_pubkey_ed25519: Option<String>,
     pub signature_ed25519: Option<String>,
+
+    // Phase 11c: Raw signed bytes for canonical bit-level verification
+    pub raw_signed_payload_b64: Option<String>,
 }
 
 pub fn collect_os_evidence() -> EvidencePayload {
@@ -105,12 +108,14 @@ pub fn collect_os_evidence() -> EvidencePayload {
         cryptographically_verified: false,
         client_pubkey_ed25519: None,
         signature_ed25519: None,
+        raw_signed_payload_b64: None,
     }
 }
 
 use ed25519_dalek::{SigningKey, Signer};
 use rand::rngs::OsRng;
 use bs58;
+use base64::{Engine as _, engine::general_purpose};
 
 /// Expose this explicit endpoint to the Desktop UI to triggger submission
 #[tauri::command]
@@ -159,19 +164,27 @@ pub async fn submit_evidence_handshake(session_id: String) -> Result<String, Str
     payload.nonce = Some(nonce_val.clone());
     
     // 4. Payload Signature (Local Integrity Bound)
-    // Serialize core deterministically for signing
+    // Serialize core deterministically for signing.
+    // We strip meta-fields (pubkey, signature, raw blob) so the digest covers
+    // only the evidence + nonce content that the canonical side will verify.
     let mut signable_payload = payload.clone();
     signable_payload.client_pubkey_ed25519 = None; 
     signable_payload.signature_ed25519 = None;
+    signable_payload.raw_signed_payload_b64 = None;
     
     let digest_bytes = serde_json::to_vec(&signable_payload).unwrap_or_default();
     let signature = signing_key.sign(&digest_bytes);
     let sig_b58 = bs58::encode(signature.to_bytes()).into_string();
     
+    // Phase 11c: Encode the exact signed bytes as base64 so canonical side
+    // can verify bit-for-bit without re-serializing from parsed fields.
+    let raw_b64 = general_purpose::STANDARD.encode(&digest_bytes);
+    
     payload.client_pubkey_ed25519 = Some(pubkey_b58);
     payload.signature_ed25519 = Some(sig_b58);
+    payload.raw_signed_payload_b64 = Some(raw_b64);
 
-    println!("[TRUST HANDSHAKE] Payload signed with transient local ed25519 keyring.");
+    println!("[TRUST HANDSHAKE] Payload signed with transient local ed25519 keyring. Raw digest attached as b64.");
 
     // 5. Submit Signed Evidence
     let canonical_url = format!("{}/v1/release/lease/{}/attest_evidence", api_base, session_id);
