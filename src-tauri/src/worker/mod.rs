@@ -81,8 +81,15 @@ pub async fn toggle_worker_mode(
                         match relay.wait_for_task().await {
                             Ok(task) => {
                                 println!("Task Received: {}", task.payload.task_id);
+                                let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                                
+                                if now > task.payload.lease_expires_at {
+                                    println!("HARD REJECT [Desktop]: Lease {} arrived already expired. Dropping.", task.payload.lease_id);
+                                    continue;
+                                }
+                                
                                 if task.payload.work_type == "ping_math" {
-                                    println!("Handing payload {} over into Bounded Execution Envelope...", task.payload.args.value);
+                                    println!("Handing payload {} over into Bounded Execution Envelope... [Lease: {}]", task.payload.args.value, task.payload.lease_id);
                                     
                                     // Sprint 2A Envelope Boundary Call
                                     match crate::worker::runner::execute_ping_math(task.payload.args.value).await {
@@ -102,6 +109,7 @@ pub async fn toggle_worker_mode(
                                                 event_type: "execution_receipt".into(),
                                                 payload: ExecutionReceiptPayload {
                                                     worker_id: identity.node_id.clone(),
+                                                    lease_id: task.payload.lease_id.clone(),
                                                     raw_advisory_json,
                                                     signature: hex::encode(sig.to_bytes()),
                                                 }

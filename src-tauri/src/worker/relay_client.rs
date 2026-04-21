@@ -68,6 +68,7 @@ pub struct TaskAssignment {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TaskPayload {
     pub task_id: String,
+    pub lease_id: String,
     pub lease_expires_at: u64,
     pub work_type: String,
     pub args: TaskArgs,
@@ -87,6 +88,7 @@ pub struct ExecutionReceipt {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ExecutionReceiptPayload {
     pub worker_id: String,
+    pub lease_id: String,
     pub raw_advisory_json: String,
     pub signature: String,
 }
