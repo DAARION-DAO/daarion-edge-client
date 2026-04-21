@@ -7,6 +7,7 @@ pub mod result_publisher;
 pub mod worker_loop;
 pub mod models;
 pub mod routing_lane;
+pub mod relay_client;
 
 pub use admission::{AdmissionController, ExecutionDecision, AdmissionInput, JobClass};
 pub use queue::LocalQueue;
@@ -22,17 +23,7 @@ pub struct WorkerModeState {
     pub enabled: bool,
 }
 
-#[derive(Serialize)]
-pub struct WorkerRegistrationRequest {
-    pub event_type: String,
-    pub payload: EnrollmentReqPayload,
-}
-
-#[derive(Serialize)]
-pub struct EnrollmentReqPayload {
-    pub worker_uuid: String,
-    pub pubkey: String,
-}
+use relay_client::{RelayClient, MockRelayClient, WsRelayClient, WorkerHello, WorkerHelloPayload, EnrollmentRequest, EnrollmentReqPayload};
 
 #[tauri::command]
 pub async fn toggle_worker_mode(
@@ -45,19 +36,39 @@ pub async fn toggle_worker_mode(
     
     if enabled {
         let identity = crate::identity::load_or_create_identity(&app_handle)?;
-        
-        let req = WorkerRegistrationRequest {
-            event_type: "enrollment_req".to_string(),
-            payload: EnrollmentReqPayload {
+        println!("Worker mode ACTIVE. Stable Node ID: {}", identity.node_id);
+
+        let mut relay: Box<dyn RelayClient> = Box::new(WsRelayClient::new("ws://127.0.0.1:8181/edge/relay"));
+        // Or if we want to force mock for testing local interface without server:
+        // let mut relay: Box<dyn RelayClient> = Box::new(MockRelayClient::new());
+
+        let hello = WorkerHello {
+            event_type: "worker_hello".to_string(),
+            payload: WorkerHelloPayload {
+                protocol_version: "v0.1-alpha".to_string(),
                 worker_uuid: identity.node_id.clone(),
-                pubkey: identity.public_key.clone(),
             }
         };
-        
-        let dump = serde_json::to_string(&req).map_err(|e| e.to_string())?;
-        println!("Worker mode ACTIVE. Bootstrapping Identity...");
-        println!("Stable Identity Node ID: {}", identity.node_id);
-        println!("Mock Registration Payload Compiled: {}", dump);
+
+        match relay.send_hello(hello).await {
+            Ok(ack) => {
+                println!("Hello Ack Received: {:?}", ack);
+                let req = EnrollmentRequest {
+                    event_type: "enrollment_req".to_string(),
+                    payload: EnrollmentReqPayload {
+                        worker_uuid: identity.node_id.clone(),
+                        pubkey: identity.public_key.clone(),
+                    }
+                };
+                match relay.send_enrollment(req).await {
+                    Ok(dec) => println!("Enrollment Decision: {:?}", dec),
+                    Err(e) => println!("Enrollment Failed: {}", e),
+                }
+            },
+            Err(e) => {
+                println!("Relay Connection/Hello Failed: {}. Falling back to sleep...", e);
+            }
+        }
     } else {
         println!("Worker mode changed to: {}", enabled);
     }
