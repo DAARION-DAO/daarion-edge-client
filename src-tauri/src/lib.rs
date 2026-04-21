@@ -69,6 +69,7 @@ pub fn run() {
             provisioning::check_beta_slots,
             provisioning::provision_sovereign_genesis,
             reset::factory_reset_local_state,
+            trust::hardware_evidence::submit_evidence_handshake,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

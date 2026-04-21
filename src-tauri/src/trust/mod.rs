@@ -6,3 +6,4 @@ pub mod trust_chain;
 pub mod trust_propagation;
 pub mod scope_narrowing;
 pub mod revocation_propagation;
+pub mod hardware_evidence;

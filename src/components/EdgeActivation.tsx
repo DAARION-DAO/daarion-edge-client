@@ -26,6 +26,8 @@ export function EdgeActivation() {
   const [leaseStatus, setLeaseStatus] = useState<'idle' | 'requesting' | 'granted' | 'failed'>('idle');
   const [sessionInfo, setSessionInfo] = useState<{session_id: string, connection_token: string} | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [trustHandshakeLog, setTrustHandshakeLog] = useState<string>("Static CLASS_0 bound until explicit handshake.");
+  const [assignedTrust, setAssignedTrust] = useState<string>("CLASS_0_SELF_REPORTED");
 
   useEffect(() => {
     async function fetchCaps() {
@@ -43,6 +45,7 @@ export function EdgeActivation() {
     if (!capabilities) return;
     setLeaseStatus('requesting');
     setErrorMsg(null);
+    setTrustHandshakeLog("Requesting lease...");
     
     try {
       const res = await fetch("http://127.0.0.1:8181/lease/request", {
@@ -66,6 +69,21 @@ export function EdgeActivation() {
          connection_token: data.connection_token
       });
       setLeaseStatus('granted');
+      
+      // Phase 11 POST-Lease Evidence Handshake
+      setTrustHandshakeLog("Triggering OS-Backed Evidence Helpper...");
+      try {
+         const handshakeResult = await invoke<string>("submit_evidence_handshake", { sessionId: data.session_id });
+         setTrustHandshakeLog(`Handshake completed: ${handshakeResult}`);
+         if (handshakeResult === "EVIDENCE_ACCEPTED") {
+            setAssignedTrust("CLASS_1_EVIDENCE_PENDING"); // Up to Ingester to drop it
+         }
+      } catch (handshakeErr) {
+         console.warn("[EVIDENCE HANDSHAKE FAILED]", handshakeErr);
+         setTrustHandshakeLog("Evidence rejected or unreachable. Reverting natively to CLASS_0.");
+         setAssignedTrust("CLASS_0_SELF_REPORTED");
+      }
+      
     } catch (e) {
       setErrorMsg(String(e));
       setLeaseStatus('failed');
@@ -126,9 +144,9 @@ export function EdgeActivation() {
                       <Key size={14} /> Assigned Trust Class
                    </h3>
                    <div className="p-3 bg-black/40 border border-yellow-500/20 rounded-xl mb-3">
-                      <div className="text-sm font-black text-yellow-500 uppercase tracking-widest mb-1">CLASS_0_SELF_REPORTED</div>
+                      <div className="text-sm font-black text-yellow-500 uppercase tracking-widest mb-1">{assignedTrust}</div>
                       <p className="text-[10px] text-yellow-200/50 leading-relaxed font-sans">
-                         No cryptographic hardware verification present. Capabilities are accepted cautiously and subject to runtime performance degradation mapping.
+                         {trustHandshakeLog}
                       </p>
                    </div>
                 </div>
