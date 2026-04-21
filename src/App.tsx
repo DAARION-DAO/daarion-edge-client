@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Shield, Activity, XCircle, Zap, Terminal, Globe, Monitor, MessageSquare, LayoutDashboard, Cuboid, Sparkles } from "lucide-react";
 import { MessagingPanel } from "./components/MessagingPanel";
-import { LocalModelsPanel } from "./components/LocalModelsPanel";
+import { EdgeActivation } from "./components/EdgeActivation";
 import { LocalInferencePanel } from "./components/LocalInferencePanel";
 import { GenesisWizard } from "./components/GenesisWizard";
 interface IdentityStatus {
@@ -60,7 +60,7 @@ function App() {
   const [capabilities, setCapabilities] = useState<CapabilitySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "messaging" | "models" | "inference">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "messaging" | "activation" | "inference">("dashboard");
 
   async function fetchData() {
     try {
@@ -148,11 +148,11 @@ function App() {
             <LayoutDashboard size={14} /> Dashboard
           </button>
           <button
-            onClick={() => setActiveTab("models")}
-            className={`flex items-center gap-2.5 px-6 py-3 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] transition-all duration-300 ${activeTab === 'models' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/30 border-blue-500/50' : 'text-white/30 hover:text-white/50 hover:bg-white/5 border-transparent'} border`}
+            onClick={() => setActiveTab("activation")}
+            className={`flex items-center gap-2.5 px-6 py-3 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] transition-all duration-300 ${activeTab === 'activation' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/30 border-blue-500/50' : 'text-white/30 hover:text-white/50 hover:bg-white/5 border-transparent'} border`}
           >
-            <Cuboid size={14} className={activeTab === 'models' ? 'animate-pulse' : ''} />
-            Models
+            <Cuboid size={14} className={activeTab === 'activation' ? 'animate-pulse' : ''} />
+            Worker Mode <span className="text-[9px] px-1 py-0.5 bg-blue-500/20 rounded">Preview</span>
           </button>
 
           <button
@@ -366,9 +366,9 @@ function App() {
 
           </div>
         </div>
-        ) : activeTab === "models" ? (
+        ) : activeTab === "activation" ? (
           <div className="animate-in slide-in-from-bottom-4 duration-500">
-             <LocalModelsPanel />
+             <EdgeActivation />
           </div>
         ) : activeTab === "inference" ? (
           <div className="animate-in slide-in-from-bottom-4 duration-500">
