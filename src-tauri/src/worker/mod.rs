@@ -6,8 +6,10 @@ pub mod sandbox_executor;
 pub mod result_publisher;
 pub mod worker_loop;
 pub mod models;
+pub mod identity;
 pub mod routing_lane;
 pub mod relay_client;
+pub mod runner;
 
 pub use admission::{AdmissionController, ExecutionDecision, AdmissionInput, JobClass};
 pub use queue::LocalQueue;
@@ -79,38 +81,47 @@ pub async fn toggle_worker_mode(
                             Ok(task) => {
                                 println!("Task Received: {}", task.payload.task_id);
                                 if task.payload.work_type == "ping_math" {
-                                    println!("Executing safe sandbox ping_math({})...", task.payload.args.value);
-                                    let math_res = task.payload.args.value * 2; // Real computation
+                                    println!("Handing payload {} over into Bounded Execution Envelope...", task.payload.args.value);
                                     
-                                    let adv = AdvisoryResult {
-                                        task_id: task.payload.task_id.clone(),
-                                        result: AdvisoryOutput { output: math_res },
-                                        execution_ms: 10,
-                                    };
-                                    
-                                    let raw_advisory_json = serde_json::to_string(&adv).unwrap();
-                                    let signing_key = crate::identity::get_signing_key(&app_handle).expect("Missing private key");
-                                    let sig = signing_key.sign(raw_advisory_json.as_bytes());
-                                    
-                                    let receipt = ExecutionReceipt {
-                                        event_type: "execution_receipt".into(),
-                                        payload: ExecutionReceiptPayload {
-                                            worker_id: identity.node_id.clone(),
-                                            raw_advisory_json,
-                                            signature: hex::encode(sig.to_bytes()), // hex encoding
+                                    // Sprint 2A Envelope Boundary Call
+                                    match crate::worker::runner::execute_ping_math(task.payload.args.value).await {
+                                        Ok(math_res) => {
+                                            println!("Envelope execution SUCCESS: {}", math_res);
+                                            let adv = AdvisoryResult {
+                                                task_id: task.payload.task_id.clone(),
+                                                result: AdvisoryOutput { output: math_res },
+                                                execution_ms: 10,
+                                            };
+                                            
+                                            let raw_advisory_json = serde_json::to_string(&adv).unwrap();
+                                            let signing_key = crate::identity::get_signing_key(&app_handle).expect("Missing private key");
+                                            let sig = signing_key.sign(raw_advisory_json.as_bytes());
+                                            
+                                            let receipt = ExecutionReceipt {
+                                                event_type: "execution_receipt".into(),
+                                                payload: ExecutionReceiptPayload {
+                                                    worker_id: identity.node_id.clone(),
+                                                    raw_advisory_json,
+                                                    signature: hex::encode(sig.to_bytes()),
+                                                }
+                                            };
+                                            
+                                            println!("Submitting cryptographic ExecutionReceipt...");
+                                            let _ = relay.send_receipt(receipt).await;
+                                            
+                                            println!("Waiting for Canonical VerifyDecision...");
+                                            match relay.wait_for_verify().await {
+                                                Ok(verify) => println!("Backend Verify Object: {:?}", verify),
+                                                Err(e) => println!("Verify Timeout/Error: {}", e),
+                                            }
+                                        },
+                                        Err(envelope_err) => {
+                                            println!("Envelope HARD FAIL-CLOSED: {}", envelope_err);
+                                            // Fail closed: No ExecutionReceipt generated, daemon discards the lease
                                         }
-                                    };
-                                    
-                                    println!("Submitting cryptographic ExecutionReceipt...");
-                                    let _ = relay.send_receipt(receipt).await;
-                                    
-                                    println!("Waiting for Canonical VerifyDecision...");
-                                    match relay.wait_for_verify().await {
-                                        Ok(verify) => println!("Backend Verify Object: {:?}", verify),
-                                        Err(e) => println!("Verify Timeout/Error: {}", e),
                                     }
                                 } else {
-                                    println!("Unknown workload skipped.");
+                                    println!("Unsupported work_type '{}' rejected before envelope execution.", task.payload.work_type);
                                 }
                             },
                             Err(e) => println!("Wait for task failed: {}", e),
