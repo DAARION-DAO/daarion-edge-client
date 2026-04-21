@@ -45,7 +45,8 @@ pub async fn toggle_worker_mode(
         let identity = crate::identity::load_or_create_identity(&app_handle)?;
         println!("Worker mode ACTIVE. Stable Node ID: {}", identity.node_id);
 
-        let mut relay: Box<dyn RelayClient> = Box::new(WsRelayClient::new("ws://127.0.0.1:8181/edge/relay"));
+        // Sprint 3A: Target real SOFIIA Canonical Acceptance Service (was 8181 dev_relay_stub)
+        let mut relay: Box<dyn RelayClient> = Box::new(WsRelayClient::new("ws://127.0.0.1:8002/edge/relay"));
         // Or if we want to force mock for testing local interface without server:
         // let mut relay: Box<dyn RelayClient> = Box::new(MockRelayClient::new());
 
