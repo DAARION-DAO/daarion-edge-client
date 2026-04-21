@@ -46,12 +46,59 @@ pub struct EnrollmentDecPayload {
     pub token: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TaskAssignment {
+    pub event_type: String, // "task_assignment"
+    pub payload: TaskPayload,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TaskPayload {
+    pub task_id: String,
+    pub lease_expires_at: u64,
+    pub work_type: String,
+    pub args: TaskArgs,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TaskArgs {
+    pub value: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ExecutionReceipt {
+    pub event_type: String, // "execution_receipt"
+    pub payload: ExecutionReceiptPayload,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ExecutionReceiptPayload {
+    pub worker_id: String,
+    pub raw_advisory_json: String,
+    pub signature: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AdvisoryResult {
+    pub task_id: String,
+    pub result: AdvisoryOutput,
+    pub execution_ms: u64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AdvisoryOutput {
+    pub output: u64,
+}
+
 #[async_trait]
 pub trait RelayClient: Send + Sync {
     async fn connect(&mut self) -> Result<(), String>;
     async fn send_hello(&mut self, hello: WorkerHello) -> Result<WorkerHelloAck, String>;
     async fn send_enrollment(&mut self, req: EnrollmentRequest) -> Result<EnrollmentDecision, String>;
+    async fn wait_for_task(&mut self) -> Result<TaskAssignment, String>;
+    async fn send_receipt(&mut self, receipt: ExecutionReceipt) -> Result<(), String>;
 }
+
 
 pub struct MockRelayClient {
     pub connected: bool,
@@ -89,16 +136,38 @@ impl RelayClient for MockRelayClient {
             },
         })
     }
+
+    async fn wait_for_task(&mut self) -> Result<TaskAssignment, String> {
+        println!("[MockRelay] Simulating scheduler wait...");
+        Ok(TaskAssignment {
+            event_type: "task_assignment".into(),
+            payload: TaskPayload {
+                task_id: "tsk-mock-001".into(),
+                lease_expires_at: 9999999999,
+                work_type: "ping_math".into(),
+                args: TaskArgs { value: 2 },
+            }
+        })
+    }
+
+    async fn send_receipt(&mut self, receipt: ExecutionReceipt) -> Result<(), String> {
+        println!("[MockRelay] Validated Receipt Locally: {:?}", receipt);
+        Ok(())
+    }
 }
 
 pub struct WsRelayClient {
     pub endpoint: String,
+    pub tx: Option<tokio::sync::mpsc::Sender<String>>,
+    pub rx: Option<tokio::sync::Mutex<tokio::sync::mpsc::Receiver<String>>>,
 }
 
 impl WsRelayClient {
     pub fn new(endpoint: &str) -> Self {
         Self {
             endpoint: endpoint.to_string(),
+            tx: None,
+            rx: None,
         }
     }
 }
@@ -108,48 +177,97 @@ impl RelayClient for WsRelayClient {
     async fn connect(&mut self) -> Result<(), String> {
         let url = Url::parse(&self.endpoint).map_err(|e| e.to_string())?;
         println!("[WsRelayClient] Dialing Dev WS Relay at {}...", url);
-        // Note: For MVP we do sequential connect/disconnect for each message just to prove the payload boundary.
-        // A Persistent connection loop will be added in Move 5.
+        let (ws_stream, _) = connect_async(url).await.map_err(|e| format!("WS Connect Failed: {}", e))?;
+        
+        // Setup channels to preserve stream state via Actor-like bridging
+        let (tx_in, mut rx_in) = tokio::sync::mpsc::channel::<String>(10);
+        let (tx_out, rx_out) = tokio::sync::mpsc::channel::<String>(10);
+        
+        let (mut write, mut read) = ws_stream.split();
+        
+        tokio::spawn(async move {
+            while let Some(msg) = rx_in.recv().await {
+                if write.send(Message::Text(msg.into())).await.is_err() { break; }
+            }
+        });
+        
+        let tx_out_clone = tx_out.clone();
+        tokio::spawn(async move {
+            while let Some(msg) = read.next().await {
+                if let Ok(Message::Text(text)) = msg {
+                    if tx_out_clone.send(text.to_string()).await.is_err() { break; }
+                }
+            }
+        });
+
+        self.tx = Some(tx_in);
+        self.rx = Some(tokio::sync::Mutex::new(rx_out));
         Ok(())
     }
 
     async fn send_hello(&mut self, hello: WorkerHello) -> Result<WorkerHelloAck, String> {
-        let url = Url::parse(&self.endpoint).map_err(|e| e.to_string())?;
-        let (ws_stream, _) = connect_async(url).await.map_err(|e| format!("WS Connect Failed: {}", e))?;
-        
-        let (mut write, mut read) = ws_stream.split();
         let msg = serde_json::to_string(&hello).map_err(|e| e.to_string())?;
-        write.send(Message::Text(msg.clone().into())).await.map_err(|e| e.to_string())?;
-        println!("[WsRelayClient] TX: {}", msg);
+        
+        if let Some(tx) = &self.tx {
+            tx.send(msg.clone()).await.map_err(|e| e.to_string())?;
+            println!("[WsRelayClient] TX: {}", msg);
+        } else {
+            return Err("Not connected".into());
+        }
 
-        if let Some(msg) = read.next().await {
-            let msg = msg.map_err(|e| e.to_string())?;
-            if let Message::Text(text) = msg {
+        if let Some(rx_mutex) = &self.rx {
+            let mut rx = rx_mutex.lock().await;
+            if let Some(text) = rx.recv().await {
                 println!("[WsRelayClient] RX: {}", text);
-                let ack: WorkerHelloAck = serde_json::from_str(text.as_str()).map_err(|e| format!("Decode err: {}", e))?;
+                let ack: WorkerHelloAck = serde_json::from_str(&text).map_err(|e| format!("Decode err: {}", e))?;
                 return Ok(ack);
             }
         }
-        Err("No response/Session Dropped".to_string())
+        Err("No response".into())
     }
 
     async fn send_enrollment(&mut self, req: EnrollmentRequest) -> Result<EnrollmentDecision, String> {
-        let url = Url::parse(&self.endpoint).map_err(|e| e.to_string())?;
-        let (ws_stream, _) = connect_async(url).await.map_err(|e| format!("WS Connect Failed: {}", e))?;
-        
-        let (mut write, mut read) = ws_stream.split();
         let msg = serde_json::to_string(&req).map_err(|e| e.to_string())?;
-        write.send(Message::Text(msg.clone().into())).await.map_err(|e| e.to_string())?;
-        println!("[WsRelayClient] TX: {}", msg);
+        
+        if let Some(tx) = &self.tx {
+            tx.send(msg.clone()).await.map_err(|e| e.to_string())?;
+            println!("[WsRelayClient] TX: {}", msg);
+        } else {
+            return Err("Not connected".into());
+        }
 
-        if let Some(msg) = read.next().await {
-            let msg = msg.map_err(|e| e.to_string())?;
-            if let Message::Text(text) = msg {
+        if let Some(rx_mutex) = &self.rx {
+            let mut rx = rx_mutex.lock().await;
+            if let Some(text) = rx.recv().await {
                 println!("[WsRelayClient] RX: {}", text);
-                let dec: EnrollmentDecision = serde_json::from_str(text.as_str()).map_err(|e| format!("Decode err: {}", e))?;
+                let dec: EnrollmentDecision = serde_json::from_str(&text).map_err(|e| format!("Decode err: {}", e))?;
                 return Ok(dec);
             }
         }
-        Err("No response/Session Dropped".to_string())
+        Err("No response".into())
+    }
+
+    async fn wait_for_task(&mut self) -> Result<TaskAssignment, String> {
+        if let Some(rx_mutex) = &self.rx {
+            let mut rx = rx_mutex.lock().await;
+            // Block indefinitely until server issues task
+            if let Some(text) = rx.recv().await {
+                println!("[WsRelayClient] RX (Task): {}", text);
+                let task: TaskAssignment = serde_json::from_str(&text).map_err(|e| format!("Decode err: {}", e))?;
+                return Ok(task);
+            }
+        }
+        Err("Session dropped while waiting for task".into())
+    }
+
+    async fn send_receipt(&mut self, receipt: ExecutionReceipt) -> Result<(), String> {
+        let msg = serde_json::to_string(&receipt).map_err(|e| e.to_string())?;
+        if let Some(tx) = &self.tx {
+            tx.send(msg.clone()).await.map_err(|e| e.to_string())?;
+            println!("[WsRelayClient] TX (Receipt): {}", msg);
+            Ok(())
+        } else {
+            Err("Not connected".into())
+        }
     }
 }

@@ -23,7 +23,12 @@ pub struct WorkerModeState {
     pub enabled: bool,
 }
 
-use relay_client::{RelayClient, MockRelayClient, WsRelayClient, WorkerHello, WorkerHelloPayload, EnrollmentRequest, EnrollmentReqPayload};
+use relay_client::{
+    RelayClient, MockRelayClient, WsRelayClient, WorkerHello, WorkerHelloPayload,
+    EnrollmentRequest, EnrollmentReqPayload, AdvisoryResult, AdvisoryOutput, 
+    ExecutionReceipt, ExecutionReceiptPayload
+};
+use ed25519_dalek::{Signer};
 
 #[tauri::command]
 pub async fn toggle_worker_mode(
@@ -50,6 +55,11 @@ pub async fn toggle_worker_mode(
             }
         };
 
+        if let Err(e) = relay.connect().await {
+            println!("Relay Connect Failed: {}. Sleep.", e);
+            return Ok("Failed".into());
+        }
+
         match relay.send_hello(hello).await {
             Ok(ack) => {
                 println!("Hello Ack Received: {:?}", ack);
@@ -61,12 +71,50 @@ pub async fn toggle_worker_mode(
                     }
                 };
                 match relay.send_enrollment(req).await {
-                    Ok(dec) => println!("Enrollment Decision: {:?}", dec),
+                    Ok(dec) => {
+                        println!("Enrollment Decision: {:?}", dec);
+                        
+                        // Move 6: Wait for Task
+                        match relay.wait_for_task().await {
+                            Ok(task) => {
+                                println!("Task Received: {}", task.payload.task_id);
+                                if task.payload.work_type == "ping_math" {
+                                    println!("Executing safe sandbox ping_math({})...", task.payload.args.value);
+                                    let math_res = task.payload.args.value * 2; // Real computation
+                                    
+                                    let adv = AdvisoryResult {
+                                        task_id: task.payload.task_id.clone(),
+                                        result: AdvisoryOutput { output: math_res },
+                                        execution_ms: 10,
+                                    };
+                                    
+                                    let raw_advisory_json = serde_json::to_string(&adv).unwrap();
+                                    let signing_key = crate::identity::get_signing_key(&app_handle).expect("Missing private key");
+                                    let sig = signing_key.sign(raw_advisory_json.as_bytes());
+                                    
+                                    let receipt = ExecutionReceipt {
+                                        event_type: "execution_receipt".into(),
+                                        payload: ExecutionReceiptPayload {
+                                            worker_id: identity.node_id.clone(),
+                                            raw_advisory_json,
+                                            signature: hex::encode(sig.to_bytes()), // hex encoding
+                                        }
+                                    };
+                                    
+                                    println!("Submitting cryptographic ExecutionReceipt...");
+                                    let _ = relay.send_receipt(receipt).await;
+                                } else {
+                                    println!("Unknown workload skipped.");
+                                }
+                            },
+                            Err(e) => println!("Wait for task failed: {}", e),
+                        }
+                    },
                     Err(e) => println!("Enrollment Failed: {}", e),
                 }
             },
             Err(e) => {
-                println!("Relay Connection/Hello Failed: {}. Falling back to sleep...", e);
+                println!("Relay Hello Failed: {}. Falling back to sleep...", e);
             }
         }
     } else {

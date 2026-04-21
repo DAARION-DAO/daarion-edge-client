@@ -78,6 +78,18 @@ pub fn load_or_create_identity(handle: &tauri::AppHandle) -> Result<NodeIdentity
     }
 }
 
+pub fn get_signing_key(_handle: &tauri::AppHandle) -> Result<SigningKey, String> {
+    let entry = Entry::new(SERVICE_NAME, KEY_NAME).map_err(|e| e.to_string())?;
+    let b64 = entry.get_password().map_err(|_| "Private key not found in keyring".to_string())?;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(b64).map_err(|e| e.to_string())?;
+    if bytes.len() != 32 { return Err("Invalid key length".to_string()); }
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(&bytes[..32]);
+    let signing_key = SigningKey::from_bytes(&arr);
+    Ok(signing_key)
+}
+
+
 #[tauri::command]
 pub fn get_identity_status(handle: tauri::AppHandle) -> Result<IdentityStatus, String> {
     let app_dir = get_app_dir(&handle);
