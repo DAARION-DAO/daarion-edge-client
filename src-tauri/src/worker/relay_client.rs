@@ -76,7 +76,8 @@ pub struct TaskPayload {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TaskArgs {
-    pub value: u64,
+    pub value: Option<u64>,
+    pub text: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -102,7 +103,7 @@ pub struct AdvisoryResult {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AdvisoryOutput {
-    pub output: u64,
+    pub output: serde_json::Value,
 }
 
 #[async_trait]

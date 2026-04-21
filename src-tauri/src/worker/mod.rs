@@ -89,15 +89,16 @@ pub async fn toggle_worker_mode(
                                 }
                                 
                                 if task.payload.work_type == "ping_math" {
-                                    println!("Handing payload {} over into Bounded Execution Envelope... [Lease: {}]", task.payload.args.value, task.payload.lease_id);
+                                    let value = task.payload.args.value.unwrap_or(0);
+                                    println!("Handing ping_math payload {} over into Bounded Execution Envelope... [Lease: {}]", value, task.payload.lease_id);
                                     
                                     // Sprint 2A Envelope Boundary Call
-                                    match crate::worker::runner::execute_ping_math(task.payload.args.value).await {
+                                    match crate::worker::runner::execute_ping_math(value).await {
                                         Ok(math_res) => {
                                             println!("Envelope execution SUCCESS: {}", math_res);
                                             let adv = AdvisoryResult {
                                                 task_id: task.payload.task_id.clone(),
-                                                result: AdvisoryOutput { output: math_res },
+                                                result: AdvisoryOutput { output: serde_json::json!(math_res) },
                                                 execution_ms: 10,
                                             };
                                             
@@ -129,6 +130,48 @@ pub async fn toggle_worker_mode(
                                             // Fail closed: No ExecutionReceipt generated, daemon discards the lease
                                         }
                                     }
+                                } else if task.payload.work_type == "text_hash" {
+                                    let text_val = task.payload.args.text.clone().unwrap_or_default();
+                                    println!("Handing text_hash payload '{}' over into Bounded Execution Envelope... [Lease: {}]", text_val, task.payload.lease_id);
+                                    
+                                    match crate::worker::runner::execute_text_hash(text_val).await {
+                                        Ok(hash_res) => {
+                                            println!("Envelope execution SUCCESS: {}", hash_res);
+                                            let adv = AdvisoryResult {
+                                                task_id: task.payload.task_id.clone(),
+                                                result: AdvisoryOutput { output: serde_json::json!(hash_res) },
+                                                execution_ms: 15,
+                                            };
+                                            
+                                            let raw_advisory_json = serde_json::to_string(&adv).unwrap();
+                                            let signing_key = crate::identity::get_signing_key(&app_handle).expect("Missing private key");
+                                            let sig = signing_key.sign(raw_advisory_json.as_bytes());
+                                            
+                                            let receipt = ExecutionReceipt {
+                                                event_type: "execution_receipt".into(),
+                                                payload: ExecutionReceiptPayload {
+                                                    worker_id: identity.node_id.clone(),
+                                                    lease_id: task.payload.lease_id.clone(),
+                                                    raw_advisory_json,
+                                                    signature: hex::encode(sig.to_bytes()),
+                                                }
+                                            };
+                                            
+                                            println!("Submitting cryptographic ExecutionReceipt...");
+                                            let _ = relay.send_receipt(receipt).await;
+                                            
+                                            println!("Waiting for Canonical VerifyDecision...");
+                                            match relay.wait_for_verify().await {
+                                                Ok(verify) => println!("Backend Verify Object: {:?}", verify),
+                                                Err(e) => println!("Verify Timeout/Error: {}", e),
+                                            }
+                                        },
+                                        Err(envelope_err) => {
+                                            println!("Envelope HARD FAIL-CLOSED: {}", envelope_err);
+                                        }
+                                    }
+                                } else {
+                                    println!("HARD REJECT: Unknown work_type {}. Dropping lease.", task.payload.work_type);
                                 } else {
                                     println!("Unsupported work_type '{}' rejected before envelope execution.", task.payload.work_type);
                                 }
