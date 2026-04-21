@@ -28,6 +28,29 @@ export function EdgeActivation() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [trustHandshakeLog, setTrustHandshakeLog] = useState<string>("Static CLASS_0 bound until explicit handshake.");
   const [assignedTrust, setAssignedTrust] = useState<string>("CLASS_0_SELF_REPORTED");
+  const [workerModeEnabled, setWorkerModeEnabled] = useState(false);
+
+  useEffect(() => {
+    async function checkWorkerMode() {
+      try {
+        const status = await invoke<boolean>("get_worker_mode");
+        setWorkerModeEnabled(status);
+      } catch (e) {
+        console.error("Failed to fetch worker mode", e);
+      }
+    }
+    checkWorkerMode();
+  }, []);
+
+  async function handleToggleWorkerMode() {
+    try {
+      const nextState = !workerModeEnabled;
+      await invoke("toggle_worker_mode", { enabled: nextState });
+      setWorkerModeEnabled(nextState);
+    } catch (e) {
+       console.error("Failed to toggle worker mode", e);
+    }
+  }
 
   useEffect(() => {
     async function fetchCaps() {
@@ -155,13 +178,28 @@ export function EdgeActivation() {
              {/* POC Dispatch Panel */}
              <div className="glass p-6 border-blue-500/20 bg-black/20">
                 <div className="flex flex-col items-center justify-center py-6">
-                   <Server size={32} className={`mb-4 ${leaseStatus === 'granted' ? 'text-emerald-400' : 'text-blue-500/40'}`} />
-                   <h3 className="text-lg font-black text-white uppercase tracking-widest mb-2">Gateway-Relay Lease POC</h3>
+                   <Server size={32} className={`mb-4 ${workerModeEnabled ? 'text-emerald-400' : 'text-blue-500/40'}`} />
+                   <h3 className="text-lg font-black text-white uppercase tracking-widest mb-2">Desktop Worker Sandbox</h3>
+                   
+                   <div className="mb-6 w-full max-w-sm flex items-center justify-between bg-black/40 border border-white/5 p-4 rounded-xl">
+                      <div>
+                         <span className="text-xs font-bold text-white uppercase tracking-widest block mb-1">Daemon State</span>
+                         <span className={`text-[10px] uppercase font-black tracking-widest ${workerModeEnabled ? 'text-emerald-400' : 'text-red-400/60'}`}>
+                            {workerModeEnabled ? 'ACTIVE / LISTENING' : 'OFFLINE'}
+                         </span>
+                      </div>
+                      <button 
+                         onClick={handleToggleWorkerMode}
+                         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${workerModeEnabled ? 'bg-emerald-500' : 'bg-white/10'}`}
+                      >
+                         <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${workerModeEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                      </button>
+                   </div>
                    
                    {leaseStatus === 'idle' || leaseStatus === 'failed' ? (
                       <>
                          <p className="text-xs text-white/40 text-center max-w-sm mb-6">
-                            Requires active localhost boundary relay (127.0.0.1:8181) from the canonical orchestration repository.
+                            When Active, the Desktop Daemon will automatically negotiate a Gateway-Relay lease to NODA1. (Click below to test lease logic directly).
                          </p>
                          <button 
                             onClick={requestLease}

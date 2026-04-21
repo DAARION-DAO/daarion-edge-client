@@ -40,6 +40,7 @@ pub fn run() {
             status: Arc::new(Mutex::new(HeartbeatStatus::default())),
         })
         .manage(Arc::new(MessagingState::new()))
+        .manage(Mutex::new(crate::worker::WorkerModeState::default()))
         .invoke_handler(tauri::generate_handler![
             greet,
             identity::get_identity_status,
@@ -70,6 +71,8 @@ pub fn run() {
             provisioning::provision_sovereign_genesis,
             reset::factory_reset_local_state,
             trust::hardware_evidence::submit_evidence_handshake,
+            crate::worker::toggle_worker_mode,
+            crate::worker::get_worker_mode,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
