@@ -103,6 +103,12 @@ pub async fn toggle_worker_mode(
                                     
                                     println!("Submitting cryptographic ExecutionReceipt...");
                                     let _ = relay.send_receipt(receipt).await;
+                                    
+                                    println!("Waiting for Canonical VerifyDecision...");
+                                    match relay.wait_for_verify().await {
+                                        Ok(verify) => println!("Backend Verify Object: {:?}", verify),
+                                        Err(e) => println!("Verify Timeout/Error: {}", e),
+                                    }
                                 } else {
                                     println!("Unknown workload skipped.");
                                 }

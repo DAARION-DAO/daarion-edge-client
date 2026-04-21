@@ -47,6 +47,19 @@ pub struct EnrollmentDecPayload {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct VerifyDecision {
+    pub event_type: String, // "verify_decision"
+    pub payload: VerifyDecisionPayload,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct VerifyDecisionPayload {
+    pub status: String,
+    pub reason: Option<String>,
+    pub task_id: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TaskAssignment {
     pub event_type: String, // "task_assignment"
     pub payload: TaskPayload,
@@ -97,6 +110,7 @@ pub trait RelayClient: Send + Sync {
     async fn send_enrollment(&mut self, req: EnrollmentRequest) -> Result<EnrollmentDecision, String>;
     async fn wait_for_task(&mut self) -> Result<TaskAssignment, String>;
     async fn send_receipt(&mut self, receipt: ExecutionReceipt) -> Result<(), String>;
+    async fn wait_for_verify(&mut self) -> Result<VerifyDecision, String>;
 }
 
 
@@ -153,6 +167,17 @@ impl RelayClient for MockRelayClient {
     async fn send_receipt(&mut self, receipt: ExecutionReceipt) -> Result<(), String> {
         println!("[MockRelay] Validated Receipt Locally: {:?}", receipt);
         Ok(())
+    }
+
+    async fn wait_for_verify(&mut self) -> Result<VerifyDecision, String> {
+        Ok(VerifyDecision {
+            event_type: "verify_decision".into(),
+            payload: VerifyDecisionPayload {
+                status: "accepted".into(),
+                reason: None,
+                task_id: Some("tsk-mock-001".into()),
+            }
+        })
     }
 }
 
@@ -269,5 +294,17 @@ impl RelayClient for WsRelayClient {
         } else {
             Err("Not connected".into())
         }
+    }
+
+    async fn wait_for_verify(&mut self) -> Result<VerifyDecision, String> {
+        if let Some(rx_mutex) = &self.rx {
+            let mut rx = rx_mutex.lock().await;
+            if let Some(text) = rx.recv().await {
+                println!("[WsRelayClient] RX (Verify): {}", text);
+                let dec: VerifyDecision = serde_json::from_str(&text).map_err(|e| format!("Decode err: {}", e))?;
+                return Ok(dec);
+            }
+        }
+        Err("Session dropped while waiting for verification".into())
     }
 }
