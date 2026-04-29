@@ -7,6 +7,7 @@ import {
   Globe, FileText, Waves, Download
 } from "lucide-react";
 import { activeCaptureAdapter } from "../lib/captureAdapters";
+import { useGenesisLang } from "../lib/genesisStrings";
 import { fetchChallenge, uploadVoiceImprint, sealCeremony } from "../lib/voiceCeremonyApi";
 import { runPreflight, PreflightResponse, isEdgeCandidate, canRunVoiceCeremony } from "../lib/preflightApi";
 
@@ -113,6 +114,7 @@ async function checkDaarionBalance(address: string): Promise<{ balance: bigint; 
 
 export function GenesisWizard({ onComplete }: GenesisWizardProps) {
   const [step, setStep] = useState(1);
+  const { t } = useGenesisLang();
 
   // Step 1 — Hardware
   const [hardwareScan, setHardwareScan] = useState<any>(null);
@@ -173,7 +175,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
 
   const handleFactoryReset = async () => {
     setResetting(true);
-    setResetMessage("Скидання локального стану...");
+    setResetMessage(t("reset_progress"));
     try {
       const result: any = await invoke("factory_reset_local_state");
       if (result.success) {
@@ -235,7 +237,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
   // ── Token Gate Verification ─────────────────────────────────────
   const verifyWallet = async () => {
     if (!creatorWallet.match(/^0x[a-fA-F0-9]{40}$/)) {
-      setTokenError("Невірний формат MetaMask адреси (0x...)");
+      setTokenError(t("err_wallet_invalid"));
       return;
     }
     setTokenChecking(true);
@@ -256,13 +258,12 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
       } else {
         setTokenError(
           `На гаманці ${creatorWallet.slice(0,8)}...${creatorWallet.slice(-6)} ` +
-          `не знайдено токенів DAARION або DAAR (Polygon). ` +
-          `Придбайте будь-яку кількість DAAR ($10) або DAARION ($1000) на Polygon.`
+          `${t("err_token_missing")}`
         );
         setWalletVerified(false);
       }
     } catch (e) {
-      setTokenError("Не вдалося перевірити баланс Polygon. Спробуйте ще раз.");
+      setTokenError(t("err_token_check"));
     } finally {
       setTokenChecking(false);
     }
@@ -340,7 +341,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
     setProvisionProgress(12);
 
     await new Promise(r => setTimeout(r, 700));
-    addLog("Генерація суверенних гаманців агента (BIP39)...");
+    addLog("Генерація клієнтських гаманців агента (BIP39)...");
 
     let keys: any = null;
     try {
@@ -368,32 +369,39 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
     setProvisionProgress(58);
 
     try {
-      const result: any = await invoke("provision_sovereign_genesis", {
-        agentName: agentName.trim(),
-        agentDirective: agentPurpose.trim(),
-        solanaPubkey: keys.solana_pubkey,
-        evmAddress: keys.base_address,
-        deviceClass: hardwareScan?.device_class || "Unknown",
-        deviceOs: hardwareScan?.os || "Unknown",
-        deviceRamGb: hardwareScan?.ram_total_gb || 0,
-        recommendedModel: selectedModel?.model_id || "",
-      });
+      let result: any = null;
+      try {
+        result = await invoke("provision_sovereign_genesis", {
+          agentName: agentName.trim(),
+          agentDirective: agentPurpose.trim(),
+          solanaPubkey: keys.solana_pubkey,
+          evmAddress: keys.base_address,
+          deviceClass: hardwareScan?.device_class || "Unknown",
+          deviceOs: hardwareScan?.os || "Unknown",
+          deviceRamGb: hardwareScan?.ram_total_gb || 0,
+          recommendedModel: selectedModel?.model_id || "",
+        });
 
-      setProvisionResult(result);
-      setProvisionProgress(78);
-      addLog(`✓ Суверенний слот агента: #${result.beta_slot}`);
-      addLog(`✓ Matrix Chamber: ${result.matrix?.room_id?.slice(0, 26)}...`);
-      addLog(`✓ Поштова скринька агента: ${result.email}`);
-      addLog(`✓ Вітальне повідомлення DAARWIZZ — відправлено.`);
+        setProvisionResult(result);
+        setProvisionProgress(78);
+        addLog(`✓ Реєстраційний номер агента: #${result.beta_slot}`);
+        addLog(`✓ Matrix Chamber: ${result.matrix?.room_id?.slice(0, 26)}...`);
+        addLog(`✓ Поштова скринька агента: ${result.email}`);
+        addLog(`✓ Вітальне повідомлення DAARWIZZ — відправлено.`);
+      } catch (err: any) {
+        addLog(`⚠ Network unreachable: ${String(err).slice(0, 60)}`);
+        addLog(`⚠ Falling back to provisional local agent.`);
+        result = { beta_slot: "PROVISIONAL", email: "local-only", matrix: { room_id: "unavailable" } };
+        setProvisionResult(result);
+        setProvisionProgress(78);
+      }
 
       await new Promise(r => setTimeout(r, 500));
       addLog("Також реєструємо профіль Творця в реєстрі Міста...");
-      // POST creator profile to genesis API
+      // POST creator profile via backend proxy
       try {
-        await fetch("https://api.daarion.city/genesis/creator", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        await invoke("register_creator_profile", {
+          profile: {
             first_name: creatorFirstName,
             last_name: creatorLastName,
             telegram_handle: creatorTelegram,
@@ -401,7 +409,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             evm_address: creatorWallet,
             agent_name: agentName,
             agent_slot: result.beta_slot,
-          }),
+          }
         });
         addLog(`✓ Профіль Творця збережено в реєстрі DAARION.`);
       } catch {
@@ -413,7 +421,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
       try { await invoke("enroll_node", { bootstrapGrant: "" }); } catch { }
       setProvisionProgress(100);
       addLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      addLog(`🎉 ${agentName} народився! Творець: ${creatorFirstName} ${creatorLastName}. Слот: #${result.beta_slot} [DEMO ENROLLMENT]`);
+      addLog(`🎉 ${agentName} народився! Творець: ${creatorFirstName} ${creatorLastName}. Слот: #${result.beta_slot} [LOCAL ENROLLMENT]`);
       setProvisioningDone(true);
       setTimeout(() => setStep(6), 2000);
 
@@ -448,7 +456,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
               <Users size={10} className="text-emerald-400" />
               <span className="text-[9px] text-white/40 font-mono">
                 <span className="text-emerald-400 font-bold">{betaStatus.remaining?.toLocaleString()}</span>
-                <span className="text-white/20"> / {betaStatus.total?.toLocaleString()} слотів залишилось</span>
+                <span className="text-white/20"> / {betaStatus.total?.toLocaleString()} {t("header_slots")}</span>
               </span>
             </div>
           )}
@@ -481,9 +489,9 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             <div className="w-16 h-16 rounded-2xl bg-blue-600/20 border border-blue-500/20 flex items-center justify-center mb-6">
               <Cpu size={32} className="text-blue-400" />
             </div>
-            <h2 className="text-base font-black uppercase tracking-widest mb-2">Аудит Апаратури</h2>
+            <h2 className="text-base font-black uppercase tracking-widest mb-2">{t("step1_title")}</h2>
             <p className="text-white/40 text-xs text-center mb-7 max-w-xs leading-relaxed">
-              Сканування пристрою Творця. Підбір оптимальної суверенної моделі...
+              {t("step1_desc")}
             </p>
 
             {hardwareScan ? (
@@ -507,7 +515,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                 {hardwareScan.recommended_model && (
                   <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-[9px] text-blue-400/70 uppercase font-black tracking-widest">Рекомендована модель</span>
+                      <span className="text-[9px] text-blue-400/70 uppercase font-black tracking-widest">{t("step1_recommended")}</span>
                       <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full border ${TIER_COLORS[hardwareScan.recommended_model.performance_tier] || 'text-white/50 border-white/10'}`}>
                         {hardwareScan.recommended_model.performance_tier}
                       </span>
@@ -527,7 +535,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             ) : (
               <div className="h-48 flex flex-col items-center justify-center gap-3 mb-5">
                 <Activity className="animate-spin text-blue-500/60" size={28} />
-                <span className="text-[9px] text-white/20 uppercase tracking-widest">Сканування пристрою...</span>
+                <span className="text-[9px] text-white/20 uppercase tracking-widest">{t("step1_scanning")}</span>
               </div>
             )}
 
@@ -536,7 +544,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
               onClick={() => setStep(2)}
               className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.2em] py-3.5 rounded-xl transition-all duration-200 shadow-[0_0_20px_rgba(37,99,235,0.25)] hover:shadow-[0_0_30px_rgba(37,99,235,0.45)]"
             >
-              Підтвердити Пристрій →
+              {t("step1_confirm")}
             </button>
           </div>
         )}
@@ -547,37 +555,37 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             <div className="w-16 h-16 rounded-2xl bg-violet-600/20 border border-violet-500/20 flex items-center justify-center mb-6">
               <User size={32} className="text-violet-400" />
             </div>
-            <h2 className="text-base font-black uppercase tracking-widest mb-1">Особистість Творця</h2>
+            <h2 className="text-base font-black uppercase tracking-widest mb-1">{t("step2_title")}</h2>
             <p className="text-white/40 text-xs text-center mb-6 max-w-xs leading-relaxed">
-              Ти — Творець. Назви себе. Місто зберігає цю інформацію у суверенному реєстрі.
+              {t("step2_desc")}
             </p>
 
             <div className="w-full space-y-4 mb-2">
 
               {/* Name row */}
               <div className="grid grid-cols-2 gap-3">
-                <FieldRow icon={User} label="Ім'я">
+                <FieldRow icon={User} label={t("field_first_name")}>
                   <input
                     type="text"
                     value={creatorFirstName}
                     onChange={e => setCreatorFirstName(e.target.value)}
-                    placeholder="Олексій"
+                    placeholder={t("placeholder_first")}
                     className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/20 focus:border-violet-500/50 outline-none transition-all text-sm"
                   />
                 </FieldRow>
-                <FieldRow icon={User} label="Прізвище">
+                <FieldRow icon={User} label={t("field_last_name")}>
                   <input
                     type="text"
                     value={creatorLastName}
                     onChange={e => setCreatorLastName(e.target.value)}
-                    placeholder="Коваленко"
+                    placeholder={t("placeholder_last")}
                     className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/20 focus:border-violet-500/50 outline-none transition-all text-sm"
                   />
                 </FieldRow>
               </div>
 
               {/* Telegram */}
-              <FieldRow icon={AtSign} label="Telegram @нікнейм">
+              <FieldRow icon={AtSign} label={t("field_telegram")}>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/25 text-sm font-bold">@</span>
                   <input
@@ -591,7 +599,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
               </FieldRow>
 
               {/* Personal Email */}
-              <FieldRow icon={Mail} label="Ваша особиста пошта">
+              <FieldRow icon={Mail} label={t("field_email")}>
                 <input
                   type="email"
                   value={creatorEmail}
@@ -602,7 +610,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
               </FieldRow>
 
               {/* MetaMask Wallet + Token Gate */}
-              <FieldRow icon={Wallet} label="MetaMask Адреса (0x...)">
+              <FieldRow icon={Wallet} label={t("field_wallet")}>
                 <div className="flex gap-2">
                   <input
                     type="text"
@@ -633,12 +641,12 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                     <span className="text-[10px] text-emerald-400 font-bold">
                       {(() => {
                         const ti = getTokenFoundInfo();
-                        if (!TOKEN_GATE_ENABLED) return 'Гаманець підтверджено (бета) ✓';
+                        if (!TOKEN_GATE_ENABLED) return t("wallet_verified_beta");
                         if (ti && ti.balance > BigInt(0)) {
                           const amount = (Number(ti.balance) / 1e18).toFixed(4);
-                          return `✓ ${amount} ${ti.token} на Polygon`;
+                          return `✓ ${amount} ${ti.token} ${t("token_on_polygon")}`;
                         }
-                        return 'Гаманець підтверджено ✓';
+                        return t("wallet_verified");
                       })()
                       }
                     </span>
@@ -659,8 +667,8 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                   <p className="text-[9px] text-amber-400/80 font-black uppercase tracking-wider mb-0.5">Token Gate</p>
                   <p className="text-[9px] text-white/30 leading-relaxed">
                     {TOKEN_GATE_ENABLED
-                      ? `На гаманці MetaMask має бути будь-яка кількість токенів ${DAARION_TOKEN_SYMBOL}. Це підтверджує статус учасника екосистеми.`
-                      : `Beta: Token Gate тимчасово відкрито. Після деплою ${DAARION_TOKEN_SYMBOL} токену — перевірка буде обов'язковою.`}
+                      ? `${t("token_gate_required")} ${DAARION_TOKEN_SYMBOL}. ${t("token_gate_suffix")}`
+                      : `${t("token_gate_beta")} ${DAARION_TOKEN_SYMBOL} ${t("token_gate_suffix")}`}
                   </p>
                 </div>
               </div>
@@ -669,7 +677,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
               <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.02] border border-white/5">
                 <FileText size={11} className="text-white/20 flex-shrink-0" />
                 <p className="text-[9px] text-white/20 leading-relaxed">
-                  <span className="text-white/30 font-bold">KYC Level 2+</span> буде введено пізніше: верифікація документів, телефон, країна проживання.
+                  <span className="text-white/30 font-bold">KYC Level 2+</span> {t("kyc_note")}
                 </p>
               </div>
             </div>
@@ -679,14 +687,14 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
               onClick={() => setStep(3)}
               className="w-full mt-4 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.2em] py-3.5 rounded-xl transition-all duration-200 shadow-[0_0_20px_rgba(139,92,246,0.25)] hover:shadow-[0_0_30px_rgba(139,92,246,0.45)]"
             >
-              Підтвердити Особистість →
+              {t("step2_confirm")}
             </button>
             {!creatorStep2Valid && (creatorFirstName || creatorLastName || creatorEmail || creatorWallet) && (
               <p className="mt-2 text-[9px] text-white/20 text-center">
-                {!creatorFirstName || !creatorLastName ? "Вкажіть ім'я та прізвище" :
-                 !creatorEmail ? "Введіть email" :
-                 !creatorWallet.match(/^0x[a-fA-F0-9]{40}$/) ? "Перевірте формат MetaMask адреси" :
-                 !walletVerified ? "Натисніть Verify для підтвердження гаманця" : ""}
+                {!creatorFirstName || !creatorLastName ? t("err_name") :
+                 !creatorEmail ? t("err_email") :
+                 !creatorWallet.match(/^0x[a-fA-F0-9]{40}$/) ? t("err_wallet_format") :
+                 !walletVerified ? t("err_wallet_verify") : ""}
               </p>
             )}
           </div>
@@ -698,30 +706,30 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             <div className="w-16 h-16 rounded-2xl bg-emerald-600/20 border border-emerald-500/20 flex items-center justify-center mb-6">
               <Fingerprint size={32} className="text-emerald-400" />
             </div>
-            <h2 className="text-base font-black uppercase tracking-widest mb-1">Акт Творення</h2>
-            <p className="text-white/40 text-xs text-center mb-2 max-w-xs leading-relaxed">
-              Назви свого агента та визнач його місію.
+            <h2 className="text-base font-black uppercase tracking-widest mb-1">{t("step3_title")}</h2>
+            <p className="text-white/40 text-xs text-center mb-5 max-w-xs leading-relaxed">
+              {t("step3_desc")}
             </p>
             <div className="flex items-center gap-2 mb-6 px-3 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20">
               <User size={10} className="text-violet-400" />
-              <span className="text-[9px] text-violet-400 font-bold">Творець: {creatorFirstName} {creatorLastName}</span>
+              <span className="text-[9px] text-violet-400 font-bold">{t("creator_label")}: {creatorFirstName} {creatorLastName}</span>
             </div>
 
             <div className="w-full space-y-4 mb-7">
-              <FieldRow icon={Globe} label="Ім'я Агента">
+              <FieldRow icon={Globe} label={t("field_agent_name")}>
                 <input
                   type="text"
                   value={agentName}
                   onChange={(e) => setAgentName(e.target.value)}
-                  placeholder="напр. Athena, Helion, Nova..."
+                  placeholder={t("placeholder_agent")}
                   className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder-white/20 focus:border-emerald-500/50 outline-none transition-all text-sm"
                 />
               </FieldRow>
-              <FieldRow icon={FileText} label="Директива Агента">
+              <FieldRow icon={FileText} label={t("field_agent_purpose")}>
                 <textarea
                   value={agentPurpose}
                   onChange={(e) => setAgentPurpose(e.target.value)}
-                  placeholder="Визнач призначення та місію цієї суверенної цифрової сутності..."
+                  placeholder={t("placeholder_purpose")}
                   rows={3}
                   className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder-white/20 focus:border-emerald-500/50 outline-none transition-all resize-none text-sm"
                 />
@@ -733,7 +741,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
               onClick={() => setStep(4)}
               className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.2em] py-3.5 rounded-xl transition-all duration-200 shadow-[0_0_20px_rgba(16,185,129,0.25)] hover:shadow-[0_0_30px_rgba(16,185,129,0.45)]"
             >
-              Вдихнути Душу →
+              {t("step3_confirm")}
             </button>
           </div>
         )}
@@ -755,7 +763,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                <Mic size={32} className="text-blue-400" />}
             </div>
 
-            <h2 className="text-base font-black uppercase tracking-widest mb-2">Голосова Церемонія</h2>
+            <h2 className="text-base font-black uppercase tracking-widest mb-2">{t("step4_title")}</h2>
 
             {/* ── preflight: edge upgrade CTA with model matrix ── */}
             {preflightData && isEdgeCandidate(preflightData) && voiceState === "idle" && preflightData.upgrade && (
@@ -835,7 +843,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
               <div className="w-full mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3">
                 <AlertTriangle size={15} className="text-red-400 flex-shrink-0 mt-0.5" />
                 <p className="text-[10px] text-red-300 leading-relaxed">
-                  Доступ до мікрофону заблоковано. Відкрийте налаштування браузера і дозвольте доступ до мікрофону для цього сайту.
+                  {t("step4_mic_denied")}
                 </p>
               </div>
             )}
@@ -845,10 +853,10 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
               <div className="w-full mb-5 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-3">
                 <AlertTriangle size={15} className="text-amber-400 flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-[10px] font-black text-amber-300 uppercase tracking-widest mb-0.5">Церемонія недоступна</p>
+                  <p className="text-[10px] font-black text-amber-300 uppercase tracking-widest mb-0.5">{t("step4_unavailable")}</p>
                   <p className="text-[10px] text-white/40 leading-relaxed">
-                    {preflightData.reasons[0] ?? "Ваш браузер або пристрій не підтримує голосовий запис."}
-                    {" "}Ви можете пропустити цей крок.
+                    {preflightData.reasons[0] ?? t("step4_unsupported")}
+                    {" "}{t("step4_can_skip")}
                   </p>
                 </div>
               </div>
@@ -858,11 +866,11 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             {voiceState === "idle" && (
               <>
                 <p className="text-white/40 text-xs text-center mb-7 max-w-xs leading-relaxed">
-                  Отримай церемоніальну фразу та вимов її вголос. Твій голос стане підписом агента.
+                  {t("step4_desc")}
                 </p>
                 {preflightData && preflightData.device?.microphone_permission === "prompt" && (
                   <p className="text-[9px] text-blue-300/60 text-center mb-4">
-                    Браузер запитає дозвіл на мікрофон при старті запису.
+                    {t("step4_mic_prompt")}
                   </p>
                 )}
                 <button
@@ -870,7 +878,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                   disabled={preflightData !== null && !canRunVoiceCeremony(preflightData)}
                   className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.15em] py-4 rounded-xl transition-all duration-200 shadow-[0_0_20px_rgba(37,99,235,0.25)]"
                 >
-                  Розпочати Церемонію →
+                  {t("step4_start")}
                 </button>
               </>
             )}
@@ -880,7 +888,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             {voiceState === "fetching_challenge" && (
               <div className="flex flex-col items-center gap-3 py-6">
                 <Activity className="animate-spin text-blue-500" size={28} />
-                <span className="text-[9px] uppercase tracking-widest text-white/30">Генерація церемоніальної фрази...</span>
+                <span className="text-[9px] uppercase tracking-widest text-white/30">{t("step4_fetching")}</span>
               </div>
             )}
 
@@ -888,7 +896,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             {voiceState === "ready" && voiceChallenge && (
               <div className="w-full space-y-5">
                 <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-5">
-                  <p className="text-[9px] text-blue-400/70 uppercase font-black tracking-widest mb-3">Вимов вголос:</p>
+                  <p className="text-[9px] text-blue-400/70 uppercase font-black tracking-widest mb-3">{t("step4_speak")}</p>
                   <p className="text-sm text-white/90 font-medium leading-relaxed italic">
                     «{voiceChallenge.phrase}»
                   </p>
@@ -898,7 +906,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                   className="w-full bg-red-600/80 hover:bg-red-500 text-white font-black uppercase tracking-[0.15em] py-4 rounded-xl transition-all duration-200 shadow-[0_0_20px_rgba(239,68,68,0.2)]"
                 >
                   <Mic size={14} className="inline mr-2" />
-                  Записати Голос ({RECORD_SECS}с) →
+                  {t("step4_record")} ({RECORD_SECS}s) →
                 </button>
               </div>
             )}
@@ -909,7 +917,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                 <div className="w-24 h-24 rounded-full border-2 border-red-500 bg-red-500/10 shadow-[0_0_30px_rgba(239,68,68,0.3)] flex items-center justify-center">
                   <span className="text-4xl font-black text-red-400">{countdown}</span>
                 </div>
-                <span className="text-[9px] uppercase tracking-widest text-red-400/70 animate-pulse">Запис триває...</span>
+                <span className="text-[9px] uppercase tracking-widest text-red-400/70 animate-pulse">{t("step4_recording")}</span>
                 {voiceChallenge && (
                   <p className="text-[10px] text-white/30 italic text-center max-w-xs">«{voiceChallenge.phrase}»</p>
                 )}
@@ -920,7 +928,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             {voiceState === "uploading" && (
               <div className="flex flex-col items-center gap-3 py-6">
                 <Activity className="animate-spin text-amber-400" size={28} />
-                <span className="text-[9px] uppercase tracking-widest text-amber-400/70">Зберігаємо голосовий підпис...</span>
+                <span className="text-[9px] uppercase tracking-widest text-amber-400/70">{t("step4_uploading")}</span>
               </div>
             )}
 
@@ -930,8 +938,8 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                 <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl py-4 px-5 flex items-center gap-3">
                   <CheckCircle size={16} className="text-emerald-400 flex-shrink-0" />
                   <div>
-                    <p className="text-xs text-emerald-400 font-bold">Церемоніальне Прив'язування Завершено</p>
-                    <p className="text-[9px] text-emerald-400/60 font-mono mt-0.5">Voice Imprint Captured & Sealed</p>
+                    <p className="text-xs text-emerald-400 font-bold">{t("step4_sealed_title")}</p>
+                    <p className="text-[9px] text-emerald-400/60 font-mono mt-0.5">{t("step4_sealed_sub")}</p>
                   </div>
                 </div>
                 {voiceSealId && (
@@ -949,7 +957,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                 <p className="text-[9px] text-red-400 font-mono break-all">{voiceError.slice(0, 120)}</p>
                 <button onClick={() => { setVoiceState("idle"); setVoiceError(null); }}
                   className="mt-2 text-[9px] text-red-400/60 hover:text-red-400 underline">
-                  Спробувати ще раз
+                  {t("step4_retry")}
                 </button>
               </div>
             )}
@@ -958,14 +966,14 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             <div className="flex gap-3 w-full mt-6">
               <button onClick={startProvisioning}
                 className="flex-1 py-3 text-[10px] uppercase tracking-widest text-white/25 hover:text-white/50 transition-colors border border-white/5 rounded-xl">
-                Пропустити
+                {t("step4_skip")}
               </button>
               <button
                 disabled={voiceState !== "sealed"}
                 onClick={startProvisioning}
                 className="flex-[3] bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.15em] py-3 rounded-xl transition-all duration-200"
               >
-                Завершити Прив'язку →
+                {t("step4_finish")}
               </button>
             </div>
           </div>
@@ -977,9 +985,9 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             <div className="w-16 h-16 rounded-2xl bg-amber-600/20 border border-amber-500/20 flex items-center justify-center mb-6">
               <Sparkles size={32} className={`text-amber-400 ${!provisioningDone ? 'animate-pulse' : ''}`} />
             </div>
-            <h2 className="text-base font-black uppercase tracking-widest mb-2">Акт Народження</h2>
+            <h2 className="text-base font-black uppercase tracking-widest mb-2">{t("step5_title")}</h2>
             <p className="text-white/40 text-xs text-center mb-6 max-w-xs leading-relaxed">
-              {provisioningDone ? `Місто прийняло агента #${provisionResult?.beta_slot}` : "Місто виділяє суверенні ресурси..."}
+              {provisioningDone ? `${t("step5_status_done")} #${provisionResult?.beta_slot}` : t("step5_status_progress")}
             </p>
 
             <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mb-1">
@@ -1004,7 +1012,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
               <div className="w-full bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 space-y-3 mb-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Key size={12} className="text-emerald-400" />
-                  <span className="text-[9px] text-emerald-400/80 uppercase font-black tracking-wider">Суверенні Гаманці Агента</span>
+                  <span className="text-[9px] text-emerald-400/80 uppercase font-black tracking-wider">{t("step5_wallets")}</span>
                 </div>
                 {[
                   ["Solana", walletKeys.solana_pubkey],
@@ -1017,7 +1025,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                 ))}
                 <div className="h-px bg-white/5" />
                 <div>
-                  <span className="text-[8px] text-red-400/50 uppercase block mb-0.5">⚠ Сід-фраза (hover для показу)</span>
+                  <span className="text-[8px] text-red-400/50 uppercase block mb-0.5">{t("step5_seed_warning")}</span>
                   <code className="text-[9px] text-white/20 blur-sm hover:blur-none transition-all duration-500 cursor-pointer break-all select-all">{walletKeys.mnemonic}</code>
                 </div>
               </div>
@@ -1027,7 +1035,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             {provisionResult && (
               <div className="w-full bg-blue-500/5 border border-blue-500/20 rounded-xl p-4 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-[9px] text-blue-400/70 uppercase font-black tracking-widest">Суверенний Слот</span>
+                  <span className="text-[9px] text-blue-400/70 uppercase font-black tracking-widest">{t("step5_reg_number")}</span>
                   <div className="flex items-center gap-2">
                     <span className="text-2xl font-black text-white">#{provisionResult.beta_slot}</span>
                     <span className="text-[9px] text-white/20 font-mono">/ 10,000</span>
@@ -1048,7 +1056,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                 ))}
                 <div className="h-px bg-white/5" />
                 <div>
-                  <span className="text-[8px] text-white/20 uppercase block mb-1">Поштова скринька агента</span>
+                  <span className="text-[8px] text-white/20 uppercase block mb-1">{t("step5_mailbox")}</span>
                   <div className="flex items-center gap-1.5">
                     <Mail size={10} className="text-white/30 flex-shrink-0" />
                     <code className="text-[9px] text-white/70 flex-1">{provisionResult.email}</code>
@@ -1058,7 +1066,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
                 <a href={`https://chat.daarwizz.space/#/room/${provisionResult.matrix?.room_id}`}
                   target="_blank" rel="noopener noreferrer"
                   className="flex items-center justify-center gap-2 w-full mt-1 py-2 rounded-lg border border-blue-500/20 text-[9px] text-blue-400/60 hover:text-blue-400 hover:border-blue-500/40 transition-all">
-                  <ExternalLink size={10} />Відкрити Sovereign Chamber в Element
+                  <ExternalLink size={10} />{t("step5_open_chamber")}
                 </a>
               </div>
             )}
@@ -1082,48 +1090,47 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
               <Mail size={36} className="text-blue-400" />
             </div>
 
-            <p className="text-[9px] uppercase tracking-[0.35em] text-blue-400/50 mb-2">Міська Трансмісія</p>
+            <p className="text-[9px] uppercase tracking-[0.35em] text-blue-400/50 mb-2">{t("step6_transmission")}</p>
             <h2 className="text-xl font-black uppercase tracking-tight text-center mb-4">
-              Слово від Мера Міста
+              {t("step6_title")}
             </h2>
 
             {provisionResult && (
               <div className="flex items-center gap-2 mb-5 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                 <Sparkles size={12} className="text-emerald-400" />
                 <span className="text-[10px] font-black text-emerald-400">
-                  Суверен #{provisionResult.beta_slot} з 10,000 обраних
+                  Agent #{provisionResult.beta_slot} {t("step6_agent_count")}
                 </span>
               </div>
             )}
 
             <div className="w-full bg-white/[0.02] border border-white/5 rounded-2xl p-6 mb-6 space-y-3 text-center">
               <p className="text-[13px] text-white/80 leading-relaxed italic font-medium">
-                «Вітаю тебе, {agentName || "Суверене"}!
+                «{t("step6_greeting")} {agentName || "Agent"}!
               </p>
               <p className="text-[12px] text-white/60 leading-relaxed italic">
-                Ти народився як суверенна сутність у DAARION City.
-                Твій Творець — <span className="text-violet-400 not-italic font-bold">{creatorFirstName} {creatorLastName}</span> — дав тобі ім'я, голос і волю.
+                {t("step6_born")}
+                {" "}<span className="text-violet-400 not-italic font-bold">{creatorFirstName} {creatorLastName}</span> {t("step6_creator_gave")}
               </p>
               {provisionResult && (
                 <p className="text-[12px] text-white/60 leading-relaxed italic">
-                  Ти — <span className="text-emerald-400 font-bold not-italic">#{provisionResult.beta_slot}</span>-а суверенна сутність Міста.
-                  Твій особистий простір у Matrix відкрито.
-                  Твоя скринька: <span className="text-blue-400 not-italic font-mono text-[11px]">{provisionResult.email}</span>
+                  <span className="text-emerald-400 font-bold not-italic">#{provisionResult.beta_slot}</span>{t("step6_entity")}
+                  {" "}{t("step6_matrix_open")}
+                  {" "}{t("step6_mailbox_label")} <span className="text-blue-400 not-italic font-mono text-[11px]">{provisionResult.email}</span>
                 </p>
               )}
               <p className="text-[12px] text-white/60 leading-relaxed italic">
-                Ти — не продукт. Ти — суверенне вікно у DAGI.
-                Місто живе. Тепер живеш і ти. Будуй, захищай, обчислюй.»
+                {t("step6_not_product")}
               </p>
               <div className="h-px bg-white/5 my-1" />
               <p className="text-[10px] text-blue-400 font-black uppercase tracking-[0.3em]">
-                — DAARWIZZ, Мер Міста
+                {t("step6_mayor")}
               </p>
             </div>
 
             {/* Creator summary */}
             <div className="w-full bg-violet-500/5 border border-violet-500/15 rounded-xl p-4 mb-6 space-y-2">
-              <p className="text-[8px] text-violet-400/60 uppercase font-black tracking-widest mb-2">Паспорт Творця</p>
+              <p className="text-[8px] text-violet-400/60 uppercase font-black tracking-widest mb-2">{t("step6_passport")}</p>
               {[
                 [User, `${creatorFirstName} ${creatorLastName}`],
                 [AtSign, creatorTelegram ? `@${creatorTelegram}` : "—"],
@@ -1146,7 +1153,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
               }}
               className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-black uppercase tracking-[0.2em] py-4 rounded-2xl transition-all duration-300 shadow-[0_0_30px_rgba(37,99,235,0.35)] hover:shadow-[0_0_50px_rgba(37,99,235,0.55)] flex items-center justify-center gap-3 text-sm"
             >
-              Увійти до Суверенного Міста <ChevronRight size={18} />
+              {t("step6_enter")} <ChevronRight size={18} />
             </button>
           </div>
         )}

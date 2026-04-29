@@ -1,6 +1,6 @@
 use std::path::{PathBuf, Path};
 use tauri::{AppHandle, Manager, Emitter};
-use crate::models::registry::ModelRegistryEntry;
+use crate::models::registry::CandidateModel;
 
 pub struct ArtifactStore;
 
@@ -33,16 +33,16 @@ impl ArtifactStore {
         Ok(models)
     }
 
-    pub async fn download_model(app: AppHandle, entry: ModelRegistryEntry) -> Result<(), String> {
+    pub async fn download_model(app: AppHandle, entry: CandidateModel) -> Result<(), String> {
         let dir = Self::get_models_dir(&app)?;
-        let file_path = dir.join(format!("{}.gguf", entry.model_id));
+        let file_path = dir.join(format!("{}.gguf", entry.id));
 
         // M1: Simulate download progress
-        println!("Simulating download of {} to {:?}", entry.model_id, file_path);
+        println!("Simulating download of {} to {:?}", entry.id, file_path);
         
         for i in (0..=100).step_by(10) {
             app.emit("model-download-progress", serde_json::json!({
-                "model_id": entry.model_id,
+                "model_id": entry.id,
                 "progress": i
             })).unwrap();
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -52,7 +52,7 @@ impl ArtifactStore {
         std::fs::write(&file_path, "DUMMY MODEL DATA")
             .map_err(|e| e.to_string())?;
 
-        app.emit("model-download-finished", &entry.model_id).unwrap();
+        app.emit("model-download-finished", &entry.id).unwrap();
         Ok(())
     }
 }

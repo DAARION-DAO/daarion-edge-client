@@ -145,11 +145,13 @@ impl RelayClient for MockRelayClient {
 
     async fn send_enrollment(&mut self, req: EnrollmentRequest) -> Result<EnrollmentDecision, String> {
         println!("[MockRelay] -> {:?}", req);
+        // [GUARDRAIL 3]: Mock path must not produce backend-recognized or Active semantics.
+        // Returns provisional/non-authoritative state with no credential.
         Ok(EnrollmentDecision {
             event_type: "enrollment_dec".into(),
             payload: EnrollmentDecPayload {
-                status: "approved".into(),
-                token: Some("jwt-mock-123".into()),
+                status: "provisional".into(),
+                token: None,
             },
         })
     }
@@ -160,9 +162,10 @@ impl RelayClient for MockRelayClient {
             event_type: "task_assignment".into(),
             payload: TaskPayload {
                 task_id: "tsk-mock-001".into(),
+                lease_id: "ls-mock-001".into(),
                 lease_expires_at: 9999999999,
                 work_type: "ping_math".into(),
-                args: TaskArgs { value: 2 },
+                args: TaskArgs { value: Some(2), text: None },
             }
         })
     }
@@ -203,9 +206,14 @@ impl WsRelayClient {
 #[async_trait]
 impl RelayClient for WsRelayClient {
     async fn connect(&mut self) -> Result<(), String> {
-        let url = Url::parse(&self.endpoint).map_err(|e| e.to_string())?;
+        let url = Url::parse(&self.endpoint).map_err(|e: url::ParseError| e.to_string())?;
         println!("[WsRelayClient] Dialing Dev WS Relay at {}...", url);
-        let (ws_stream, _) = connect_async(url).await.map_err(|e| format!("WS Connect Failed: {}", e))?;
+        
+        let connect_future = connect_async(url);
+        let (ws_stream, _) = tokio::time::timeout(std::time::Duration::from_secs(5), connect_future)
+            .await
+            .map_err(|_| "WS Connect Timeout".to_string())?
+            .map_err(|e: tokio_tungstenite::tungstenite::Error| format!("WS Connect Failed: {}", e))?;
         
         // Setup channels to preserve stream state via Actor-like bridging
         let (tx_in, mut rx_in) = tokio::sync::mpsc::channel::<String>(10);
@@ -245,10 +253,14 @@ impl RelayClient for WsRelayClient {
 
         if let Some(rx_mutex) = &self.rx {
             let mut rx = rx_mutex.lock().await;
-            if let Some(text) = rx.recv().await {
-                println!("[WsRelayClient] RX: {}", text);
-                let ack: WorkerHelloAck = serde_json::from_str(&text).map_err(|e| format!("Decode err: {}", e))?;
-                return Ok(ack);
+            match tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv()).await {
+                Ok(Some(text)) => {
+                    println!("[WsRelayClient] RX: {}", text);
+                    let ack: WorkerHelloAck = serde_json::from_str(&text).map_err(|e| format!("Decode err: {}", e))?;
+                    return Ok(ack);
+                }
+                Ok(None) => return Err("Session dropped".into()),
+                Err(_) => return Err("Timeout waiting for hello ack".into()),
             }
         }
         Err("No response".into())
@@ -266,10 +278,14 @@ impl RelayClient for WsRelayClient {
 
         if let Some(rx_mutex) = &self.rx {
             let mut rx = rx_mutex.lock().await;
-            if let Some(text) = rx.recv().await {
-                println!("[WsRelayClient] RX: {}", text);
-                let dec: EnrollmentDecision = serde_json::from_str(&text).map_err(|e| format!("Decode err: {}", e))?;
-                return Ok(dec);
+            match tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv()).await {
+                Ok(Some(text)) => {
+                    println!("[WsRelayClient] RX: {}", text);
+                    let dec: EnrollmentDecision = serde_json::from_str(&text).map_err(|e| format!("Decode err: {}", e))?;
+                    return Ok(dec);
+                }
+                Ok(None) => return Err("Session dropped".into()),
+                Err(_) => return Err("Timeout waiting for enrollment decision".into()),
             }
         }
         Err("No response".into())
@@ -302,10 +318,14 @@ impl RelayClient for WsRelayClient {
     async fn wait_for_verify(&mut self) -> Result<VerifyDecision, String> {
         if let Some(rx_mutex) = &self.rx {
             let mut rx = rx_mutex.lock().await;
-            if let Some(text) = rx.recv().await {
-                println!("[WsRelayClient] RX (Verify): {}", text);
-                let dec: VerifyDecision = serde_json::from_str(&text).map_err(|e| format!("Decode err: {}", e))?;
-                return Ok(dec);
+            match tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv()).await {
+                Ok(Some(text)) => {
+                    println!("[WsRelayClient] RX (Verify): {}", text);
+                    let dec: VerifyDecision = serde_json::from_str(&text).map_err(|e| format!("Decode err: {}", e))?;
+                    return Ok(dec);
+                }
+                Ok(None) => return Err("Session dropped".into()),
+                Err(_) => return Err("Timeout waiting for verify decision".into()),
             }
         }
         Err("Session dropped while waiting for verification".into())

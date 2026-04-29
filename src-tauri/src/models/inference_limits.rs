@@ -18,9 +18,10 @@ impl Default for InferenceLimits {
 }
 
 impl InferenceLimits {
-    pub fn validate_prompt(&self, prompt: &str) -> Result<(), String> {
-        if prompt.len() > self.max_prompt_length {
-            return Err(format!("Prompt exceeds maximum length of {}", self.max_prompt_length));
+    pub fn validate_chat(&self, messages: &[crate::models::inference_session::ChatMessage]) -> Result<(), String> {
+        let total_len: usize = messages.iter().map(|m| m.content.len()).sum();
+        if total_len > self.max_prompt_length {
+            return Err(format!("Chat history exceeds maximum length of {}", self.max_prompt_length));
         }
         Ok(())
     }

@@ -2,8 +2,7 @@
 /// Handles: Thin client communication with Genesis backend
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
-
-const GENESIS_API_BASE: &str = "https://api.daarion.city";
+use crate::config::get_config;
 const BETA_MAX_CREATORS: i64 = 10_000;
 
 // ─── Data structures ──────────────────────────────────────────────
@@ -41,7 +40,8 @@ pub async fn check_beta_slots() -> Result<BetaStatus, String> {
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
-    let url = format!("{}/genesis/beta-status", GENESIS_API_BASE);
+    let config = get_config();
+    let url = format!("{}/genesis/beta-status", config.backend_url);
 
     match client.get(&url).send().await {
         Ok(resp) if resp.status().is_success() => {
@@ -99,9 +99,10 @@ pub async fn provision_sovereign_genesis(
         .build()
         .map_err(|e| format!("HTTP client: {}", e))?;
 
-    // 3. POST to Genesis API (primary: api.daarion.city)
+    let config = get_config();
+    // 3. POST to Genesis API
     let resp = match api_client
-        .post(format!("{}/genesis/register", GENESIS_API_BASE))
+        .post(format!("{}/genesis/register", config.backend_url))
         .json(&registration_payload)
         .send()
         .await
@@ -132,4 +133,34 @@ pub async fn provision_sovereign_genesis(
         email,
         welcome_sent: true,
     })
+}
+
+// ─── Creator Profile Registration ─────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CreatorProfileRequest {
+    pub first_name: String,
+    pub last_name: String,
+    pub telegram_handle: String,
+    pub personal_email: String,
+    pub evm_address: String,
+    pub agent_name: String,
+    pub agent_slot: i64,
+}
+
+#[tauri::command]
+pub async fn register_creator_profile(profile: CreatorProfileRequest) -> Result<(), String> {
+    let api_client = Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("HTTP client: {}", e))?;
+
+    let config = get_config();
+    let url = format!("{}/genesis/creator", config.backend_url);
+
+    match api_client.post(&url).json(&profile).send().await {
+        Ok(resp) if resp.status().is_success() => Ok(()),
+        Ok(resp) => Err(format!("Backend rejected creator profile: {}", resp.status())),
+        Err(e) => Err(format!("Server unreachable: {}", e)),
+    }
 }

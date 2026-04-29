@@ -37,10 +37,11 @@ impl LocalInference {
 
         // 2. Validation
         let limits = InferenceLimits::default();
-        limits.validate_prompt(&request.prompt)?;
+        limits.validate_chat(&request.messages)?;
         
-        let _model_entry = ModelRegistry::get_supported_models().into_iter()
-            .find(|m| m.model_id == model_id)
+        let payload = ModelRegistry::fetch_registry(app.clone()).await?;
+        let _model_entry = payload.models.into_iter()
+            .find(|m| m.id == model_id)
             .ok_or_else(|| format!("Model {} not found in registry", model_id))?;
 
         // 3. Arbitration
@@ -94,34 +95,78 @@ impl LocalInference {
             "state": "Running"
         })).unwrap();
 
-        // Simulated inference logic
-        println!("LocalInference: Executing chat prompt for {} locally...", model_id);
-        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+        let mut final_messages = vec![
+            crate::models::inference_session::ChatMessage {
+                role: "system".to_string(),
+                content: "You are a local DAARION Edge agent. You operate directly on the user's device providing private, local assistance. You do not pretend to be a remote network sovereign agent spanning multiple nodes. You provide extremely helpful, intelligent, local, and private support.".to_string(),
+            }
+        ];
         
-        let output_text = format!(
-            "Local execution on {}. Prompt: \"{}\"", 
-            model_id, 
-            request.prompt
-        );
+        for msg in request.messages {
+            if msg.role != "system" {
+                final_messages.push(msg);
+            }
+        }
+
+        #[derive(serde::Serialize)]
+        struct OllamaChatRequest {
+            model: String,
+            messages: Vec<crate::models::inference_session::ChatMessage>,
+            stream: bool,
+            keep_alive: String,
+        }
+
+        let chat_req = OllamaChatRequest {
+            model: model_id.clone(),
+            messages: final_messages,
+            stream: true,
+            keep_alive: "15m".to_string(),
+        };
+
+        let mut response = reqwest::Client::new()
+            .post("http://localhost:11434/api/chat")
+            .json(&chat_req)
+            .send()
+            .await
+            .map_err(|e| format!("Ollama request failed: {}", e))?;
+
+        let mut full_output = String::new();
+        while let Some(chunk) = response.chunk().await.map_err(|e| format!("Chunk error: {}", e))? {
+            let text = String::from_utf8_lossy(&chunk);
+            for line in text.lines() {
+                if line.trim().is_empty() { continue; }
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line) {
+                    if let Some(msg) = parsed.get("message").and_then(|m| m.as_object()) {
+                        if let Some(c) = msg.get("content").and_then(|c| c.as_str()) {
+                            full_output.push_str(c);
+                            let _ = app.emit("inference-token-stream", serde_json::json!({
+                                "request_id": &request_id,
+                                "token": c
+                            }));
+                        }
+                    }
+                }
+            }
+        }
 
         let latency_ms = start_time.elapsed().as_millis() as u64;
 
-        let response = LocalInferenceResponse {
+        let res = LocalInferenceResponse {
             request_id,
             status: "Done".to_string(),
-            model_id: model_id.clone(),
-            runtime: "llama.cpp (Local)".to_string(),
+            model_id,
+            runtime: "llama.cpp (Local) via /api/chat".to_string(),
             latency_ms,
-            output_text,
+            output_text: full_output,
         };
 
         app.emit("inference-session-update", serde_json::json!({
-            "request_id": &response.request_id,
+            "request_id": &res.request_id,
             "state": "Done",
-            "result": &response
+            "result": &res
         })).unwrap();
 
-        Ok(response)
+        Ok(res)
     }
 
     async fn handle_remote_fallback(

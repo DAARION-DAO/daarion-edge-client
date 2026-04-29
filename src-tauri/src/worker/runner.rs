@@ -15,14 +15,31 @@ struct PayloadOutput {
     error: Option<String>,
 }
 
+fn build_docker_cmd(args: &[&str]) -> Command {
+    let os = env::consts::OS;
+    if os == "windows" {
+        let mut cmd = Command::new("wsl");
+        cmd.arg("-e").arg("docker");
+        for arg in args {
+            cmd.arg(arg);
+        }
+        cmd
+    } else {
+        let mut cmd = Command::new("docker");
+        for arg in args {
+            cmd.arg(arg);
+        }
+        cmd
+    }
+}
+
 pub async fn execute_ping_math(value: u64) -> Result<u64, String> {
     let input = serde_json::to_string(&PayloadInput { value }).map_err(|e| e.to_string())?;
     
     // Sprint 2B: Physical Colima execution boundary
-    // We execute via the Colima-backed Docker socket, explicitly passing the python code
+    // We execute via Colima (macOS) or WSL2 (Windows), explicitly passing the python code
     // via `include_str!` to avoid volume mount complexity, and disabling network.
-    let mut cmd = Command::new("docker");
-    cmd.args([
+    let mut cmd = build_docker_cmd(&[
         "run", 
         "--rm", // Clean up container after run
         "-i", // Interactive/stdin support if needed by docker
@@ -32,34 +49,35 @@ pub async fn execute_ping_math(value: u64) -> Result<u64, String> {
         "python", "-c", 
         include_str!("../../payloads/ping_math.py"), 
         &input
-    ])
-       .env_clear() 
+    ]);
+    
+    cmd.env_clear() 
        .kill_on_drop(true)
        .stdout(Stdio::piped())
        .stderr(Stdio::piped());
 
-    let child = cmd.spawn().map_err(|e| format!("Colima Envelope Spawn failed (check if Colima running): {}", e))?;
+    let child = cmd.spawn().map_err(|e| format!("Envelope Spawn failed (check if Colima/WSL2 running): {}", e))?;
     
-    // Allow up to 10 seconds for Colima container cold start and compute
+    // Allow up to 10 seconds for container cold start and compute
     let output = match timeout(Duration::from_secs(10), child.wait_with_output()).await {
         Ok(Ok(out)) => out,
-        Ok(Err(e)) => return Err(format!("Colima Wait failed: {}", e)),
-        Err(_) => return Err("Colima execution envelope timeout".into()),
+        Ok(Err(e)) => return Err(format!("Wait failed: {}", e)),
+        Err(_) => return Err("Execution envelope timeout".into()),
     };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Colima Envelope failed closed. Stderr: {}", stderr));
+        return Err(format!("Envelope failed closed. Stderr: {}", stderr));
     }
 
     let stdout_str = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
-    let res: PayloadOutput = serde_json::from_str(&stdout_str).map_err(|e| format!("Invalid Colima JSON: {}", e))?;
+    let res: PayloadOutput = serde_json::from_str(&stdout_str).map_err(|e| format!("Invalid JSON: {}", e))?;
     
     if let Some(err) = res.error {
-        return Err(format!("Colima logic error: {}", err));
+        return Err(format!("Logic error: {}", err));
     }
     
-    res.output.ok_or_else(|| "No output produced by Colima envelope".into())
+    res.output.ok_or_else(|| "No output produced by envelope".into())
 }
 
 #[derive(Serialize)]
@@ -76,8 +94,7 @@ struct HashPayloadOutput {
 pub async fn execute_text_hash(text: String) -> Result<String, String> {
     let input = serde_json::to_string(&HashPayloadInput { text }).map_err(|e| e.to_string())?;
     
-    let mut cmd = Command::new("docker");
-    cmd.args([
+    let mut cmd = build_docker_cmd(&[
         "run", 
         "--rm", 
         "-i", 
@@ -86,31 +103,32 @@ pub async fn execute_text_hash(text: String) -> Result<String, String> {
         "python", "-c", 
         include_str!("../../payloads/text_hash.py"), 
         &input
-    ])
-       .env_clear() 
+    ]);
+
+    cmd.env_clear() 
        .kill_on_drop(true)
        .stdout(Stdio::piped())
        .stderr(Stdio::piped());
 
-    let child = cmd.spawn().map_err(|e| format!("Colima Envelope Spawn failed: {}", e))?;
+    let child = cmd.spawn().map_err(|e| format!("Envelope Spawn failed: {}", e))?;
     
     let output = match timeout(Duration::from_secs(10), child.wait_with_output()).await {
         Ok(Ok(out)) => out,
-        Ok(Err(e)) => return Err(format!("Colima Wait failed: {}", e)),
-        Err(_) => return Err("Colima execution envelope timeout".into()),
+        Ok(Err(e)) => return Err(format!("Wait failed: {}", e)),
+        Err(_) => return Err("Execution envelope timeout".into()),
     };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Colima Envelope failed closed. Stderr: {}", stderr));
+        return Err(format!("Envelope failed closed. Stderr: {}", stderr));
     }
 
     let stdout_str = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
-    let res: HashPayloadOutput = serde_json::from_str(&stdout_str).map_err(|e| format!("Invalid Colima JSON: {}", e))?;
+    let res: HashPayloadOutput = serde_json::from_str(&stdout_str).map_err(|e| format!("Invalid JSON: {}", e))?;
     
     if let Some(err) = res.error {
-        return Err(format!("Colima logic error: {}", err));
+        return Err(format!("Logic error: {}", err));
     }
     
-    res.output.ok_or_else(|| "No output produced by Colima envelope".into())
+    res.output.ok_or_else(|| "No output produced by envelope".into())
 }

@@ -1,4 +1,5 @@
 pub mod registry;
+pub mod ollama;
 pub mod artifact_store;
 pub mod verifier;
 pub mod runtime_loader;
@@ -28,7 +29,7 @@ pub mod co_download;
 pub mod co_download_intent;
 
 use tauri::{AppHandle, command, State};
-use crate::models::registry::{ModelRegistry, ModelRegistryEntry};
+use crate::models::registry::{ModelRegistry, CandidateModel, RegistryPayload};
 use crate::models::artifact_store::ArtifactStore;
 use crate::models::residency_score::{ModelResidencyStats, ScoringEngine};
 use crate::models::eviction_policy::EvictionPolicy;
@@ -38,18 +39,18 @@ use crate::models::model_gravity::{ModelGravity, ModelPlacementRecommendation};
 use crate::models::gravity_score::ModelGravitySignal;
 
 #[command]
-pub async fn get_supported_models() -> Result<Vec<ModelRegistryEntry>, String> {
-    Ok(ModelRegistry::get_supported_models())
+pub async fn sync_registry(app: AppHandle) -> Result<RegistryPayload, String> {
+    ModelRegistry::fetch_registry(app).await
 }
 
-#[command]
-pub async fn get_local_models(app: AppHandle) -> Result<Vec<String>, String> {
-    ArtifactStore::list_local_models(&app).await
-}
+pub use crate::models::ollama::*;
+
+
 
 #[command]
-pub async fn download_model(app: AppHandle, entry: ModelRegistryEntry) -> Result<(), String> {
-    ArtifactStore::download_model(app, entry).await
+pub async fn download_model(app: AppHandle, entry: CandidateModel) -> Result<(), String> {
+    // ArtifactStore::download_model(app, entry).await
+    Err("Not implemented yet".to_string())
 }
 
 #[command]

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Shield, Activity, XCircle, Zap, Terminal, Globe, Monitor, MessageSquare, LayoutDashboard, Cuboid, Sparkles } from "lucide-react";
+import { Shield, Activity, XCircle, Zap, Terminal, Globe, Monitor, MessageSquare, LayoutDashboard, Cuboid, Sparkles, Clock, CheckCircle, AlertTriangle, RefreshCw } from "lucide-react";
 import { MessagingPanel } from "./components/MessagingPanel";
 import { EdgeActivation } from "./components/EdgeActivation";
 import { LocalInferencePanel } from "./components/LocalInferencePanel";
@@ -18,7 +18,13 @@ interface EnrollmentState {
   node_id: string | null;
   credential_scope: string | null;
   environment: string | null;
+  status: string | null;
   heartbeat_interval_sec: number;
+  // Registry fields (Gate 1A/1B)
+  trust_tier: string | null;
+  registry_mode: boolean;
+  last_enrollment_error: string | null;
+  // Legacy trust chain fields (preserved, unused in registry mode)
   csr_generated: boolean;
   csr_submitted: boolean;
   certificate_issued: boolean;
@@ -34,6 +40,9 @@ interface HeartbeatStatus {
   last_attempt_at: string | null;
   active: boolean;
   consecutive_failures: number;
+  last_node_id_prefix: string | null;
+  last_task_count: number;
+  revoked: boolean;
 }
 
 interface CapabilitySummary {
@@ -99,7 +108,116 @@ function App() {
     return (
       <div className="flex items-center justify-center h-screen bg-[#050505] text-white font-sans">
         <Activity className="animate-spin mr-3 text-blue-500" size={24} />
-        <span className="text-white/40 tracking-[0.3em] uppercase text-[10px] font-bold">Establishing Secure Node Space...</span>
+        <span className="text-white/40 tracking-[0.3em] uppercase text-[10px] font-bold">Initializing DAARION Edge...</span>
+      </div>
+    );
+  }
+
+  // Registry lifecycle gate:
+  // - Not initialized → GenesisWizard (identity + onboarding)
+  // - Initialized but pending (node_id exists, enrolled=false, status="pending") → Pending Approval screen
+  // - Enrolled (status="active") → Main dashboard
+  const isPending = idStatus?.initialized && enrollment?.node_id && !enrollment?.enrolled;
+  const isRevoked = heartbeat?.revoked;
+
+  if (isRevoked) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-[#050505] text-white font-sans gap-4 p-8">
+        <div className="w-16 h-16 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center">
+          <AlertTriangle size={28} className="text-red-400" />
+        </div>
+        <h1 className="text-lg font-black uppercase tracking-widest text-red-400">Node Revoked</h1>
+        <p className="text-white/40 text-xs text-center max-w-sm leading-relaxed">
+          This device has been revoked by a SOFIIA operator. Contact the network administrator to restore access.
+        </p>
+        <div className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl">
+          <span className="text-[9px] font-mono text-white/30">node: {enrollment?.node_id?.slice(0, 12)}...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (isPending) {
+    const hasError = enrollment?.last_enrollment_error;
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-[#050505] text-white font-sans gap-6 p-8">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-amber-900/20 blur-[120px] animate-pulse" />
+        </div>
+        <div className="z-10 flex flex-col items-center gap-6 max-w-sm w-full">
+          <div className="w-20 h-20 rounded-full bg-amber-500/10 border border-amber-500/25 flex items-center justify-center shadow-[0_0_40px_rgba(251,191,36,0.15)]">
+            <Clock size={32} className="text-amber-400 animate-pulse" />
+          </div>
+          <div className="text-center">
+            <p className="text-[9px] uppercase tracking-[0.4em] text-amber-400/50 mb-2">SOFIIA Worker Registry</p>
+            <h1 className="text-2xl font-black tracking-tight text-white mb-2">Pending Approval</h1>
+            <p className="text-white/40 text-xs leading-relaxed">
+              Your device has been registered and is awaiting operator approval in the SOFIIA Console.
+              Heartbeat is active — the operator can see your node.
+            </p>
+          </div>
+
+          {/* Node info */}
+          <div className="w-full bg-white/[0.03] border border-white/5 rounded-2xl p-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-[9px] text-white/30 uppercase font-black tracking-wider">Node ID</span>
+              <span className="text-[10px] font-mono text-white/50">{enrollment?.node_id?.slice(0, 16)}...</span>
+            </div>
+            <div className="h-px bg-white/5" />
+            <div className="flex justify-between items-center">
+              <span className="text-[9px] text-white/30 uppercase font-black tracking-wider">Trust Tier</span>
+              <span className="text-[10px] font-mono text-amber-400/70">{enrollment?.trust_tier || "low_trust_beta"}</span>
+            </div>
+            <div className="h-px bg-white/5" />
+            <div className="flex justify-between items-center">
+              <span className="text-[9px] text-white/30 uppercase font-black tracking-wider">Registry</span>
+              <div className="flex items-center gap-1.5">
+                <div className={`w-1.5 h-1.5 rounded-full ${heartbeat?.active ? 'bg-emerald-500 animate-pulse' : 'bg-red-500/40'}`} />
+                <span className="text-[10px] text-white/50">{heartbeat?.active ? 'Heartbeat Active' : 'Heartbeat Halted'}</span>
+              </div>
+            </div>
+            <div className="h-px bg-white/5" />
+            <div className="flex justify-between items-center">
+              <span className="text-[9px] text-white/30 uppercase font-black tracking-wider">Environment</span>
+              <span className="text-[10px] font-mono text-white/40">{enrollment?.environment || 'beta'}</span>
+            </div>
+          </div>
+
+          {/* Error state */}
+          {hasError && (
+            <div className="w-full bg-red-500/5 border border-red-500/20 rounded-xl p-3 flex items-start gap-2">
+              <AlertTriangle size={12} className="text-red-400 flex-shrink-0 mt-0.5" />
+              <p className="text-[10px] text-red-400/80">{hasError.slice(0, 120)}</p>
+            </div>
+          )}
+
+          {/* Instructions */}
+          <div className="w-full bg-white/[0.02] border border-white/5 rounded-xl p-4">
+            <p className="text-[9px] text-white/30 uppercase font-black tracking-widest mb-2">Next Steps</p>
+            <ol className="space-y-1.5">
+              {[
+                [CheckCircle, 'Device registered in SOFIIA registry'],
+                [CheckCircle, 'Heartbeat and capabilities synced'],
+                [Clock, 'Awaiting operator approval in SOFIIA Console'],
+                [Clock, 'App will update automatically when approved'],
+              ].map(([Icon, text], i) => (
+                <li key={i} className="flex items-center gap-2">
+                  {/* @ts-ignore */}
+                  <Icon size={10} className={i < 2 ? 'text-emerald-400 flex-shrink-0' : 'text-amber-400/50 flex-shrink-0'} />
+                  <span className="text-[10px] text-white/40">{text as string}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          <button
+            onClick={() => fetchData()}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-xl border border-white/10 text-white/40 hover:text-white/70 hover:border-white/20 text-[10px] font-bold uppercase tracking-widest transition-all"
+          >
+            <RefreshCw size={12} />
+            Check Status
+          </button>
+        </div>
       </div>
     );
   }
@@ -119,19 +237,37 @@ function App() {
             DAARION<span className="text-blue-500 font-light ml-1">EDGE</span>
           </h1>
           <div className="flex items-center gap-2 mt-1">
-            <span className="text-white/20 text-[9px] font-bold tracking-widest uppercase py-0.5 px-1.5 border border-white/5 rounded">M1 Prototype</span>
-            <span className="text-blue-500/40 text-[9px] font-bold tracking-widest uppercase">Operational</span>
+            <span className="text-white/20 text-[9px] font-bold tracking-widest uppercase py-0.5 px-1.5 border border-white/5 rounded">M1 Beta</span>
+            <span className={`text-[9px] font-bold tracking-widest uppercase ${
+              enrollment?.status?.toLowerCase() === 'active' ? 'text-emerald-500/60' :
+              enrollment?.status?.toLowerCase() === 'pending' ? 'text-amber-500/60' :
+              enrollment?.status?.toLowerCase() === 'revoked' ? 'text-red-500/60' :
+              'text-white/20'
+            }`}>
+              {enrollment?.status?.toUpperCase() || 'NOT REGISTERED'}
+            </span>
+            {enrollment?.trust_tier && (
+              <span className="text-white/15 text-[8px] font-mono px-1.5 py-0.5 border border-white/5 rounded">{enrollment.trust_tier}</span>
+            )}
           </div>
         </div>
         
-        <div className="flex gap-3">
-          <div className="glass px-4 py-2 border-white/5 flex flex-col items-end">
+        <div className="flex gap-2">
+          <div className="glass px-3 py-2 border-white/5 flex flex-col items-end">
             <span className="text-[8px] text-white/30 uppercase tracking-widest font-bold">Infrastructure</span>
-            <span className="text-[11px] font-mono text-white/70">{enrollment?.environment || 'PROVISIONING'}</span>
+            <span className="text-[10px] font-mono text-white/70">{enrollment?.environment || 'LOCAL ONLY'}</span>
           </div>
-          <div className="glass px-4 py-2 border-white/5 flex items-center gap-3">
-            <div className={`w-2 h-2 rounded-full ${heartbeat?.active ? 'bg-blue-500 shadow-[0_0_15px_#3b82f6]' : 'bg-red-500/20'}`} />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-white/50">{heartbeat?.active ? 'Connected' : 'Disconnected'}</span>
+          
+          {/* Local Runtime Activity */}
+          <div className="glass px-3 py-2 border-white/5 flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${heartbeat?.active ? 'bg-emerald-500 shadow-[0_0_10px_#10b981]' : 'bg-red-500/40'}`} />
+            <span className="text-[9px] font-bold uppercase tracking-widest text-white/50">{heartbeat?.active ? 'Runtime Active' : 'Runtime Halted'}</span>
+          </div>
+
+          {/* Network Sync Truth */}
+          <div className="glass px-3 py-2 border-white/5 flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${heartbeat?.last_success_at && heartbeat.consecutive_failures === 0 ? 'bg-blue-500 shadow-[0_0_10px_#3b82f6]' : 'bg-amber-500/50'}`} />
+            <span className="text-[9px] font-bold uppercase tracking-widest text-white/50">{heartbeat?.last_success_at && heartbeat.consecutive_failures === 0 ? 'Network Sync' : 'Provisional Sync'}</span>
           </div>
         </div>
       </header>
@@ -396,7 +532,7 @@ function App() {
         </div>
         
         <div className="text-[9px] text-white/10 italic">
-          Identity mapping: [HardwareID] → [NetworkNodeID]
+          DAARION Edge v0.1.0-beta
         </div>
       </footer>
     </div>

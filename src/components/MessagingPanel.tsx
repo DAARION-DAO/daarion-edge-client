@@ -103,7 +103,7 @@ export function MessagingPanel() {
             <MessageSquare size={16} />
           </div>
           <div>
-            <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/70">Node Control Room</h2>
+            <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/70">Control Room</h2>
             <p className="text-[9px] text-white/30 font-mono italic">{roomInfo?.room_id || "Awaiting Bootstrap"}</p>
           </div>
         </div>

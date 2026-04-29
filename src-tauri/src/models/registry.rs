@@ -1,42 +1,101 @@
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+use tauri::{AppHandle, Manager};
+use reqwest::Client;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ModelRegistryEntry {
-    pub model_id: String,
-    pub name: String,
+pub struct InstallSource {
+    pub runtime: String,
+    pub upstream_tag: String,
+    pub local_alias: String,
+    pub estimated_download_gb: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CandidateModel {
+    pub id: String,
     pub family: String,
-    pub quantization: String,
-    pub size_gb: f32,
-    pub artifact_hash: String, // SHA-256
-    pub runtime: String, // e.g., "llama.cpp"
-    pub min_ram_gb: u32,
+    pub tier: String,
+    pub role: String,
+    pub stability: String,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+    #[serde(default)]
+    pub install_sources: Vec<InstallSource>,
+    #[serde(default)]
+    pub is_recommended: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RegistryPayload {
+    pub schema_version: i32,
+    pub registry_version: String,
+    #[serde(default)]
+    pub generated_at: String,
+    #[serde(default)]
+    pub families: Vec<String>,
+    pub models: Vec<CandidateModel>,
+    #[serde(default)]
+    pub registry_sha256: String,
 }
 
 pub struct ModelRegistry;
 
 impl ModelRegistry {
-    pub fn get_supported_models() -> Vec<ModelRegistryEntry> {
-        vec![
-            ModelRegistryEntry {
-                model_id: "qwen2.5-0.5b-instruct".to_string(),
-                name: "Qwen 2.5 0.5B Instruct".to_string(),
-                family: "qwen".to_string(),
-                quantization: "Q4_K_M".to_string(),
-                size_gb: 0.4,
-                artifact_hash: "5cc7d020d888f615e98214227914757c913501a39fd64a938c5d14dfb0744fc3".to_string(), // Dummy for M1
-                runtime: "llama.cpp".to_string(),
-                min_ram_gb: 1,
-            },
-            ModelRegistryEntry {
-                model_id: "stable-embedding-v1".to_string(),
-                name: "Stable Embedding v1".to_string(),
-                family: "bert".to_string(),
-                quantization: "F16".to_string(),
-                size_gb: 0.1,
-                artifact_hash: "b0744fc35cc7d020d888f615e98214227914757c913501a39fd64a938c5d14df".to_string(), // Dummy for M1
-                runtime: "onnx".to_string(),
-                min_ram_gb: 1,
+    /// Save registry to last_known_good_registry.json
+    fn save_to_cache(app: &AppHandle, payload: &RegistryPayload) -> Result<(), String> {
+        let path = app.path().app_data_dir()
+            .map_err(|_| "Failed to get app_data_dir".to_string())?;
+        fs::create_dir_all(&path).ok();
+        let file_path = path.join("last_known_good_registry.json");
+        let content = serde_json::to_string(payload).map_err(|e| e.to_string())?;
+        fs::write(&file_path, content).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Read registry from last_known_good_registry.json
+    fn read_from_cache(app: &AppHandle) -> Result<RegistryPayload, String> {
+        let path = app.path().app_data_dir()
+            .map_err(|_| "Failed to get app_data_dir".to_string())?;
+        let file_path = path.join("last_known_good_registry.json");
+        let content = fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&content).map_err(|e| e.to_string())
+    }
+
+    /// Read bundled fallback_registry.json
+    fn read_bundled_fallback() -> Result<RegistryPayload, String> {
+        // Fallback payload backed directly into binary
+        let fallback_str = include_str!("../../../public/fallback_registry.json");
+        serde_json::from_str(fallback_str).map_err(|e| e.to_string())
+    }
+
+    pub async fn fetch_registry(app: AppHandle) -> Result<RegistryPayload, String> {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        // 1. Try Network
+        match client.get("https://api.daarion.city/models/registry").send().await {
+            Ok(resp) if resp.status().is_success() => {
+                if let Ok(payload) = resp.json::<RegistryPayload>().await {
+                    println!("[RegistrySync] Successfully fetched from Network");
+                    let _ = Self::save_to_cache(&app, &payload);
+                    return Ok(payload);
+                }
             }
-        ]
+            _ => {}
+        }
+
+        // 2. Try DB Cache (last_known_good_registry)
+        if let Ok(cached) = Self::read_from_cache(&app) {
+            println!("[RegistrySync] Loaded from Local Cache");
+            return Ok(cached);
+        }
+
+        // 3. Bundled Fallback
+        println!("[RegistrySync] Loaded from Bundled Asset (public/fallback_registry.json)");
+        Self::read_bundled_fallback()
     }
 }

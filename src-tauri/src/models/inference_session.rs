@@ -29,11 +29,16 @@ impl Default for InferenceLimits {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalInferenceRequest {
     pub request_id: String,
     pub model_id: String,
-    pub task_type: String, // e.g. "chat"
-    pub prompt: String,
+    pub messages: Vec<ChatMessage>,
     pub max_tokens: u32,
     pub temperature: f32,
     pub stream: bool,
