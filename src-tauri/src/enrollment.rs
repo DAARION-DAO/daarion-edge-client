@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use std::path::PathBuf;
 use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
 use crate::identity::load_or_create_identity;
 use crate::config::resolve_backend_url;
 use ed25519_dalek::Signer;
@@ -119,9 +120,14 @@ pub async fn enroll_node(handle: AppHandle, bootstrap_grant: String) -> Result<E
     let backend_url = resolve_backend_url();
     let capabilities = get_capabilities();
 
-    // Build canonical signature payload: node_id|public_key|invite_code
-    // This proves the caller possesses the private key for this public_key.
-    let sig_payload = format!("{}|{}|{}", identity.node_id, identity.public_key, bootstrap_grant);
+    // Build registration canonical (v1) — proves ownership of the private key
+    // for this public_key without including a local UUID in the proof.
+    // Backend Gate A verifies: "daarion.worker.register.v1|{public_key}|{invite_code}"
+    let sig_payload = format!(
+        "daarion.worker.register.v1|{}|{}",
+        identity.public_key,
+        bootstrap_grant
+    );
     let signature = sign_payload(&handle, &sig_payload).unwrap_or_else(|e| {
         println!("[enrollment] Signature failed (non-fatal for MVP): {}", e);
         "unsigned".to_string()  // Backend validates but won't reject for beta
@@ -200,11 +206,22 @@ pub async fn sync_capabilities(handle: AppHandle) -> Result<bool, String> {
     let caps = get_capabilities();
     let cap_json = capabilities_to_registry_json(&caps);
 
+    // Build capabilities canonical (v1) — includes timestamp to prevent replay.
+    // Backend Gate A verifies: "daarion.worker.capabilities.v1|{node_id}|{timestamp}"
+    let cap_timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let cap_sig_payload = format!(
+        "daarion.worker.capabilities.v1|{}|{}",
+        node_id,
+        cap_timestamp
+    );
     // Sign node_id to prove authenticity
     let signature = crate::identity::get_signing_key(&handle)
         .map(|sk| {
             use ed25519_dalek::Signer;
-            hex::encode(sk.sign(node_id.as_bytes()).to_bytes())
+            hex::encode(sk.sign(cap_sig_payload.as_bytes()).to_bytes())
         })
         .unwrap_or_else(|_| "unsigned".to_string());
 
@@ -212,6 +229,7 @@ pub async fn sync_capabilities(handle: AppHandle) -> Result<bool, String> {
         node_id: node_id.clone(),
         capabilities: cap_json,
         signature,
+        timestamp: cap_timestamp,
     };
 
     match call_capabilities(&backend_url, &req).await {
