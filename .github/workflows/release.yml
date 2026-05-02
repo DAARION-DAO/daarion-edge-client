@@ -132,40 +132,25 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "DAARION Edge Client ${{ github.ref_name }}"
           releaseBody: |
-            ## 🌌 DAARION Edge Client — Sovereign Genesis
-
-            Download and install the DAARION Edge Client to birth your first sovereign AI agent.
+            ## 🌌 DAARION Edge Client
 
             ### 📱 Downloads
-            | Platform | File | Notes |
-            |----------|------|-------|
-            | macOS (Apple Silicon) | `*.aarch64.dmg` | M1/M2/M3/M4 — Recommended |
-            | macOS (Intel) | `*.x86_64.dmg` | Intel Macs |
-            | Windows | `*-setup.exe` | Windows 10/11 |
-            | Linux | `*.AppImage` | Ubuntu 22.04+ |
-            | Android | `*.apk` | ARM64 devices |
+            | Platform | File | Status |
+            |----------|------|--------|
+            | macOS (Apple Silicon) | `*.aarch64.dmg` | ✅ Built |
+            | macOS (Intel) | `*.x86_64.dmg` | ✅ Built |
+            | Windows | `*-setup.exe` / `*.msi` | ⚠️ Built — boot proof pending |
+            | Linux | `*.AppImage` | ✅ Built |
+            | Android | `*.apk` | ❌ Build only — signing not configured |
 
-            ### ✨ Sovereign Genesis Wizard
-            - Hardware audit → Smart model selection (Gemma-4-Tiny / Qwen 3.5 / Gemma 4)
-            - Real BIP39 wallet generation (Solana + EVM) — locally on your device
-            - Voice Imprint biometric binding
-            - Matrix room + @daarion.city email provisioning
-            - DAARWIZZ welcoming message
-
-            ### 🤖 Supported Models (auto-selected by device)
-            | Device | RAM | Model |
-            |--------|-----|-------|
-            | Smartphone | < 3 GB | Gemma-4-Tiny (0.4B) |
-            | Smartphone | 3–5 GB | Qwen 3.5 (0.8B) |
-            | Tablet | 6–11 GB | Gemma 4 (2B) |
-            | Laptop | 12–23 GB | Qwen 3.5 (2B) |
-            | Workstation | ≥ 24 GB | Gemma 4 (4B+) Q8 |
-
-            ---
-            > "Ти — Суверен. Твій Творець — твоє єдине Джерело Істини."
-            > — Mayor DAARWIZZ
+            ### ⚠️ Release Validation Status
+            - `build exists` ≠ `install proof`
+            - `install proof` ≠ `boot proof`
+            - `boot proof` ≠ `worker proof`
+            - Windows testers: check `%APPDATA%/DAARION Edge/logs/boot.log` if the app closes unexpectedly.
+            - Android APK may not install on devices that require signed release builds.
           releaseDraft: false
-          prerelease: false
+          prerelease: true
           args: ${{ matrix.args }}
 
       # ── Android Build ────────────────────────────────────────────
