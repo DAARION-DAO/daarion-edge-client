@@ -23,7 +23,9 @@ mod reset;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tauri::{tray::{TrayIconBuilder, MouseButton, MouseButtonState, TrayIconEvent}, Manager};
+use tauri::Manager;
+#[cfg(desktop)]
+use tauri::tray::{TrayIconBuilder, MouseButton, MouseButtonState, TrayIconEvent};
 use heartbeat::{HeartbeatManager, HeartbeatStatus};
 use messaging::MessagingState;
 
@@ -163,32 +165,39 @@ pub fn run() {
             let handle = app.handle().clone();
             
             // Add System Tray Supervisor Path
-            boot_log("  Setting up system tray...");
-            if let Some(icon) = app.default_window_icon().cloned() {
-                match TrayIconBuilder::new()
-                    .icon(icon)
-                    .tooltip("DAARION Edge")
-                    .on_tray_icon_event(|tray, event| match event {
-                        TrayIconEvent::Click {
-                            button: MouseButton::Left,
-                            button_state: MouseButtonState::Up,
-                            ..
-                        } => {
-                            let app = tray.app_handle();
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
+            #[cfg(desktop)]
+            {
+                boot_log("  Setting up system tray...");
+                if let Some(icon) = app.default_window_icon().cloned() {
+                    match TrayIconBuilder::new()
+                        .icon(icon)
+                        .tooltip("DAARION Edge")
+                        .on_tray_icon_event(|tray, event| match event {
+                            TrayIconEvent::Click {
+                                button: MouseButton::Left,
+                                button_state: MouseButtonState::Up,
+                                ..
+                            } => {
+                                let app = tray.app_handle();
+                                if let Some(window) = app.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
                             }
-                        }
-                        _ => {}
-                    })
-                    .build(app)
-                {
-                    Ok(_) => boot_log("  System tray: OK"),
-                    Err(e) => boot_log(&format!("  System tray: FAILED (non-fatal) — {}", e)),
+                            _ => {}
+                        })
+                        .build(app)
+                    {
+                        Ok(_) => boot_log("  System tray: OK"),
+                        Err(e) => boot_log(&format!("  System tray: FAILED (non-fatal) — {}", e)),
+                    }
+                } else {
+                    boot_log("  System tray: SKIPPED (no default window icon)");
                 }
-            } else {
-                boot_log("  System tray: SKIPPED (no default window icon)");
+            }
+            #[cfg(mobile)]
+            {
+                boot_log("  System tray: SKIPPED (mobile build)");
             }
 
             boot_log("  Starting heartbeat loop...");
