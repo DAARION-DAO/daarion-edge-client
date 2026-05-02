@@ -154,24 +154,43 @@ jobs:
           # Patch build.gradle.kts to use release signing config
           GRADLE_FILE="$ANDROID_PROJECT_DIR/app/build.gradle.kts"
           if [ -f "$GRADLE_FILE" ]; then
-            # Insert signing config block before buildTypes
-            sed -i '/buildTypes {/i \\
-    signingConfigs {\\
-        create("release") {\\
-            val keystorePropertiesFile = rootProject.file("keystore.properties")\\
-            val keystoreProperties = java.util.Properties()\\
-            if (keystorePropertiesFile.exists()) {\\
-                keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))\\
-                keyAlias = keystoreProperties["keyAlias"] as String\\
-                keyPassword = keystoreProperties["password"] as String\\
-                storeFile = file(keystoreProperties["storeFile"] as String)\\
-                storePassword = keystoreProperties["storePassword"] as String\\
-            }\\
-        }\\
-    }' "$GRADLE_FILE"
+            # Write signing config snippet to temp file
+            cat > "$RUNNER_TEMP/signing-config.txt" << 'SIGNING_EOF'
+              signingConfigs {
+                  create("release") {
+                      val keystorePropertiesFile = rootProject.file("keystore.properties")
+                      val keystoreProperties = java.util.Properties()
+                      if (keystorePropertiesFile.exists()) {
+                          keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))
+                          keyAlias = keystoreProperties["keyAlias"] as String
+                          keyPassword = keystoreProperties["password"] as String
+                          storeFile = file(keystoreProperties["storeFile"] as String)
+                          storePassword = keystoreProperties["storePassword"] as String
+                      }
+                  }
+              }
+          SIGNING_EOF
 
-            # Update release buildType to use the signing config
-            sed -i 's/getByName("release") {/getByName("release") {\n                signingConfig = signingConfigs.getByName("release")/' "$GRADLE_FILE"
+            # Use python to perform precise file manipulation
+            python3 -c "
+          import re
+          with open('$GRADLE_FILE', 'r') as f:
+              content = f.read()
+          with open('$RUNNER_TEMP/signing-config.txt', 'r') as f:
+              signing = f.read()
+          
+          # Insert signing configs before buildTypes
+          content = content.replace('buildTypes {', signing + '\n    buildTypes {', 1)
+          
+          # Update release buildType to use the signing config
+          content = content.replace(
+              'getByName(\"release\") {',
+              'getByName(\"release\") {\n                signingConfig = signingConfigs.getByName(\"release\")',
+              1
+          )
+          with open('$GRADLE_FILE', 'w') as f:
+              f.write(content)
+          "
 
             echo "✅ build.gradle.kts patched with release signing config"
             echo "--- Patched signing section ---"
