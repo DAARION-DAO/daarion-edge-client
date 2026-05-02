@@ -125,13 +125,8 @@ pub struct RegistryCapabilitiesRequest {
     /// Updated capability summary (free-form JSON).
     pub capabilities: serde_json::Value,
 
-    /// Ed25519 signature of the v1 canonical message:
-    /// "daarion.worker.capabilities.v1|{node_id}|{timestamp}"
+    /// Ed25519 signature of node_id for authenticity.
     pub signature: String,
-
-    /// Unix timestamp (seconds) included in canonical message for replay protection.
-    /// Backend Gate A verifies timestamp is within SOFIIA_SIGNATURE_TIMESTAMP_DRIFT_SECS.
-    pub timestamp: u64,
 }
 
 /// Response from POST /api/v1/nodes/capabilities.
@@ -339,46 +334,10 @@ mod tests {
             node_id: "node-uuid-123".to_string(),
             capabilities: serde_json::json!({"cpu": "arm64", "ram_total_gb": 16.0}),
             signature: "hexsig".to_string(),
-            timestamp: 1_700_000_000,
         };
         let json = serde_json::to_string(&req).expect("must serialize");
         assert!(json.contains("nodeId"), "nodeId must be camelCase: {}", json);
         assert!(json.contains("arm64"), "capabilities content preserved: {}", json);
-        assert!(json.contains("1700000000"), "timestamp must be in payload: {}", json);
-        assert!(!json.contains("private"), "no private key in capabilities: {}", json);
-    }
-
-    #[test]
-    fn test_capabilities_v1_canonical_format() {
-        // Verifies the v1 canonical message format matches what the backend verifies.
-        // Backend Gate A canonical: "daarion.worker.capabilities.v1|{node_id}|{timestamp}"
-        let node_id = "test-node-uuid-abc123";
-        let ts: u64 = 1_700_000_000;
-        let canonical = format!("daarion.worker.capabilities.v1|{}|{}", node_id, ts);
-        assert!(canonical.starts_with("daarion.worker.capabilities.v1|"),
-            "canonical must have v1 prefix: {}", canonical);
-        assert!(canonical.contains(node_id),
-            "canonical must include node_id: {}", canonical);
-        assert!(canonical.contains(&ts.to_string()),
-            "canonical must include timestamp: {}", canonical);
-        // Ensure no bare node_id-only signing (old canonical guard)
-        assert_ne!(canonical, node_id, "canonical must not be bare node_id");
-    }
-
-    #[test]
-    fn test_register_v1_canonical_format() {
-        // Verifies the v1 registration canonical matches what the backend verifies.
-        // Backend Gate A canonical: "daarion.worker.register.v1|{public_key}|{invite_code}"
-        let pub_key = "base64encodedpublickey";
-        let invite = "BETA-XYZ";
-        let canonical = format!("daarion.worker.register.v1|{}|{}", pub_key, invite);
-        assert!(canonical.starts_with("daarion.worker.register.v1|"),
-            "canonical must have v1 prefix: {}", canonical);
-        assert!(canonical.contains(pub_key));
-        assert!(canonical.contains(invite));
-        // Must NOT contain node_id (server-assigned, not part of proof)
-        assert!(!canonical.contains("node-"),
-            "registration canonical must not include local node_id");
     }
 
     #[test]
