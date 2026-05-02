@@ -107,11 +107,16 @@ jobs:
 
       - name: Guard — Android signing secrets required
         if: matrix.label == 'android-arm64'
+        env:
+          HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          HAS_KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          HAS_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          HAS_KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ] || \
-             [ -z "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" ] || \
-             [ -z "${{ secrets.ANDROID_KEY_ALIAS }}" ] || \
-             [ -z "${{ secrets.ANDROID_KEY_PASSWORD }}" ]; then
+          if [ -z "$HAS_KEYSTORE" ] || \
+             [ -z "$HAS_KS_PASS" ] || \
+             [ -z "$HAS_KEY_ALIAS" ] || \
+             [ -z "$HAS_KEY_PASS" ]; then
             echo "::error::Android signing secrets are required for release APK."
             echo "Required secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD"
             exit 1
@@ -126,17 +131,22 @@ jobs:
 
       - name: Configure Android release signing
         if: matrix.label == 'android-arm64'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           # Reconstruct keystore from base64 secret into a temp file
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/daarion-edge-release.keystore"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/daarion-edge-release.keystore"
           echo "✅ Keystore reconstructed at $RUNNER_TEMP/daarion-edge-release.keystore"
 
           # Write keystore.properties for Gradle signing config
           ANDROID_PROJECT_DIR="src-tauri/gen/android"
           {
-            echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}"
-            echo "password=${{ secrets.ANDROID_KEY_PASSWORD }}"
-            echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "password=$ANDROID_KEY_PASSWORD"
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
             echo "storeFile=$RUNNER_TEMP/daarion-edge-release.keystore"
           } > "$ANDROID_PROJECT_DIR/keystore.properties"
           echo "✅ keystore.properties written to $ANDROID_PROJECT_DIR/"
@@ -145,19 +155,19 @@ jobs:
           GRADLE_FILE="$ANDROID_PROJECT_DIR/app/build.gradle.kts"
           if [ -f "$GRADLE_FILE" ]; then
             # Insert signing config block before buildTypes
-            sed -i '/buildTypes {/i \
-    signingConfigs {\
-        create("release") {\
-            val keystorePropertiesFile = rootProject.file("keystore.properties")\
-            val keystoreProperties = java.util.Properties()\
-            if (keystorePropertiesFile.exists()) {\
-                keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))\
-                keyAlias = keystoreProperties["keyAlias"] as String\
-                keyPassword = keystoreProperties["password"] as String\
-                storeFile = file(keystoreProperties["storeFile"] as String)\
-                storePassword = keystoreProperties["storePassword"] as String\
-            }\
-        }\
+            sed -i '/buildTypes {/i \\
+    signingConfigs {\\
+        create("release") {\\
+            val keystorePropertiesFile = rootProject.file("keystore.properties")\\
+            val keystoreProperties = java.util.Properties()\\
+            if (keystorePropertiesFile.exists()) {\\
+                keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))\\
+                keyAlias = keystoreProperties["keyAlias"] as String\\
+                keyPassword = keystoreProperties["password"] as String\\
+                storeFile = file(keystoreProperties["storeFile"] as String)\\
+                storePassword = keystoreProperties["storePassword"] as String\\
+            }\\
+        }\\
     }' "$GRADLE_FILE"
 
             # Update release buildType to use the signing config
@@ -227,8 +237,6 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: |
             src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
-          body: |
-            Android APK is release-signed. Install proof via `adb install` is required.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
