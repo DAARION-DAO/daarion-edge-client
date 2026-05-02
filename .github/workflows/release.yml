@@ -105,11 +105,80 @@ jobs:
           # Install Android NDK tools
           sdkmanager "ndk;27.0.12077973" "platforms;android-34" "build-tools;34.0.0" --sdk_root=$ANDROID_HOME
 
+      - name: Guard — Android signing secrets required
+        if: matrix.label == 'android-arm64'
+        env:
+          HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          HAS_KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          HAS_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          HAS_KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$HAS_KEYSTORE" ] || \
+             [ -z "$HAS_KS_PASS" ] || \
+             [ -z "$HAS_KEY_ALIAS" ] || \
+             [ -z "$HAS_KEY_PASS" ]; then
+            echo "::error::Android signing secrets are required for release APK."
+            echo "Required secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD"
+            exit 1
+          fi
+          echo "✅ All Android signing secrets are present."
+
       - name: Init Tauri Android project
         if: matrix.label == 'android-arm64'
         run: |
           npm ci
           cargo tauri android init 2>/dev/null || true
+
+      - name: Configure Android release signing
+        if: matrix.label == 'android-arm64'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # Reconstruct keystore from base64 secret into a temp file
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/daarion-edge-release.keystore"
+          echo "✅ Keystore reconstructed at $RUNNER_TEMP/daarion-edge-release.keystore"
+
+          # Write keystore.properties for Gradle signing config
+          ANDROID_PROJECT_DIR="src-tauri/gen/android"
+          {
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "password=$ANDROID_KEY_PASSWORD"
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "storeFile=$RUNNER_TEMP/daarion-edge-release.keystore"
+          } > "$ANDROID_PROJECT_DIR/keystore.properties"
+          echo "✅ keystore.properties written to $ANDROID_PROJECT_DIR/"
+
+          # Patch build.gradle.kts to use release signing config
+          GRADLE_FILE="$ANDROID_PROJECT_DIR/app/build.gradle.kts"
+          if [ -f "$GRADLE_FILE" ]; then
+            # Insert signing config block before buildTypes
+            sed -i '/buildTypes {/i \\
+    signingConfigs {\\
+        create("release") {\\
+            val keystorePropertiesFile = rootProject.file("keystore.properties")\\
+            val keystoreProperties = java.util.Properties()\\
+            if (keystorePropertiesFile.exists()) {\\
+                keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))\\
+                keyAlias = keystoreProperties["keyAlias"] as String\\
+                keyPassword = keystoreProperties["password"] as String\\
+                storeFile = file(keystoreProperties["storeFile"] as String)\\
+                storePassword = keystoreProperties["storePassword"] as String\\
+            }\\
+        }\\
+    }' "$GRADLE_FILE"
+
+            # Update release buildType to use the signing config
+            sed -i 's/getByName("release") {/getByName("release") {\n                signingConfig = signingConfigs.getByName("release")/' "$GRADLE_FILE"
+
+            echo "✅ build.gradle.kts patched with release signing config"
+            echo "--- Patched signing section ---"
+            grep -A5 'signingConfigs' "$GRADLE_FILE" || true
+          else
+            echo "::warning::build.gradle.kts not found at $GRADLE_FILE — signing config not applied"
+          fi
 
       # ── Node.js setup ──────────────────────────────────────────
       - name: Setup Node.js
@@ -141,27 +210,27 @@ jobs:
             | macOS (Intel) | `*.x86_64.dmg` | ✅ Built |
             | Windows | `*-setup.exe` / `*.msi` | ⚠️ Built — boot proof pending |
             | Linux | `*.AppImage` | ✅ Built |
-            | Android | `*.apk` | ❌ Build only — signing not configured |
+            | Android | `*.apk` | ⚠️ Signed preview — install proof pending |
 
             ### ⚠️ Release Validation Status
             - `build exists` ≠ `install proof`
             - `install proof` ≠ `boot proof`
             - `boot proof` ≠ `worker proof`
             - Windows testers: check `%APPDATA%/DAARION Edge/logs/boot.log` if the app closes unexpectedly.
-            - Android APK may not install on devices that require signed release builds.
+            - Android APK is now release-signed. Install proof via `adb install` required to confirm.
           releaseDraft: false
           prerelease: true
           args: ${{ matrix.args }}
 
-      # ── Android Build ────────────────────────────────────────────
-      - name: Build Tauri Android APK
+      # ── Android Build (signed) ─────────────────────────────────────
+      - name: Build Tauri Android APK (signed)
         if: matrix.label == 'android-arm64'
         run: |
           cargo tauri android build --apk 2>&1
         env:
           NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
 
-      - name: Upload Android APK to Release
+      - name: Upload signed Android APK to Release
         if: matrix.label == 'android-arm64'
         uses: softprops/action-gh-release@v2
         with:
@@ -170,3 +239,10 @@ jobs:
             src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean up keystore
+        if: matrix.label == 'android-arm64' && always()
+        run: |
+          rm -f "$RUNNER_TEMP/daarion-edge-release.keystore"
+          rm -f src-tauri/gen/android/keystore.properties
+          echo "✅ Signing artifacts cleaned up"
