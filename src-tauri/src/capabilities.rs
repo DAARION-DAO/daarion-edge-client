@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sysinfo::System;
+use sysinfo::{System, Disks};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GPUInfo {
@@ -264,4 +264,86 @@ pub fn get_capabilities() -> CapabilitySummary {
         worker_ready: false,
         model_runtime_ready: false,
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DeviceCapabilityProfile {
+    pub os: String,
+    pub arch: String,
+    pub cpu_count: usize,
+    pub cpu_brand: String,
+    pub ram_total_gb: f64,
+    pub ram_available_gb: f64,
+    pub disk_free_gb: f64,
+    pub gpu: GPUInfo,
+    pub device_class: DeviceClass,
+    pub recommended_mode: String,
+    pub recommended_model: RecommendedModel,
+    pub alternative_models: Vec<RecommendedModel>,
+    pub battery_status: String,
+    pub app_version: String,
+    pub worker_opt_in: bool,
+    pub scan_timestamp: i64,
+}
+
+#[tauri::command]
+pub fn get_device_capability_profile(app: tauri::AppHandle) -> Result<DeviceCapabilityProfile, String> {
+    let mut sys = System::new_all();
+    sys.refresh_all();
+
+    let cpu_brand = sys
+        .cpus()
+        .first()
+        .map(|c| c.brand().to_string())
+        .unwrap_or_else(|| "Unknown".to_string());
+    let ram_total_gb = sys.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+    let ram_available_gb = sys.available_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
+
+    let disks = Disks::new_with_refreshed_list();
+    let disk_free_gb = disks.list().iter()
+        .map(|d| d.available_space() as f64 / 1024.0 / 1024.0 / 1024.0)
+        .sum::<f64>();
+
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+
+    let gpu = detect_gpu(os, arch);
+    let (device_class, recommended_model, alternative_models) =
+        select_model(ram_total_gb, os, arch);
+
+    let recommended_mode = match device_class {
+        DeviceClass::Smartphone => "Light Client".to_string(),
+        DeviceClass::Tablet => "Light Client".to_string(),
+        DeviceClass::Laptop => {
+            if ram_total_gb >= 12.0 {
+                "Local LLM Runtime".to_string()
+            } else {
+                "Local Micro Agent".to_string()
+            }
+        }
+        DeviceClass::Workstation => "Local LLM Runtime".to_string(),
+    };
+
+    let worker_opt_in = crate::worker::load_worker_optin(&app);
+    let app_version = env!("CARGO_PKG_VERSION").to_string();
+    let scan_timestamp = chrono::Utc::now().timestamp();
+
+    Ok(DeviceCapabilityProfile {
+        os: os.to_string(),
+        arch: arch.to_string(),
+        cpu_count: sys.cpus().len(),
+        cpu_brand,
+        ram_total_gb,
+        ram_available_gb,
+        disk_free_gb,
+        gpu,
+        device_class,
+        recommended_mode,
+        recommended_model,
+        alternative_models,
+        battery_status: "AC / Unknown".to_string(),
+        app_version,
+        worker_opt_in,
+        scan_timestamp,
+    })
 }
