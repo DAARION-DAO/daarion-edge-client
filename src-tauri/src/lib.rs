@@ -127,6 +127,7 @@ pub fn run() {
             enrollment::sync_capabilities,
             heartbeat::get_heartbeat_status,
             capabilities::get_capabilities,
+            capabilities::get_device_capability_profile,
             messaging::get_messaging_status,
             messaging::bootstrap_messaging,
             messaging::send_node_message,

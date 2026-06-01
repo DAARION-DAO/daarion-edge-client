@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Shield, Activity, XCircle, Zap, Terminal, Globe, Monitor, MessageSquare, LayoutDashboard, Cuboid, Sparkles, Clock, CheckCircle, AlertTriangle, RefreshCw } from "lucide-react";
+import { Shield, Activity, XCircle, Zap, Terminal, Globe, Monitor, MessageSquare, LayoutDashboard, Cuboid, Sparkles, Clock, CheckCircle, AlertTriangle, RefreshCw, Cpu, HardDrive, Laptop, ArrowRight } from "lucide-react";
 import { MessagingPanel } from "./components/MessagingPanel";
 import { EdgeActivation } from "./components/EdgeActivation";
 import { LocalInferencePanel } from "./components/LocalInferencePanel";
@@ -62,6 +62,42 @@ interface CapabilitySummary {
   model_runtime_ready: boolean;
 }
 
+interface RecommendedModel {
+  model_id: string;
+  display_name: string;
+  params: string;
+  quantization: string;
+  size_gb: number;
+  context_tokens: number;
+  reason: string;
+  download_url: string;
+  performance_tier: string;
+}
+
+interface DeviceCapabilityProfile {
+  os: string;
+  arch: string;
+  cpu_count: number;
+  cpu_brand: string;
+  ram_total_gb: number;
+  ram_available_gb: number;
+  disk_free_gb: number;
+  gpu: {
+    detected: boolean;
+    vendor: string;
+    class: string;
+    acceleration_api: string;
+  };
+  device_class: string;
+  recommended_mode: string;
+  recommended_model: RecommendedModel;
+  alternative_models: RecommendedModel[];
+  battery_status: string;
+  app_version: string;
+  worker_opt_in: boolean;
+  scan_timestamp: number;
+}
+
 function App() {
   const [idStatus, setIdStatus] = useState<IdentityStatus | null>(null);
   const [enrollment, setEnrollment] = useState<EnrollmentState | null>(null);
@@ -70,6 +106,24 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"dashboard" | "messaging" | "activation" | "inference">("dashboard");
+
+  const [scanProfile, setScanProfile] = useState<DeviceCapabilityProfile | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+
+  async function runDeviceScan() {
+    setIsScanning(true);
+    setScanError(null);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      const res = await invoke<DeviceCapabilityProfile>("get_device_capability_profile");
+      setScanProfile(res);
+    } catch (e) {
+      setScanError(String(e));
+    } finally {
+      setIsScanning(false);
+    }
+  }
 
   async function fetchData() {
     try {
@@ -356,6 +410,159 @@ function App() {
                     <div className="space-y-1">
                       <span className="text-[8px] text-white/20 uppercase font-black block">Issuer Authority</span>
                       <div className="text-[10px] text-blue-400 font-mono truncate">{enrollment.issuer_id || 'LOCAL_ORCHESTRATOR'}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* Device Capability Scan & Recommendation Card */}
+            <section className="glass p-6 border-white/5 space-y-4">
+              <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                <div className="flex items-center gap-3 text-white/40">
+                  <Laptop size={16} className="text-blue-400" />
+                  <h2 className="text-[10px] font-bold uppercase tracking-[0.2em]">Device Readiness Scan</h2>
+                </div>
+                {scanProfile && (
+                  <span className="text-[8px] uppercase tracking-widest font-black text-emerald-400 px-2 py-0.5 bg-emerald-500/10 rounded border border-emerald-500/20">
+                    Profile Active
+                  </span>
+                )}
+              </div>
+
+              {!scanProfile && !isScanning && (
+                <div className="space-y-4 text-center py-4">
+                  <p className="text-xs text-white/50 max-w-lg mx-auto leading-relaxed">
+                    Check your device hardware configuration to determine the optimal AI execution layer (e.g. Light Client vs. Local Inference Agent).
+                  </p>
+                  
+                  <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 text-left max-w-md mx-auto">
+                    <p className="text-[9px] text-white/30 uppercase font-black mb-1.5 tracking-wider">Privacy Notice</p>
+                    <p className="text-[10px] text-white/40 leading-relaxed font-mono">
+                      Device scan runs locally. We do not enable Worker Mode, transfer system specs, or download any LLM model automatically.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={runDeviceScan}
+                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-900/20 cursor-pointer"
+                  >
+                    <Activity size={12} className="animate-pulse" />
+                    Check Device Readiness
+                  </button>
+                  {scanError && (
+                    <p className="text-[10px] text-red-400 mt-2">Scan failed: {scanError}</p>
+                  )}
+                </div>
+              )}
+
+              {isScanning && (
+                <div className="flex flex-col items-center justify-center py-10 space-y-3">
+                  <RefreshCw className="animate-spin text-blue-400" size={24} />
+                  <span className="text-[10px] uppercase tracking-widest text-white/40 font-bold animate-pulse">Scanning hardware resources...</span>
+                </div>
+              )}
+
+              {scanProfile && !isScanning && (
+                <div className="space-y-6">
+                  {/* Recommended Mode Box */}
+                  <div className="p-5 rounded-2xl border border-blue-500/10 bg-blue-500/[0.02] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <p className="text-[9px] uppercase tracking-wider text-blue-400/80 font-black">Recommended Mode</p>
+                      <h3 className="text-lg font-black tracking-tight text-white flex items-center gap-2">
+                        <Sparkles size={16} className="text-blue-400" />
+                        {scanProfile.recommended_mode}
+                      </h3>
+                      <p className="text-[11px] text-white/40 leading-relaxed max-w-xl">
+                        {scanProfile.recommended_mode === "Light Client" && 
+                          "Optimized for high efficiency. Runs as a lightweight node utilizing remote consensus. No local LLM running."}
+                        {scanProfile.recommended_mode === "Local Micro Agent" && 
+                          "Suitable for standard consumer devices. Can execute small offline models (~0.4B - 0.8B params) for private task processing."}
+                        {scanProfile.recommended_mode === "Local LLM Runtime" && 
+                          "Capable of running fully local reasoning models (~2B - 9B GGUF models) with active hardware/GPU acceleration."}
+                      </p>
+                    </div>
+                    {scanProfile.recommended_mode === "Local LLM Runtime" && (
+                      <button
+                        onClick={() => setActiveTab("activation")}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 text-[10px] font-black bg-blue-600 hover:bg-blue-500 text-white rounded-xl uppercase tracking-widest transition-colors shrink-0 cursor-pointer"
+                      >
+                        Apply for Worker Node <ArrowRight size={12} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Hardware details grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-white/[0.01] border border-white/5 rounded-2xl p-4 text-left">
+                    <div className="space-y-1">
+                      <span className="text-[8px] text-white/20 uppercase font-black flex items-center gap-1">
+                        <Cpu size={10} /> Processor
+                      </span>
+                      <span className="text-xs font-bold text-white/80 block truncate">{scanProfile.cpu_brand}</span>
+                      <span className="text-[10px] text-white/40 block font-mono">{scanProfile.cpu_count} Cores</span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-[8px] text-white/20 uppercase font-black flex items-center gap-1">
+                        <Monitor size={10} /> Memory (RAM)
+                      </span>
+                      <span className="text-xs font-bold text-white/80 block">{Math.round(scanProfile.ram_total_gb)} GB Total</span>
+                      <span className="text-[10px] text-white/40 block font-mono">Available: {Math.round(scanProfile.ram_available_gb)} GB</span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-[8px] text-white/20 uppercase font-black flex items-center gap-1">
+                        <HardDrive size={10} /> Storage Space
+                      </span>
+                      <span className="text-xs font-bold text-white/80 block">{Math.round(scanProfile.disk_free_gb)} GB Free</span>
+                      <span className="text-[10px] text-white/40 block font-mono">Primary Volume</span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <span className="text-[8px] text-white/20 uppercase font-black flex items-center gap-1">
+                        <Zap size={10} /> GPU Acceleration
+                      </span>
+                      <span className="text-xs font-bold text-emerald-400 block">
+                        {scanProfile.gpu.detected ? scanProfile.gpu.acceleration_api : "CPU Fallback"}
+                      </span>
+                      <span className="text-[10px] text-white/40 block truncate uppercase font-mono">{scanProfile.gpu.vendor}</span>
+                    </div>
+                  </div>
+
+                  {/* Recommendation details & fallback models */}
+                  <div className="space-y-4 border-t border-white/5 pt-4 text-left">
+                    <div className="space-y-1 text-left">
+                      <p className="text-[9px] uppercase tracking-wider text-white/30 font-black">Model Recommendation</p>
+                      <h4 className="text-xs font-bold text-white/80 flex items-center gap-1.5">
+                        {scanProfile.recommended_model.display_name} ({scanProfile.recommended_model.params}, {scanProfile.recommended_model.quantization})
+                      </h4>
+                      <p className="text-[10px] text-white/40 leading-relaxed font-mono">
+                        {scanProfile.recommended_model.reason}
+                      </p>
+                    </div>
+
+                    {/* Safeguards state details */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white/[0.02] border border-white/5 rounded-xl p-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                        <span className="text-[10px] text-white/40 font-bold">Local Model Installation:</span>
+                        <span className="text-[10px] text-amber-400/80 font-black uppercase font-mono">Coming Soon</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className={`w-1.5 h-1.5 rounded-full ${scanProfile.worker_opt_in ? 'bg-emerald-500' : 'bg-white/20'}`} />
+                        <span className="text-[10px] text-white/40 font-bold">Worker Mode status:</span>
+                        <span className="text-[10px] text-white/60 font-black uppercase font-mono">{scanProfile.worker_opt_in ? "Opted In" : "Disabled (OFF)"}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center text-[9px] text-white/20 font-mono">
+                      <span>Scanned on: {new Date(scanProfile.scan_timestamp * 1000).toLocaleString()}</span>
+                      <button
+                        onClick={runDeviceScan}
+                        className="text-blue-400 hover:text-blue-300 hover:underline font-bold transition-colors uppercase tracking-widest cursor-pointer"
+                      >
+                        Re-scan Device
+                      </button>
                     </div>
                   </div>
                 </div>
