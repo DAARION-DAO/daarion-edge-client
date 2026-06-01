@@ -219,29 +219,49 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "DAARION Edge Client ${{ github.ref_name }}"
-          releaseBody: |
+          includeRelease: false
+          includeAssets: false
+          args: ${{ matrix.args }}
+
+      # ── Rename and Stage Desktop Artifacts ────────────────────────
+      - name: Rename and Stage Desktop Artifacts
+        if: matrix.label != 'android-arm64'
+        env:
+          ARTIFACT_LABEL: ${{ matrix.label }}
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: |
+          node scripts/prepare-release-artifacts.cjs
+
+      # ── Upload Desktop Artifacts to Release ──────────────────────
+      - name: Upload Desktop Artifacts to Release
+        if: matrix.label != 'android-arm64'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            dist/artifacts/*
+          prerelease: true
+          body: |
             ## 🌌 DAARION Edge Client
 
             ### 📱 Downloads
             | Platform | File | Status |
             |----------|------|--------|
-            | macOS (Apple Silicon) | `*.aarch64.dmg` | ✅ Built |
-            | macOS (Intel) | `*.x86_64.dmg` | ✅ Built |
-            | Windows | `*-setup.exe` / `*.msi` | ⚠️ Built — boot proof pending |
-            | Linux | `*.AppImage` | ✅ Built |
-            | Android | `*.apk` | ⚠️ Signed preview — install proof pending |
+            | Windows x64 (MSI) | `Daarion.Edge_<version>_x64_en-US.msi` | ⚠️ Beta — boot proof pending |
+            | Windows x64 (Setup) | `Daarion.Edge_<version>_x64-setup.exe` | ⚠️ Beta — boot proof pending |
+            | macOS (Apple Silicon) | `Daarion.Edge_<version>_aarch64.dmg` | ✅ Release-Signed |
+            | macOS (Intel) | `Daarion.Edge_<version>_x64.dmg` | ✅ Release-Signed |
+            | Linux | `Daarion.Edge_<version>_amd64.AppImage` | ✅ Beta |
+            | Android | `Daarion.Edge_<version>_android_universal_release.apk` | ⚠️ Sideload APK beta |
 
             ### ⚠️ Release Validation Status
             - `build exists` ≠ `install proof`
             - `install proof` ≠ `boot proof`
             - `boot proof` ≠ `worker proof`
             - Windows testers: check `%APPDATA%/DAARION Edge/logs/boot.log` if the app closes unexpectedly.
-            - Android APK is now release-signed. Install proof via `adb install` required to confirm.
-          releaseDraft: false
-          prerelease: true
-          args: ${{ matrix.args }}
+            - Android APK is release-signed. Sideload installation requires enabling unknown sources.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ── Android Build (signed) ─────────────────────────────────────
       - name: Build Tauri Android APK (signed)
@@ -251,13 +271,43 @@ jobs:
         env:
           NDK_HOME: ${{ env.ANDROID_NDK_ROOT }}
 
+      # ── Rename and Stage Android Artifacts ────────────────────────
+      - name: Rename and Stage Android Artifacts
+        if: matrix.label == 'android-arm64'
+        env:
+          ARTIFACT_LABEL: ${{ matrix.label }}
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: |
+          node scripts/prepare-release-artifacts.cjs
+
+      # ── Upload signed Android APK to Release ──────────────────────
       - name: Upload signed Android APK to Release
         if: matrix.label == 'android-arm64'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+            dist/artifacts/*
+          prerelease: true
+          body: |
+            ## 🌌 DAARION Edge Client
+
+            ### 📱 Downloads
+            | Platform | File | Status |
+            |----------|------|--------|
+            | Windows x64 (MSI) | `Daarion.Edge_<version>_x64_en-US.msi` | ⚠️ Beta — boot proof pending |
+            | Windows x64 (Setup) | `Daarion.Edge_<version>_x64-setup.exe` | ⚠️ Beta — boot proof pending |
+            | macOS (Apple Silicon) | `Daarion.Edge_<version>_aarch64.dmg` | ✅ Release-Signed |
+            | macOS (Intel) | `Daarion.Edge_<version>_x64.dmg` | ✅ Release-Signed |
+            | Linux | `Daarion.Edge_<version>_amd64.AppImage` | ✅ Beta |
+            | Android | `Daarion.Edge_<version>_android_universal_release.apk` | ⚠️ Sideload APK beta |
+
+            ### ⚠️ Release Validation Status
+            - `build exists` ≠ `install proof`
+            - `install proof` ≠ `boot proof`
+            - `boot proof` ≠ `worker proof`
+            - Windows testers: check `%APPDATA%/DAARION Edge/logs/boot.log` if the app closes unexpectedly.
+            - Android APK is release-signed. Sideload installation requires enabling unknown sources.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

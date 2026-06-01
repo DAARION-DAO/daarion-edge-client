@@ -854,7 +854,7 @@ dependencies = [
 
 [[package]]
 name = "daarion-edge-client"
-version = "0.2.0"
+version = "0.2.2-canary.1"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
