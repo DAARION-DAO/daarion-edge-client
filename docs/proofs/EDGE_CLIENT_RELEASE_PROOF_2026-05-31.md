@@ -1,8 +1,8 @@
-# DAARION Edge Client Release Proof — v0.2.2-canary.2
+# DAARION Edge Client Release Proof — v0.2.2-2
 
 ## 1. Release Metadata
 - **Repository**: DAARION-DAO/daarion-edge-client
-- **Release tag**: v0.2.2-canary.2
+- **Release tag**: v0.2.2-2
 - **Commit SHA**: Pending
 - **GitHub Actions workflow run**: Pending
 - **Release URL**: Pending
@@ -15,12 +15,12 @@
 
 | Platform | Expected artifact | Present | Notes |
 |---|---|---|---|
-| Windows Setup | `Daarion.Edge_0.2.2-canary.2_x64-setup.exe` | Pending | |
-| Windows MSI | `Daarion.Edge_0.2.2-canary.2_x64_en-US.msi` | Pending | |
-| macOS Apple Silicon | `Daarion.Edge_0.2.2-canary.2_aarch64.dmg` | Pending | |
-| macOS Intel | `Daarion.Edge_0.2.2-canary.2_x64.dmg` | Pending | |
-| Linux AppImage | `Daarion.Edge_0.2.2-canary.2_amd64.AppImage` | Pending | |
-| Android APK | `Daarion.Edge_0.2.2-canary.2_android_universal_release.apk` | Pending | |
+| Windows Setup | `Daarion.Edge_0.2.2-2_x64-setup.exe` | Pending | |
+| Windows MSI | `Daarion.Edge_0.2.2-2_x64_en-US.msi` | Pending | |
+| macOS Apple Silicon | `Daarion.Edge_0.2.2-2_aarch64.dmg` | Pending | |
+| macOS Intel | `Daarion.Edge_0.2.2-2_x64.dmg` | Pending | |
+| Linux AppImage | `Daarion.Edge_0.2.2-2_amd64.AppImage` | Pending | |
+| Android APK | `Daarion.Edge_0.2.2-2_android_universal_release.apk` | Pending | |
 | Manifest | `release-manifest-*.json` | Pending | |
 
 ---
@@ -60,6 +60,7 @@
 ## 6. Known Issues
 
 - **v0.2.2-canary.1 Initial Diagnostic Run**: Desktop build outputs (Windows NSIS/MSI, macOS DMG, Linux AppImage) were skipped because `.github/workflows/release.yml` had `includeRelease: false` configured for the `tauri-action` step. The Android arm64 build successfully completed compilation and uploaded the signed APK: `Daarion.Edge_0.2.2-canary.1_android_universal_release.apk`. Fix applied in `v0.2.2-canary.2` to set `includeRelease: true`.
+- **v0.2.2-canary.2 Windows Bundle Fail**: The Windows WiX bundler failed with `failed to bundle project: optional pre-release identifier in app version must be numeric-only and cannot be greater than 65535 for msi target`. This was caused by the alphanumeric pre-release identifier `canary.2`. WiX requires a purely numeric-only identifier for pre-releases (e.g. `0.2.2-2` which translates to product version `0.2.2.2`). Fixed in `v0.2.2-2` by switching version format to `0.2.2-2`.
 
 ---
 
