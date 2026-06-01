@@ -3,9 +3,9 @@
 ## 1. Release Metadata
 - **Repository**: DAARION-DAO/daarion-edge-client
 - **Release tag**: v0.2.2-2
-- **Commit SHA**: Pending
-- **GitHub Actions workflow run**: Pending
-- **Release URL**: Pending
+- **Commit SHA**: 4e99823a2d72b293058e3fb7c288a27211eeb306
+- **GitHub Actions workflow run**: [Run #26738969666](https://github.com/DAARION-DAO/daarion-edge-client/actions/runs/26738969666)
+- **Release URL**: [Release v0.2.2-2](https://github.com/DAARION-DAO/daarion-edge-client/releases/tag/v0.2.2-2)
 - **Date**: 2026-05-31
 - **Operator**: Antigravity (Advanced Agentic Coding Assistant)
 
@@ -15,13 +15,13 @@
 
 | Platform | Expected artifact | Present | Notes |
 |---|---|---|---|
-| Windows Setup | `Daarion.Edge_0.2.2-2_x64-setup.exe` | Pending | |
-| Windows MSI | `Daarion.Edge_0.2.2-2_x64_en-US.msi` | Pending | |
-| macOS Apple Silicon | `Daarion.Edge_0.2.2-2_aarch64.dmg` | Pending | |
-| macOS Intel | `Daarion.Edge_0.2.2-2_x64.dmg` | Pending | |
-| Linux AppImage | `Daarion.Edge_0.2.2-2_amd64.AppImage` | Pending | |
-| Android APK | `Daarion.Edge_0.2.2-2_android_universal_release.apk` | Pending | |
-| Manifest | `release-manifest-*.json` | Pending | |
+| Windows Setup | `Daarion.Edge_0.2.2-2_x64-setup.exe` | ✅ Present | Uploaded successfully |
+| Windows MSI | `Daarion.Edge_0.2.2-2_x64_en-US.msi` | ✅ Present | Uploaded successfully |
+| macOS Apple Silicon | `Daarion.Edge_0.2.2-2_aarch64.dmg` | ✅ Present | Uploaded successfully |
+| macOS Intel | `Daarion.Edge_0.2.2-2_x64.dmg` | ✅ Present | Uploaded successfully |
+| Linux AppImage | `Daarion.Edge_0.2.2-2_amd64.AppImage` | ✅ Present | Uploaded successfully |
+| Android APK | `Daarion.Edge_0.2.2-2_android_universal_release.apk` | ✅ Present | Uploaded successfully |
+| Manifest | `release-manifest-*.json` | ✅ Present | All 5 platform manifests uploaded |
 
 ---
 
