@@ -222,7 +222,7 @@ pub fn run() {
                     Some(ep) => {
                         boot_log(&format!("  Worker relay endpoint found: {}", ep));
                         let app_clone = handle.clone();
-                        tokio::spawn(async move {
+                        tauri::async_runtime::spawn(async move {
                             let state = app_clone.state::<Mutex<crate::worker::WorkerModeState>>();
                             let _ = crate::worker::toggle_worker_mode(true, state, app_clone.clone()).await;
                         });

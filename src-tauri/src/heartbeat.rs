@@ -53,7 +53,7 @@ pub fn start_heartbeat_loop(handle: AppHandle) {
     let status_arc = state.status.clone();
     let handle_clone = handle.clone();
 
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         loop {
             let enrollment = load_enrollment_state(&handle_clone);
 

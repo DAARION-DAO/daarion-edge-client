@@ -117,7 +117,7 @@ pub async fn toggle_worker_mode(
         let app_handle_clone = app_handle.clone();
         let identity_clone = identity.clone();
 
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             loop {
                 // Check if user disabled worker mode
                 {

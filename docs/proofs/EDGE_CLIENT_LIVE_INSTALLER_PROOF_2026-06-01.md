@@ -7,7 +7,7 @@ This document records the installation and startup behavior of the DAARION Edge 
 | Platform | Artifact | Download | Install | Launch | Logs | Identity | Worker default | Uninstall | Verdict |
 |---|---|---|---|---|---|---|---|---|---|
 | **Windows 11 x64** | `Daarion.Edge_0.2.2-2_x64-setup.exe` / `_x64_en-US.msi` | ✅ PASS | ➖ Pending | ➖ Pending | ➖ Pending | ➖ Pending | ➖ Pending | ➖ Pending | **BLOCKED / NOT TESTED** |
-| **macOS Apple Silicon** | `Daarion.Edge_0.2.2-2_aarch64.dmg` | ✅ PASS | ✅ PASS | ❌ FAIL | ✅ PASS | ❌ MISSING | ✅ DISABLED | ✅ PASS | **FAIL** |
+| **macOS Apple Silicon** | `Daarion.Edge_0.2.2-2_aarch64.dmg` | ✅ PASS | ✅ PASS | ❌ FAIL (Fixed in source) | ✅ PASS | ❌ MISSING (Fixed in source) | ✅ DISABLED | ✅ PASS | **FAIL (Retest pending for next release)** |
 | **macOS Intel** | `Daarion.Edge_0.2.2-2_x64.dmg` | ✅ PASS | ➖ Pending | ➖ Pending | ➖ Pending | ➖ Pending | ➖ Pending | ➖ Pending | **BLOCKED / NOT TESTED** |
 | **Ubuntu Linux x64** | `Daarion.Edge_0.2.2-2_amd64.AppImage` | ✅ PASS | ➖ Pending | ➖ Pending | ➖ Pending | ➖ Pending | ➖ Pending | ➖ Pending | **BLOCKED / NOT TESTED** |
 | **Android arm64** | `Daarion.Edge_0.2.2-2_android_universal_release.apk` | ✅ PASS | ➖ Pending | ➖ Pending | ➖ Pending | ➖ Pending | ➖ Pending | ➖ Pending | **BLOCKED / NOT TESTED** |
@@ -61,10 +61,22 @@ This document records the installation and startup behavior of the DAARION Edge 
 ## 3. Findings & Next Steps
 
 1. **Tokio Runtime Panic on Start**:
-   - The application panics on start because `heartbeat::start_heartbeat_loop` calls `tokio::spawn(async move { ... })` from within Tauri's `setup()` block.
-   - On Tauri v2, `setup()` is called on the main thread, which is not running inside a active Tokio runtime reactor thread.
-   - **Resolution**: Use Tauri's managed async runtime executor: `tauri::async_runtime::spawn` instead of `tokio::spawn`.
+   - **Root Cause**: Spawning tokio async tasks using `tokio::spawn` within Tauri's `setup()` block on the main thread triggers a runtime panic because the main thread doesn't have an active Tokio reactor running context.
+   - **Resolution**: Replaced direct `tokio::spawn` calls with Tauri's managed tokio execution context `tauri::async_runtime::spawn` in `src-tauri/src/heartbeat.rs` (start loop), `src-tauri/src/lib.rs` (on startup worker setup), and `src-tauri/src/worker/mod.rs` (inside toggle function).
+   - **Local Verification**: 
+     - Compiled the debug binary locally via `cargo build`.
+     - Ran the compiled binary `./target/debug/daarion-edge-client` successfully.
+     - Logs in `~/.daarion-edge/logs/boot.log` confirmed zero panics and complete execution of `setup()` block:
+       ```text
+       [2026-06-01 07:06:22.744 UTC]   Starting heartbeat loop...
+       [2026-06-01 07:06:22.745 UTC]   Heartbeat loop started
+       [2026-06-01 07:06:22.745 UTC]   Worker opt-in loaded: false
+       [2026-06-01 07:06:22.745 UTC]   setup() completed successfully
+       ```
+     - Worker mode correctly loaded as `false` (disabled) by default.
+   - **Next Action**: Create and push version bump tag `v0.2.2-3` to compile new binaries via CI and repeat the installer proof matrix checks.
 2. **Ad-hoc codesign**:
    - The Apple Silicon DMG bundle has ad-hoc signature which behaves as expected on macOS systems, showing standard security popups when run from the UI.
 3. **Labels**:
    - All references to this release remain labeled as **Canary** / **Beta** / **Manual update** / **Android sideload**, keeping the **Worker mode gated** context clear.
+
