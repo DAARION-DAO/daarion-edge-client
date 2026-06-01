@@ -1,13 +1,13 @@
-# DAARION Edge Client Release Proof — v0.2.2-canary.1
+# DAARION Edge Client Release Proof — v0.2.2-canary.2
 
 ## 1. Release Metadata
 - **Repository**: DAARION-DAO/daarion-edge-client
-- **Release tag**: v0.2.2-canary.1
+- **Release tag**: v0.2.2-canary.2
 - **Commit SHA**: Pending
 - **GitHub Actions workflow run**: Pending
 - **Release URL**: Pending
 - **Date**: 2026-05-31
-- **Operator**: Pending
+- **Operator**: Antigravity (Advanced Agentic Coding Assistant)
 
 ---
 
@@ -15,12 +15,12 @@
 
 | Platform | Expected artifact | Present | Notes |
 |---|---|---|---|
-| Windows Setup | `Daarion.Edge_0.2.2-canary.1_x64-setup.exe` | Pending | |
-| Windows MSI | `Daarion.Edge_0.2.2-canary.1_x64_en-US.msi` | Pending | |
-| macOS Apple Silicon | `Daarion.Edge_0.2.2-canary.1_aarch64.dmg` | Pending | |
-| macOS Intel | `Daarion.Edge_0.2.2-canary.1_x64.dmg` | Pending | |
-| Linux AppImage | `Daarion.Edge_0.2.2-canary.1_amd64.AppImage` | Pending | |
-| Android APK | `Daarion.Edge_0.2.2-canary.1_android_universal_release.apk` | Pending | |
+| Windows Setup | `Daarion.Edge_0.2.2-canary.2_x64-setup.exe` | Pending | |
+| Windows MSI | `Daarion.Edge_0.2.2-canary.2_x64_en-US.msi` | Pending | |
+| macOS Apple Silicon | `Daarion.Edge_0.2.2-canary.2_aarch64.dmg` | Pending | |
+| macOS Intel | `Daarion.Edge_0.2.2-canary.2_x64.dmg` | Pending | |
+| Linux AppImage | `Daarion.Edge_0.2.2-canary.2_amd64.AppImage` | Pending | |
+| Android APK | `Daarion.Edge_0.2.2-canary.2_android_universal_release.apk` | Pending | |
 | Manifest | `release-manifest-*.json` | Pending | |
 
 ---
@@ -59,7 +59,7 @@
 
 ## 6. Known Issues
 
-*(List any installation warnings, platform certificate flags, or UI layout glitches noticed during validation)*
+- **v0.2.2-canary.1 Initial Diagnostic Run**: Desktop build outputs (Windows NSIS/MSI, macOS DMG, Linux AppImage) were skipped because `.github/workflows/release.yml` had `includeRelease: false` configured for the `tauri-action` step. The Android arm64 build successfully completed compilation and uploaded the signed APK: `Daarion.Edge_0.2.2-canary.1_android_universal_release.apk`. Fix applied in `v0.2.2-canary.2` to set `includeRelease: true`.
 
 ---
 

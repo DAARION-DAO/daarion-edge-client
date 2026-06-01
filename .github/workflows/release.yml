@@ -219,8 +219,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          includeRelease: false
-          includeAssets: false
+          includeRelease: true
           args: ${{ matrix.args }}
 
       # ── Rename and Stage Desktop Artifacts ────────────────────────

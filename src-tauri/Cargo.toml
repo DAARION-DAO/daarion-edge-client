@@ -1,6 +1,6 @@
 [package]
 name = "daarion-edge-client"
-version = "0.2.2-canary.1"
+version = "0.2.2-canary.2"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
