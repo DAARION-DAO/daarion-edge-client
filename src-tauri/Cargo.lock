@@ -870,6 +870,7 @@ dependencies = [
  "keyring",
  "rand 0.8.5",
  "reqwest",
+ "semver",
  "serde",
  "serde_json",
  "sha1",

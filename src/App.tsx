@@ -7,6 +7,13 @@ import { EdgeActivation } from "./components/EdgeActivation";
 import { LocalInferencePanel } from "./components/LocalInferencePanel";
 import { GenesisWizard } from "./components/GenesisWizard";
 import { PairingGate, type PairingState } from "./components/PairingGate";
+import {
+  backendHealthDotClass,
+  backendHealthFallbackStatus,
+  backendHealthLabel,
+  backendHealthTextClass,
+  type BackendHealthStatus,
+} from "./lib/backendHealth";
 interface IdentityStatus {
   initialized: boolean;
   node_id: string | null;
@@ -118,6 +125,7 @@ function App() {
   const [capabilities, setCapabilities] = useState<CapabilitySummary | null>(null);
   const [pairing, setPairing] = useState<PairingState | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendConfigStatus | null>(null);
+  const [backendHealth, setBackendHealth] = useState<BackendHealthStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"dashboard" | "messaging" | "activation" | "inference">("dashboard");
@@ -140,6 +148,14 @@ function App() {
     }
   }
 
+  async function refreshBackendHealth() {
+    try {
+      setBackendHealth(await invoke<BackendHealthStatus>("check_backend_health"));
+    } catch (e) {
+      setBackendHealth(backendHealthFallbackStatus("contract_invalid", String(e)));
+    }
+  }
+
   async function fetchData() {
     try {
       const [idRes, enrollRes, hbRes, capRes, backendRes] = await Promise.all([
@@ -159,6 +175,7 @@ function App() {
       } catch {
         setPairing(null);
       }
+      void refreshBackendHealth();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -346,9 +363,12 @@ function App() {
             <span className="text-[10px] font-mono text-white/70">
               {backendStatus?.pairing_label || pairing?.label || (backendStatus?.dev_default ? 'Local Development' : 'Unpaired')}
             </span>
-            <span className="text-[8px] font-mono text-white/25">
-              {backendStatus?.connection_status === 'not_checked' ? 'connection not checked yet' : backendStatus?.connection_status}
-            </span>
+            <div className="mt-0.5 flex items-center gap-1.5">
+              <div className={`h-1.5 w-1.5 rounded-full ${backendHealthDotClass(backendHealth?.state)}`} />
+              <span className={`text-[8px] font-mono ${backendHealthTextClass(backendHealth?.state)}`}>
+                {backendHealthLabel(backendHealth?.state)}
+              </span>
+            </div>
           </div>
           
           {/* Local Runtime Activity */}
