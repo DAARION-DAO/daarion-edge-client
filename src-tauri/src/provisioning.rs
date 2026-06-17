@@ -2,7 +2,7 @@
 /// Handles: Thin client communication with Genesis backend
 use serde::{Deserialize, Serialize};
 use reqwest::Client;
-use crate::config::get_config;
+use crate::config::resolve_backend_url;
 const BETA_MAX_CREATORS: i64 = 10_000;
 
 // ─── Data structures ──────────────────────────────────────────────
@@ -40,8 +40,8 @@ pub async fn check_beta_slots() -> Result<BetaStatus, String> {
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
-    let config = get_config();
-    let url = format!("{}/genesis/beta-status", config.backend_url);
+    let backend_url = resolve_backend_url()?;
+    let url = format!("{}/genesis/beta-status", backend_url);
 
     match client.get(&url).send().await {
         Ok(resp) if resp.status().is_success() => {
@@ -99,10 +99,10 @@ pub async fn provision_sovereign_genesis(
         .build()
         .map_err(|e| format!("HTTP client: {}", e))?;
 
-    let config = get_config();
+    let backend_url = resolve_backend_url()?;
     // 3. POST to Genesis API
     let resp = match api_client
-        .post(format!("{}/genesis/register", config.backend_url))
+        .post(format!("{}/genesis/register", backend_url))
         .json(&registration_payload)
         .send()
         .await
@@ -155,8 +155,8 @@ pub async fn register_creator_profile(profile: CreatorProfileRequest) -> Result<
         .build()
         .map_err(|e| format!("HTTP client: {}", e))?;
 
-    let config = get_config();
-    let url = format!("{}/genesis/creator", config.backend_url);
+    let backend_url = resolve_backend_url()?;
+    let url = format!("{}/genesis/creator", backend_url);
 
     match api_client.post(&url).json(&profile).send().await {
         Ok(resp) if resp.status().is_success() => Ok(()),

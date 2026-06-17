@@ -303,7 +303,7 @@ mod tests {
             invite_code: "BETA-TEST".to_string(),
             signature: "deadsig".to_string(),
             capabilities: serde_json::json!({"os": "macos", "arch": "aarch64"}),
-            installer_version: "v0.2.0-beta".to_string(),
+            installer_version: env!("CARGO_PKG_VERSION").to_string(),
             platform: "darwin".to_string(),
         };
         let json = serde_json::to_string(&req).expect("must serialize");

@@ -122,6 +122,7 @@ pub fn run() {
             greet,
             identity::get_identity_status,
             identity::initialize_identity,
+            config::get_backend_config_status,
             enrollment::get_enrollment_status,
             enrollment::enroll_node,
             enrollment::sync_capabilities,

@@ -15,13 +15,13 @@
 //!   - After successful heartbeat: polls tasks once (safe-empty for MVP)
 //!   - 20 consecutive failures: emits WARNING log, never purges identity
 
+use crate::enrollment::load_enrollment_state;
+use crate::registry_client::{call_heartbeat, call_tasks, RegistryHeartbeatRequest};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
-use tauri::{AppHandle, Manager, Emitter};
-use chrono::{DateTime, Utc};
-use crate::enrollment::load_enrollment_state;
-use crate::registry_client::{RegistryHeartbeatRequest, call_heartbeat, call_tasks};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct HeartbeatStatus {
@@ -43,7 +43,9 @@ pub struct HeartbeatManager {
 }
 
 #[tauri::command]
-pub async fn get_heartbeat_status(state: tauri::State<'_, HeartbeatManager>) -> Result<HeartbeatStatus, String> {
+pub async fn get_heartbeat_status(
+    state: tauri::State<'_, HeartbeatManager>,
+) -> Result<HeartbeatStatus, String> {
     let status = state.status.lock().await;
     Ok(status.clone())
 }
@@ -89,7 +91,19 @@ pub fn start_heartbeat_loop(handle: AppHandle) {
                 status.last_node_id_prefix = Some(node_id.chars().take(8).collect());
             }
 
-            let backend_url = crate::config::resolve_backend_url();
+            let backend_url = match crate::config::resolve_backend_url() {
+                Ok(url) => url,
+                Err(e) => {
+                    {
+                        let mut status = status_arc.lock().await;
+                        status.active = false;
+                        status.last_error = Some(Some(e));
+                        status.consecutive_failures += 1;
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
+                    continue;
+                }
+            };
 
             // Build Ed25519 signature: canonical payload = "node_id|timestamp"
             let timestamp = std::time::SystemTime::now()
@@ -98,12 +112,37 @@ pub fn start_heartbeat_loop(handle: AppHandle) {
                 .as_secs();
 
             let sig_payload = format!("{}|{}", node_id, timestamp);
-            let signature = crate::identity::get_signing_key(&handle_clone)
-                .map(|sk| {
-                    use ed25519_dalek::Signer;
-                    hex::encode(sk.sign(sig_payload.as_bytes()).to_bytes())
-                })
-                .unwrap_or_else(|_| "unsigned".to_string());
+            let signature = match crate::identity::get_signing_key(&handle_clone).map(|sk| {
+                use ed25519_dalek::Signer;
+                hex::encode(sk.sign(sig_payload.as_bytes()).to_bytes())
+            }) {
+                Ok(sig) if !sig.trim().is_empty() && sig != "unsigned" => sig,
+                Ok(_) => {
+                    {
+                        let mut status = status_arc.lock().await;
+                        status.active = false;
+                        status.last_error = Some(Some(
+                            "Heartbeat blocked: unsigned signatures are not allowed".to_string(),
+                        ));
+                        status.consecutive_failures += 1;
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
+                    continue;
+                }
+                Err(e) => {
+                    {
+                        let mut status = status_arc.lock().await;
+                        status.active = false;
+                        status.last_error = Some(Some(format!(
+                            "Heartbeat blocked: Ed25519 signature required: {}",
+                            e
+                        )));
+                        status.consecutive_failures += 1;
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
+                    continue;
+                }
+            };
 
             let req = RegistryHeartbeatRequest {
                 node_id: node_id.clone(),
@@ -129,7 +168,10 @@ pub fn start_heartbeat_loop(handle: AppHandle) {
 
                     // Log directives (safe-empty for MVP, no execution)
                     if !resp.directives.is_empty() {
-                        println!("[heartbeat] {} directive(s) received (not executed in MVP)", resp.directives.len());
+                        println!(
+                            "[heartbeat] {} directive(s) received (not executed in MVP)",
+                            resp.directives.len()
+                        );
                     }
 
                     // ── Task polling after successful heartbeat ───────────────
@@ -141,7 +183,10 @@ pub fn start_heartbeat_loop(handle: AppHandle) {
                             task_count = tasks_resp.tasks.len();
                             if task_count > 0 {
                                 // Log task IDs only — no execution without operator gate
-                                println!("[tasks] {} task(s) available (not executed, MVP gate)", task_count);
+                                println!(
+                                    "[tasks] {} task(s) available (not executed, MVP gate)",
+                                    task_count
+                                );
                             }
                         }
                         Err(e) if e.contains("revoked") => {

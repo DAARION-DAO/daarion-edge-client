@@ -118,8 +118,8 @@ pub async fn check_operator_approval() -> Result<StepStatus, String> {
     if Path::new(&token_path).exists() {
         Ok(StepStatus {
             step: "operator_approval".to_string(),
-            status: "passed".to_string(),
-            message: "Worker eligibility token verified.".to_string(),
+            status: "blocked".to_string(),
+            message: "Legacy operator_token.txt detected, but local file presence is not a security boundary. Worker Mode requires cryptographic operator-token validation before activation.".to_string(),
         })
     } else {
         Ok(StepStatus {

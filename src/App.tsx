@@ -342,7 +342,7 @@ function App() {
             className={`flex items-center gap-2.5 px-6 py-3 rounded-xl text-[11px] font-black uppercase tracking-[0.15em] transition-all duration-300 ${activeTab === 'activation' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/30 border-blue-500/50' : 'text-white/30 hover:text-white/50 hover:bg-white/5 border-transparent'} border`}
           >
             <Cuboid size={14} className={activeTab === 'activation' ? 'animate-pulse' : ''} />
-            Worker Mode <span className="text-[9px] px-1 py-0.5 bg-blue-500/20 rounded">Preview</span>
+            Worker Mode <span className="text-[9px] px-1 py-0.5 bg-amber-500/20 text-amber-300 rounded">Gate Pending</span>
           </button>
 
           <button
@@ -358,7 +358,7 @@ function App() {
               activeTab === "messaging" ? "bg-emerald-500/10 text-emerald-400 shadow-xl border border-emerald-500/20" : "text-white/30 hover:text-white/60"
             }`}
           >
-            <MessageSquare size={14} /> Matrix Control
+            <MessageSquare size={14} /> Messaging Stub
           </button>
         </div>
 

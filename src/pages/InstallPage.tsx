@@ -3,6 +3,7 @@ import {
   Smartphone, Share, PlusSquare,
   CheckCircle, Download, Wifi, Shield, Zap, Globe
 } from "lucide-react";
+import pkg from "../../package.json";
 
 type Platform = "ios" | "android" | "desktop" | "unknown";
 
@@ -208,7 +209,7 @@ export function InstallPage() {
         </div>
         
         <p className="text-center text-[10px] text-white/20 font-mono">
-          DAARION Edge v0.2.0-beta
+          DAARION Edge v{pkg.version}
         </p>
 
       </div>

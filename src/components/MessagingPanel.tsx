@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { MessageSquare, Users, Shield, Zap } from "lucide-react";
+import { AlertTriangle, MessageSquare, Users, Shield, Zap } from "lucide-react";
 
 interface Message {
   id: string;
@@ -103,7 +103,7 @@ export function MessagingPanel() {
             <MessageSquare size={16} />
           </div>
           <div>
-            <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/70">Control Room</h2>
+            <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/70">Control Room Stub</h2>
             <p className="text-[9px] text-white/30 font-mono italic">{roomInfo?.room_id || "Awaiting Bootstrap"}</p>
           </div>
         </div>
@@ -134,9 +134,16 @@ export function MessagingPanel() {
               <span className="text-[8px] text-white/30 uppercase font-black tracking-widest">Active Session:</span>
               <code className="text-[9px] text-blue-300/40 font-mono">{session.session_id}</code>
             </div>
-            <div className="text-[8px] text-white/10 uppercase font-bold">Encrypted Channel</div>
+            <div className="text-[8px] text-amber-400/50 uppercase font-bold">Mock Session Only</div>
         </div>
       )}
+
+      <div className="px-4 py-2 bg-amber-500/5 border-b border-amber-500/10 flex items-start gap-2">
+        <AlertTriangle size={12} className="text-amber-400 mt-0.5 flex-shrink-0" />
+        <p className="text-[9px] text-amber-100/50 leading-relaxed">
+          Messaging is a placeholder. Matrix/control-plane transport is not production-ready in this build.
+        </p>
+      </div>
 
       {/* Participants Bar */}
       {roomInfo && (
@@ -153,20 +160,20 @@ export function MessagingPanel() {
         </div>
       )}
 
-      {/* Messages Area / Sovereign Matrix UI */}
+      {/* Messages Area / messaging stub preview */}
       <div className="flex-1 flex flex-col relative bg-[#181b21]">
         {connectivity !== "Connected" ? (
           <div className="h-full flex flex-col items-center justify-center opacity-20 py-10 text-center">
             <Shield size={32} className="mb-2" />
             <p className="text-[10px] font-bold uppercase tracking-widest leading-relaxed">
-              Establish Control Plane connection to view Sovereign Chat
+              Bootstrap placeholder messaging to preview the control room shell
             </p>
           </div>
         ) : (
           <iframe 
             src="https://chat.daarion.space" 
             className="w-full h-full border-none"
-            title="DAARION Sovereign Matrix"
+            title="DAARION Messaging Stub"
             allow="camera; microphone; display-capture; autoplay; clipboard-write; clipboard-read"
           />
         )}

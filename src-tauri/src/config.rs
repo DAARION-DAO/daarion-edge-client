@@ -1,9 +1,10 @@
 //! config.rs — DAARION Edge Client configuration resolution
 //!
-//! Backend URL priority chain (for registry integration):
-//!   1. DAARION_BACKEND_URL env var (dev/operator override, highest priority)
-//!   2. AppConfig.backend_url (compile-time/Tauri config default)
-//!   3. "http://localhost:8010" (SOFIIA Console dev default — only used in dev builds)
+//! Backend URL priority chain (for registry and Genesis integration):
+//!   1. DAARION_BACKEND_URL runtime env var (dev/operator override)
+//!   2. DAARION_BACKEND_URL compile-time env var (release build config)
+//!   3. "http://localhost:8010" only in debug/dev builds
+//!   4. None in production builds (pairing/config required)
 //!
 //! Relay endpoint priority chain (for Worker relay mode, unchanged):
 //!   1. DAARION_RELAY_ENDPOINT env var
@@ -11,6 +12,10 @@
 //!   3. None (honest "not configured" state)
 
 use serde::{Deserialize, Serialize};
+
+const DEV_BACKEND_URL: &str = "http://localhost:8010";
+const BACKEND_NOT_CONFIGURED: &str =
+    "DAARION backend is not configured. Pair this client with a DAARION backend before network operations.";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppConfig {
@@ -22,36 +27,95 @@ pub struct AppConfig {
 
 impl Default for AppConfig {
     fn default() -> Self {
+        let backend_url = resolve_backend_url_from_sources(
+            std::env::var("DAARION_BACKEND_URL").ok().as_deref(),
+            option_env!("DAARION_BACKEND_URL"),
+            cfg!(debug_assertions),
+        )
+        .unwrap_or_default();
+        let environment = if backend_url == DEV_BACKEND_URL {
+            "development"
+        } else if backend_url.is_empty() {
+            "unconfigured"
+        } else {
+            "production"
+        };
+
         Self {
-            // Default points to SOFIIA Console dev backend.
-            // Production URL set via DAARION_BACKEND_URL env var or Tauri config.
-            backend_url: "http://localhost:8010".to_string(),
-            environment: "development".to_string(),
+            backend_url,
+            environment: environment.to_string(),
             relay_endpoint: String::new(),
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BackendConfigStatus {
+    pub configured: bool,
+    pub backend_url: Option<String>,
+    pub environment: String,
+    pub dev_default: bool,
+    pub message: String,
 }
 
 pub fn get_config() -> AppConfig {
     AppConfig::default()
 }
 
+fn normalize_url(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().trim_end_matches('/').to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+fn resolve_backend_url_from_sources(
+    runtime_env: Option<&str>,
+    compile_env: Option<&str>,
+    debug_build: bool,
+) -> Option<String> {
+    runtime_env
+        .and_then(normalize_url)
+        .or_else(|| compile_env.and_then(normalize_url))
+        .or_else(|| debug_build.then(|| DEV_BACKEND_URL.to_string()))
+}
+
 /// Resolve the SOFIIA registry backend URL using the approved priority chain.
 ///
 /// Priority:
-///   1. DAARION_BACKEND_URL env var (dev/operator override)
-///   2. AppConfig.backend_url (compile default: http://localhost:8010)
+///   1. DAARION_BACKEND_URL runtime env var (dev/operator override)
+///   2. DAARION_BACKEND_URL compile-time env var (release build config)
+///   3. debug/dev fallback to http://localhost:8010
 ///
-/// Never returns an empty string. Always returns a usable base URL.
-pub fn resolve_backend_url() -> String {
-    if let Ok(env_url) = std::env::var("DAARION_BACKEND_URL") {
-        let trimmed = env_url.trim().trim_end_matches('/').to_string();
-        if !trimmed.is_empty() {
-            return trimmed;
-        }
-    }
+/// Production builds without an explicit backend return an error.
+pub fn resolve_backend_url() -> Result<String, String> {
     let config = get_config();
-    config.backend_url.trim_end_matches('/').to_string()
+    normalize_url(&config.backend_url).ok_or_else(|| BACKEND_NOT_CONFIGURED.to_string())
+}
+
+#[tauri::command]
+pub fn get_backend_config_status() -> BackendConfigStatus {
+    let config = get_config();
+    let backend_url = normalize_url(&config.backend_url);
+    let dev_default = backend_url.as_deref() == Some(DEV_BACKEND_URL) && cfg!(debug_assertions);
+    let configured = backend_url.is_some();
+    let message = if dev_default {
+        "Using local development backend.".to_string()
+    } else if configured {
+        "Backend configured.".to_string()
+    } else {
+        BACKEND_NOT_CONFIGURED.to_string()
+    };
+
+    BackendConfigStatus {
+        configured,
+        backend_url,
+        environment: config.environment,
+        dev_default,
+        message,
+    }
 }
 
 /// Resolve the relay endpoint using the approved priority chain:
@@ -78,12 +142,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_backend_url_default() {
-        // Without env var, should return the compile default
+    fn test_backend_url_debug_default() {
         std::env::remove_var("DAARION_BACKEND_URL");
-        let url = resolve_backend_url();
-        assert!(!url.is_empty());
-        assert!(!url.ends_with('/'), "URL must not have trailing slash: {}", url);
+        let url = resolve_backend_url().expect("debug builds should use local backend");
+        assert!(
+            !url.ends_with('/'),
+            "URL must not have trailing slash: {}",
+            url
+        );
+    }
+
+    #[test]
+    fn test_backend_url_release_requires_explicit_config() {
+        let url = resolve_backend_url_from_sources(None, None, false);
+        assert!(url.is_none());
+    }
+
+    #[test]
+    fn test_backend_url_env_wins_and_trims() {
+        let url = resolve_backend_url_from_sources(
+            Some("https://api.daarion.city/"),
+            Some("https://compile.example"),
+            false,
+        )
+        .expect("env should resolve");
+        assert_eq!(url, "https://api.daarion.city");
     }
 
     #[test]
