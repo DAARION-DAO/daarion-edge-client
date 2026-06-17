@@ -21,6 +21,10 @@ interface BackendConfigStatus {
   backend_url: string | null;
   environment: string;
   dev_default: boolean;
+  paired: boolean;
+  pairing_label: string | null;
+  pairing_source: string | null;
+  connection_status: string;
   message: string;
 }
 
@@ -244,6 +248,10 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
         backend_url: null,
         environment: "unknown",
         dev_default: false,
+        paired: false,
+        pairing_label: null,
+        pairing_source: null,
+        connection_status: "not_checked",
         message: String(e),
       }));
   }, []);
@@ -475,7 +483,15 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             <div className="mt-3 mx-auto max-w-md flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-left">
               <AlertTriangle size={13} className="text-amber-400 mt-0.5 flex-shrink-0" />
               <p className="text-[10px] text-amber-100/70 leading-relaxed">
-                Pairing required. Configure a DAARION backend before Genesis registration or registry enrollment.
+                Pairing required. Enter your DAARION invitation code before Genesis registration.
+              </p>
+            </div>
+          )}
+          {backendStatus?.configured && (
+            <div className="mt-3 mx-auto max-w-md flex items-start gap-2 rounded-xl border border-emerald-500/15 bg-emerald-500/5 px-3 py-2 text-left">
+              <Server size={13} className="text-emerald-400 mt-0.5 flex-shrink-0" />
+              <p className="text-[10px] text-emerald-100/60 leading-relaxed">
+                {backendStatus.pairing_label || "Backend profile"} {backendStatus.paired ? "paired" : "available"} — connection not checked yet.
               </p>
             </div>
           )}

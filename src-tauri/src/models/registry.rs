@@ -76,16 +76,20 @@ impl ModelRegistry {
             .build()
             .map_err(|e| e.to_string())?;
 
-        // 1. Try Network
-        match client.get("https://api.daarion.city/models/registry").send().await {
-            Ok(resp) if resp.status().is_success() => {
-                if let Ok(payload) = resp.json::<RegistryPayload>().await {
-                    println!("[RegistrySync] Successfully fetched from Network");
-                    let _ = Self::save_to_cache(&app, &payload);
-                    return Ok(payload);
+        // 1. Try Network only through the paired backend resolver.
+        if let Ok(backend_url) = crate::config::resolve_backend_url(&app) {
+            match client.get(format!("{}/models/registry", backend_url)).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    if let Ok(payload) = resp.json::<RegistryPayload>().await {
+                        println!("[RegistrySync] Successfully fetched from Network");
+                        let _ = Self::save_to_cache(&app, &payload);
+                        return Ok(payload);
+                    }
                 }
+                _ => {}
             }
-            _ => {}
+        } else {
+            println!("[RegistrySync] Pairing required. Skipping network registry fetch.");
         }
 
         // 2. Try DB Cache (last_known_good_registry)

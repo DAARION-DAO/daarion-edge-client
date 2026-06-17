@@ -3,6 +3,7 @@ mod registry_client;
 mod enrollment;
 mod heartbeat;
 mod config;
+mod pairing;
 mod capabilities;
 mod messaging;
 mod worker;
@@ -123,6 +124,9 @@ pub fn run() {
             identity::get_identity_status,
             identity::initialize_identity,
             config::get_backend_config_status,
+            pairing::get_pairing_status,
+            pairing::pair_backend,
+            pairing::unpair_backend,
             enrollment::get_enrollment_status,
             enrollment::enroll_node,
             enrollment::sync_capabilities,

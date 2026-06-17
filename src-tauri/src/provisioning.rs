@@ -1,8 +1,9 @@
 /// Sovereign Genesis — Provisioning Module
 /// Handles: Thin client communication with Genesis backend
-use serde::{Deserialize, Serialize};
-use reqwest::Client;
 use crate::config::resolve_backend_url;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use tauri::AppHandle;
 const BETA_MAX_CREATORS: i64 = 10_000;
 
 // ─── Data structures ──────────────────────────────────────────────
@@ -34,13 +35,13 @@ pub struct ProvisioningResult {
 // ─── Beta slot check (NODA1 Postgres) ────────────────────────────
 
 #[tauri::command]
-pub async fn check_beta_slots() -> Result<BetaStatus, String> {
+pub async fn check_beta_slots(handle: AppHandle) -> Result<BetaStatus, String> {
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
-    let backend_url = resolve_backend_url()?;
+    let backend_url = resolve_backend_url(&handle)?;
     let url = format!("{}/genesis/beta-status", backend_url);
 
     match client.get(&url).send().await {
@@ -66,6 +67,7 @@ pub async fn check_beta_slots() -> Result<BetaStatus, String> {
 
 #[tauri::command]
 pub async fn provision_sovereign_genesis(
+    handle: AppHandle,
     agent_name: String,
     agent_directive: String,
     solana_pubkey: String,
@@ -76,7 +78,7 @@ pub async fn provision_sovereign_genesis(
     recommended_model: String,
 ) -> Result<ProvisioningResult, String> {
     // 1. Check beta slots
-    let beta_status = check_beta_slots().await?;
+    let beta_status = check_beta_slots(handle.clone()).await?;
     if !beta_status.is_open {
         return Err("Beta is full. All 10,000 Creator slots have been claimed. Check daarion.city for announcements.".to_string());
     }
@@ -99,7 +101,7 @@ pub async fn provision_sovereign_genesis(
         .build()
         .map_err(|e| format!("HTTP client: {}", e))?;
 
-    let backend_url = resolve_backend_url()?;
+    let backend_url = resolve_backend_url(&handle)?;
     // 3. POST to Genesis API
     let resp = match api_client
         .post(format!("{}/genesis/register", backend_url))
@@ -149,13 +151,16 @@ pub struct CreatorProfileRequest {
 }
 
 #[tauri::command]
-pub async fn register_creator_profile(profile: CreatorProfileRequest) -> Result<(), String> {
+pub async fn register_creator_profile(
+    handle: AppHandle,
+    profile: CreatorProfileRequest,
+) -> Result<(), String> {
     let api_client = Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| format!("HTTP client: {}", e))?;
 
-    let backend_url = resolve_backend_url()?;
+    let backend_url = resolve_backend_url(&handle)?;
     let url = format!("{}/genesis/creator", backend_url);
 
     match api_client.post(&url).json(&profile).send().await {

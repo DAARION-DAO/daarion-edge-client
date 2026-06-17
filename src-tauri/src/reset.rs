@@ -1,6 +1,7 @@
 use crate::identity::{
     IDENTITY_FILE, KEY_NAME as IDENTITY_KEY_NAME, SERVICE_NAME as IDENTITY_SERVICE_NAME,
 };
+use crate::pairing::PAIRING_FILE;
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -51,6 +52,19 @@ pub async fn factory_reset_local_state(handle: tauri::AppHandle) -> Result<Reset
                 result
                     .warnings
                     .push(format!("Failed to delete enrollment.json: {}", e));
+            }
+        }
+    }
+
+    let pairing_path = app_dir.join(PAIRING_FILE);
+    if pairing_path.exists() {
+        match fs::remove_file(&pairing_path) {
+            Ok(_) => result.deleted_files.push(PAIRING_FILE.to_string()),
+            Err(e) => {
+                result.success = false;
+                result
+                    .warnings
+                    .push(format!("Failed to delete {}: {}", PAIRING_FILE, e));
             }
         }
     }

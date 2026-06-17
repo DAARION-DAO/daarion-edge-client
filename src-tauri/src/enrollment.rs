@@ -133,7 +133,7 @@ pub async fn enroll_node(
     bootstrap_grant: String,
 ) -> Result<EnrollmentState, String> {
     let identity = load_or_create_identity(&handle)?;
-    let backend_url = resolve_backend_url()?;
+    let backend_url = resolve_backend_url(&handle)?;
     let capabilities = get_capabilities();
 
     // Build canonical signature payload: node_id|public_key|invite_code
@@ -219,7 +219,7 @@ pub async fn sync_capabilities(handle: AppHandle) -> Result<bool, String> {
         _ => return Err("sync_capabilities: no node_id — enroll first".to_string()),
     };
 
-    let backend_url = resolve_backend_url()?;
+    let backend_url = resolve_backend_url(&handle)?;
     let caps = get_capabilities();
     let cap_json = capabilities_to_registry_json(&caps);
 

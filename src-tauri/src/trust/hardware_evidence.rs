@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 use std::env;
+use tauri::AppHandle;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EvidencePayload {
@@ -119,9 +120,9 @@ use base64::{Engine as _, engine::general_purpose};
 
 /// Expose this explicit endpoint to the Desktop UI to triggger submission
 #[tauri::command]
-pub async fn submit_evidence_handshake(session_id: String) -> Result<String, String> {
+pub async fn submit_evidence_handshake(handle: AppHandle, session_id: String) -> Result<String, String> {
     println!("[TRUST HANDSHAKE] Starting evidence submission for session {}.", session_id);
-    let api_base = std::env::var("VITE_GENESIS_API_BASE").unwrap_or_else(|_| "http://localhost:8000".to_string());
+    let api_base = crate::config::resolve_backend_url(&handle)?;
     let client = reqwest::Client::new();
 
     // 1. Challenge Retrieval

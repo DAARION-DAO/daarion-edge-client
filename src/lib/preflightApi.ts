@@ -4,10 +4,7 @@
  * Graceful fallback: if API unreachable → safe default (remote_multimodal_ready).
  */
 import { collectDevicePreflight, PreflightIntent, PreflightRequest } from "./devicePreflight";
-
-const API_BASE = (
-  import.meta.env.VITE_GENESIS_API_BASE ?? "https://api.daarion.city"
-).replace(/\/$/, "");
+import { getEffectiveBackendUrl } from "./backendConfig";
 
 // ── Response types (mirror backend) ──────────────────────────────────────────
 
@@ -118,7 +115,8 @@ export async function runPreflight(
   }
 
   try {
-    const res = await fetch(`${API_BASE}/device/preflight`, {
+    const apiBase = await getEffectiveBackendUrl();
+    const res = await fetch(`${apiBase}/device/preflight`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify(req),
@@ -189,7 +187,8 @@ async function getCachedRegistry(): Promise<unknown | null> {
 export async function fetchRegistryStrategy(): Promise<unknown | null> {
   // 1. Network Try (supports ETag / 304 via browser native caching)
   try {
-    const res = await fetch(`${API_BASE}/models/registry`, {
+    const apiBase = await getEffectiveBackendUrl();
+    const res = await fetch(`${apiBase}/models/registry`, {
       method: "GET",
       signal: AbortSignal.timeout(5000),
     });

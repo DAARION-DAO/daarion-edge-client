@@ -91,7 +91,7 @@ pub fn start_heartbeat_loop(handle: AppHandle) {
                 status.last_node_id_prefix = Some(node_id.chars().take(8).collect());
             }
 
-            let backend_url = match crate::config::resolve_backend_url() {
+            let backend_url = match crate::config::resolve_backend_url(&handle_clone) {
                 Ok(url) => url,
                 Err(e) => {
                     {
