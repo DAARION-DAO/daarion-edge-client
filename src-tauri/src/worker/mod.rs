@@ -21,6 +21,10 @@ use tauri::State;
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
+const WORKER_CRYPTO_GATE_READY: bool = false;
+const WORKER_GATE_BLOCKED_MESSAGE: &str =
+    "Worker Mode is disabled until cryptographic operator-token validation is implemented.";
+
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerModeState {
     /// User's explicit opt-in intent. Persisted to disk.
@@ -51,6 +55,10 @@ pub enum WorkerRuntimeStatus {
 /// Load persisted worker opt-in intent from app data dir.
 /// Returns false if file missing, corrupt, or on any error (fail-safe).
 pub fn load_worker_optin(app: &tauri::AppHandle) -> bool {
+    if !WORKER_CRYPTO_GATE_READY {
+        return false;
+    }
+
     use tauri::Manager;
     let Some(data_dir) = app.path().app_data_dir().ok() else {
         return false;
@@ -98,6 +106,15 @@ pub async fn toggle_worker_mode(
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
     let mut s = state.lock().await;
+
+    if enabled && !WORKER_CRYPTO_GATE_READY {
+        s.opted_in = false;
+        s.backend_accepted = false;
+        s.runtime_status = WorkerRuntimeStatus::Blocked(WORKER_GATE_BLOCKED_MESSAGE.to_string());
+        save_worker_optin(&app_handle, false);
+        return Err(WORKER_GATE_BLOCKED_MESSAGE.to_string());
+    }
+
     s.opted_in = enabled;
     
     // Persist the user's explicit opt-in intent (not runtime state)

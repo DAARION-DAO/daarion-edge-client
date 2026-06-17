@@ -16,6 +16,14 @@ interface GenesisWizardProps {
   onComplete: () => void;
 }
 
+interface BackendConfigStatus {
+  configured: boolean;
+  backend_url: string | null;
+  environment: string;
+  dev_default: boolean;
+  message: string;
+}
+
 // ── DAARION Token Gate — Polygon Mainnet ──────────────────────────
 // Source: github.com/connectplatform/daarion README.ADDRESSES.md
 const DAARION_TOKEN_CONTRACT = "0x8Fe60b6F2DCBE68a1659b81175C665EB94015B16"; // DAARION on Polygon
@@ -148,6 +156,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
 
   // Device Preflight — runs once on wizard mount
   const [preflightData, setPreflightData] = useState<PreflightResponse | null>(null);
+  const [backendStatus, setBackendStatus] = useState<BackendConfigStatus | null>(null);
 
   // Step 5 — Provisioning
   const [provisioningLog, setProvisioningLog] = useState<string[]>([]);
@@ -228,6 +237,15 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
     runPreflight("voice_ceremony", "/genesis")
       .then((r) => setPreflightData(r))
       .catch(() => {});
+    invoke<BackendConfigStatus>("get_backend_config_status")
+      .then((status) => setBackendStatus(status))
+      .catch((e) => setBackendStatus({
+        configured: false,
+        backend_url: null,
+        environment: "unknown",
+        dev_default: false,
+        message: String(e),
+      }));
   }, []);
 
   useEffect(() => {
@@ -336,6 +354,16 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
     addLog(`Ініціалізація Genesis для Творця: ${creatorFirstName} ${creatorLastName}`);
     setProvisionProgress(5);
 
+    const currentBackend = backendStatus ?? (await invoke<BackendConfigStatus>("get_backend_config_status"));
+    setBackendStatus(currentBackend);
+    if (!currentBackend.configured) {
+      const message = `Pairing required: ${currentBackend.message}`;
+      setProvisionError(message);
+      addLog(`✗ ${message}`);
+      setProvisionProgress(100);
+      return;
+    }
+
     await new Promise(r => setTimeout(r, 500));
     addLog(`Прив'язка особистості творця до протоколу DAARION...`);
     setProvisionProgress(12);
@@ -370,31 +398,23 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
 
     try {
       let result: any = null;
-      try {
-        result = await invoke("provision_sovereign_genesis", {
-          agentName: agentName.trim(),
-          agentDirective: agentPurpose.trim(),
-          solanaPubkey: keys.solana_pubkey,
-          evmAddress: keys.base_address,
-          deviceClass: hardwareScan?.device_class || "Unknown",
-          deviceOs: hardwareScan?.os || "Unknown",
-          deviceRamGb: hardwareScan?.ram_total_gb || 0,
-          recommendedModel: selectedModel?.model_id || "",
-        });
+      result = await invoke("provision_sovereign_genesis", {
+        agentName: agentName.trim(),
+        agentDirective: agentPurpose.trim(),
+        solanaPubkey: keys.solana_pubkey,
+        evmAddress: keys.base_address,
+        deviceClass: hardwareScan?.device_class || "Unknown",
+        deviceOs: hardwareScan?.os || "Unknown",
+        deviceRamGb: hardwareScan?.ram_total_gb || 0,
+        recommendedModel: selectedModel?.model_id || "",
+      });
 
-        setProvisionResult(result);
-        setProvisionProgress(78);
-        addLog(`✓ Реєстраційний номер агента: #${result.beta_slot}`);
-        addLog(`✓ Matrix Chamber: ${result.matrix?.room_id?.slice(0, 26)}...`);
-        addLog(`✓ Поштова скринька агента: ${result.email}`);
-        addLog(`✓ Вітальне повідомлення DAARWIZZ — відправлено.`);
-      } catch (err: any) {
-        addLog(`⚠ Network unreachable: ${String(err).slice(0, 60)}`);
-        addLog(`⚠ Falling back to provisional local agent.`);
-        result = { beta_slot: "PROVISIONAL", email: "local-only", matrix: { room_id: "unavailable" } };
-        setProvisionResult(result);
-        setProvisionProgress(78);
-      }
+      setProvisionResult(result);
+      setProvisionProgress(78);
+      addLog(`✓ Реєстраційний номер агента: #${result.beta_slot}`);
+      addLog(`✓ Matrix Chamber: ${result.matrix?.room_id?.slice(0, 26)}...`);
+      addLog(`✓ Поштова скринька агента: ${result.email}`);
+      addLog(`✓ Вітальне повідомлення DAARWIZZ — відправлено.`);
 
       await new Promise(r => setTimeout(r, 500));
       addLog("Також реєструємо профіль Творця в реєстрі Міста...");
@@ -451,6 +471,14 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             Sovereign Genesis
           </h1>
           <p className="text-[10px] uppercase tracking-[0.25em] text-blue-400/60">Portal of Birth</p>
+          {backendStatus && !backendStatus.configured && (
+            <div className="mt-3 mx-auto max-w-md flex items-start gap-2 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-left">
+              <AlertTriangle size={13} className="text-amber-400 mt-0.5 flex-shrink-0" />
+              <p className="text-[10px] text-amber-100/70 leading-relaxed">
+                Pairing required. Configure a DAARION backend before Genesis registration or registry enrollment.
+              </p>
+            </div>
+          )}
           {betaStatus && (
             <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10">
               <Users size={10} className="text-emerald-400" />

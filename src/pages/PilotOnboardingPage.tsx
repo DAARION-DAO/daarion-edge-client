@@ -96,7 +96,7 @@ export function PilotOnboardingPage() {
                 { n: 2, title: "Install the app", desc: "Open the .dmg and drag DAARION Edge into your Applications folder." },
                 { n: 3, title: "Launch", desc: "Open DAARION Edge from Applications. If macOS Gatekeeper blocks, right-click → Open." },
                 { n: 4, title: "Complete Genesis", desc: "Follow the in-app Sovereign Genesis wizard to create your agent identity." },
-                { n: 5, title: "Activate Worker (optional)", desc: "Worker Mode becomes available after in-app checks and operator approval." },
+                { n: 5, title: "Worker Mode", desc: "Worker activation is blocked until cryptographic operator-token validation is available." },
               ].map((s) => (
                 <div key={s.n} className="flex gap-3 items-start">
                   <div className="flex-shrink-0 w-7 h-7 rounded-full bg-emerald-600/20 border border-emerald-500/30 flex items-center justify-center text-[10px] font-black text-emerald-400">

@@ -83,19 +83,19 @@ pub async fn bootstrap_messaging(
         }
     };
 
-    // REAL FLOW: Request messaging session from backend using node_token
-    // For M1.5, we implement the structure of the real flow
+    // Placeholder flow only. This does not establish Matrix/control-plane transport.
+    // The final implementation must request a signed messaging session from the backend.
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     let session = MessagingSession {
         session_id: format!("sess_{}", uuid::Uuid::new_v4()),
-        session_ticket: format!("msg_{}", uuid::Uuid::new_v4()),
+        session_ticket: format!("stub_{}", uuid::Uuid::new_v4()),
     };
 
     let room_info = RoomInfo {
-        room_id: "!node_room_hardened:matrix.daarion.city".to_string(),
-        display_name: "Node Control Plane".to_string(),
-        participants: vec!["Guardian Agent".to_string(), "Steward Agent".to_string(), "User".to_string()],
+        room_id: "mock://matrix-control-plane-placeholder".to_string(),
+        display_name: "Mock Control Plane (Stub)".to_string(),
+        participants: vec!["Stub Guardian".to_string(), "Stub Steward".to_string(), "User".to_string()],
     };
 
     *state.session.lock().await = Some(session);
@@ -195,7 +195,7 @@ pub async fn send_node_message(
         return Err("Messaging not connected".to_string());
     }
 
-    // Mock sending message to real backend
+    // Mock local echo only. No backend or Matrix message is sent here.
     let msg = Message {
         id: uuid::Uuid::new_v4().to_string(),
         sender: "User".to_string(),

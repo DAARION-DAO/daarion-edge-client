@@ -10,19 +10,19 @@
 //! Worker relay mode (worker/mod.rs) is separate from registry enrollment.
 //! Registry enrollment does NOT activate the WebSocket relay loop.
 
-use keyring::Entry;
-use crate::capabilities::{get_capabilities};
-use crate::registry_client::{
-    RegistryRegisterRequest, RegistryCapabilitiesRequest,
-    call_register, call_capabilities, capabilities_to_registry_json,
-};
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
-use std::path::PathBuf;
-use std::fs;
-use crate::identity::load_or_create_identity;
+use crate::capabilities::get_capabilities;
 use crate::config::resolve_backend_url;
+use crate::identity::load_or_create_identity;
+use crate::registry_client::{
+    call_capabilities, call_register, capabilities_to_registry_json, RegistryCapabilitiesRequest,
+    RegistryRegisterRequest,
+};
 use ed25519_dalek::Signer;
+use keyring::Entry;
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+use tauri::{AppHandle, Manager};
 
 // ─── Structs ──────────────────────────────────────────────────────────────────
 
@@ -40,7 +40,7 @@ pub struct EnrollmentState {
 
     // Registry-specific fields (new in registry integration)
     pub trust_tier: Option<String>,
-    pub registry_mode: bool,  // true = using SOFIIA registry, false = legacy
+    pub registry_mode: bool, // true = using SOFIIA registry, false = legacy
 
     // Trust-Aware Fields (preserved for future use)
     pub csr_generated: bool,
@@ -58,7 +58,10 @@ const SERVICE_NAME: &str = "com.daarion.edge.node";
 const TOKEN_KEY: &str = "node_token";
 
 fn get_app_dir(handle: &AppHandle) -> PathBuf {
-    handle.path().app_data_dir().expect("Failed to get app data dir")
+    handle
+        .path()
+        .app_data_dir()
+        .expect("Failed to get app data dir")
 }
 
 pub fn load_enrollment_state(handle: &AppHandle) -> EnrollmentState {
@@ -101,6 +104,20 @@ fn sign_payload(handle: &AppHandle, message: &str) -> Result<String, String> {
     Ok(hex::encode(sig.to_bytes()))
 }
 
+fn require_signed_signature(
+    signature: Result<String, String>,
+    operation: &str,
+) -> Result<String, String> {
+    match signature {
+        Ok(sig) if !sig.trim().is_empty() && sig != "unsigned" => Ok(sig),
+        Ok(_) => Err(format!(
+            "{}: unsigned signatures are not allowed",
+            operation
+        )),
+        Err(e) => Err(format!("{}: Ed25519 signature required: {}", operation, e)),
+    }
+}
+
 // ─── Tauri Commands ───────────────────────────────────────────────────────────
 
 /// Enroll this node with the SOFIIA Worker Node Registry.
@@ -114,21 +131,24 @@ fn sign_payload(handle: &AppHandle, message: &str) -> Result<String, String> {
 /// NOTE: This does NOT activate Worker Mode relay. Registry enrollment and
 /// relay activation are separate flows.
 #[tauri::command]
-pub async fn enroll_node(handle: AppHandle, bootstrap_grant: String) -> Result<EnrollmentState, String> {
+pub async fn enroll_node(
+    handle: AppHandle,
+    bootstrap_grant: String,
+) -> Result<EnrollmentState, String> {
     let identity = load_or_create_identity(&handle)?;
-    let backend_url = resolve_backend_url();
+    let backend_url = resolve_backend_url()?;
     let capabilities = get_capabilities();
 
     // Build canonical signature payload: node_id|public_key|invite_code
     // This proves the caller possesses the private key for this public_key.
-    let sig_payload = format!("{}|{}|{}", identity.node_id, identity.public_key, bootstrap_grant);
-    let signature = sign_payload(&handle, &sig_payload).unwrap_or_else(|e| {
-        println!("[enrollment] Signature failed (non-fatal for MVP): {}", e);
-        "unsigned".to_string()  // Backend validates but won't reject for beta
-    });
+    let sig_payload = format!(
+        "{}|{}|{}",
+        identity.node_id, identity.public_key, bootstrap_grant
+    );
+    let signature = require_signed_signature(sign_payload(&handle, &sig_payload), "enrollment")?;
 
     let platform = std::env::consts::OS.to_string();
-    let installer_version = "v0.2.0-beta".to_string();
+    let installer_version = env!("CARGO_PKG_VERSION").to_string();
 
     let request = RegistryRegisterRequest {
         public_key: identity.public_key.clone(),
@@ -139,13 +159,19 @@ pub async fn enroll_node(handle: AppHandle, bootstrap_grant: String) -> Result<E
         platform,
     };
 
-    println!("[enrollment] Registering with SOFIIA registry: {}/api/v1/nodes/register", backend_url);
+    println!(
+        "[enrollment] Registering with SOFIIA registry: {}/api/v1/nodes/register",
+        backend_url
+    );
 
     let mut existing_state = load_enrollment_state(&handle);
 
     match call_register(&backend_url, &request).await {
         Ok(resp) => {
-            println!("[enrollment] Registration OK — node_id={}, status={}", resp.node_id, resp.status);
+            println!(
+                "[enrollment] Registration OK — node_id={}, status={}",
+                resp.node_id, resp.status
+            );
 
             // Registry nodes start as "pending" — this is expected, not an error.
             // enrolled=true only when backend says "active".
@@ -165,7 +191,7 @@ pub async fn enroll_node(handle: AppHandle, bootstrap_grant: String) -> Result<E
             println!("[enrollment] Registration failed: {}", e);
             // Preserve existing node_id and status — do NOT purge identity on transient failure.
             existing_state.last_enrollment_error = Some(e);
-            existing_state.registry_mode = true;  // Intent was registry mode even if failed
+            existing_state.registry_mode = true; // Intent was registry mode even if failed
         }
     }
 
@@ -196,17 +222,18 @@ pub async fn sync_capabilities(handle: AppHandle) -> Result<bool, String> {
         _ => return Err("sync_capabilities: no node_id — enroll first".to_string()),
     };
 
-    let backend_url = resolve_backend_url();
+    let backend_url = resolve_backend_url()?;
     let caps = get_capabilities();
     let cap_json = capabilities_to_registry_json(&caps);
 
     // Sign node_id to prove authenticity
-    let signature = crate::identity::get_signing_key(&handle)
-        .map(|sk| {
+    let signature = require_signed_signature(
+        crate::identity::get_signing_key(&handle).map(|sk| {
             use ed25519_dalek::Signer;
             hex::encode(sk.sign(node_id.as_bytes()).to_bytes())
-        })
-        .unwrap_or_else(|_| "unsigned".to_string());
+        }),
+        "capability sync",
+    )?;
 
     let req = RegistryCapabilitiesRequest {
         node_id: node_id.clone(),
@@ -216,12 +243,44 @@ pub async fn sync_capabilities(handle: AppHandle) -> Result<bool, String> {
 
     match call_capabilities(&backend_url, &req).await {
         Ok(resp) => {
-            println!("[capabilities] Sync OK for node {}", &node_id[..8.min(node_id.len())]);
+            println!(
+                "[capabilities] Sync OK for node {}",
+                &node_id[..8.min(node_id.len())]
+            );
             Ok(resp.ack)
         }
         Err(e) => {
             println!("[capabilities] Sync failed: {}", e);
             Err(e)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::require_signed_signature;
+
+    #[test]
+    fn test_no_unsigned_enrollment_signature() {
+        let result = require_signed_signature(Ok("unsigned".to_string()), "enrollment");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("unsigned signatures are not allowed"));
+    }
+
+    #[test]
+    fn test_no_unsigned_capability_sync_signature() {
+        let result =
+            require_signed_signature(Err("private key missing".to_string()), "capability sync");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Ed25519 signature required"));
+    }
+
+    #[test]
+    fn test_signed_signature_passes() {
+        let signature = "a".repeat(128);
+        let result = require_signed_signature(Ok(signature.clone()), "enrollment");
+        assert_eq!(result.expect("signature should pass"), signature);
     }
 }

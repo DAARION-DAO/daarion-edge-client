@@ -24,7 +24,7 @@ The Edge Client operates across three distinct functional layers:
 ### ⚙️ L3 — Worker Node (Gated)
 * **Compute Contribution**: Enables the option to lease local compute resources to the network for processing deterministic edge tasks (`ping_math` and `text_hash`).
 * **Hard Sandboxing**: All edge tasks are executed strictly inside a closed-envelope container (Docker/Colima on macOS, WSL2 on Windows) with zero network egress (`--network none`) and cleared environment variables.
-* **Access Gating**: Active worker participation is **non-public-by-default**, requiring direct operator verification and token allocation (`~/.daarion/operator_token.txt`) before network sync begins.
+* **Access Gating**: Active worker participation is **disabled by default** until cryptographic operator-token validation is implemented. A local `~/.daarion/operator_token.txt` file is treated only as a legacy marker, not as a security boundary.
 
 ---
 
@@ -48,7 +48,7 @@ The client is compiled for cross-platform availability, leveraging Tauri v2:
 * **Current Status**: **Beta / Canary**
 * **Update Model**: **Manual updates only**. Automatic update pipelines are disabled; users must manually download latest releases from [GitHub Releases](https://github.com/DAARION-DAO/daarion-edge-client/releases).
 * **Production Readiness**: Requires live proof of performance, stability, and security on a per-platform basis.
-* **Security & Sandboxing**: Desktop Worker Mode relies on localized Docker configurations to prevent execution leakage.
+* **Security & Sandboxing**: Desktop Worker Mode is blocked until cryptographic operator-token validation is available; sandbox execution remains advisory-only test infrastructure.
 
 ---
 
