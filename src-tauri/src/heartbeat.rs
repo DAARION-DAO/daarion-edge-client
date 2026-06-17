@@ -112,10 +112,7 @@ pub fn start_heartbeat_loop(handle: AppHandle) {
                 .as_secs();
 
             let sig_payload = format!("{}|{}", node_id, timestamp);
-            let signature = match crate::identity::get_signing_key(&handle_clone).map(|sk| {
-                use ed25519_dalek::Signer;
-                hex::encode(sk.sign(sig_payload.as_bytes()).to_bytes())
-            }) {
+            let signature = match crate::identity::sign_payload(&handle_clone, &sig_payload) {
                 Ok(sig) if !sig.trim().is_empty() && sig != "unsigned" => sig,
                 Ok(_) => {
                     {

@@ -17,7 +17,6 @@ use crate::registry_client::{
     call_capabilities, call_register, capabilities_to_registry_json, RegistryCapabilitiesRequest,
     RegistryRegisterRequest,
 };
-use ed25519_dalek::Signer;
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -96,12 +95,10 @@ pub fn get_node_token() -> Result<String, String> {
 // ─── Signing helper ───────────────────────────────────────────────────────────
 
 /// Sign a canonical message with the node's Ed25519 private key.
-/// Returns hex-encoded signature. Private key is read from OS keyring and
-/// immediately dropped after signing — never stored or printed.
+/// Returns hex-encoded signature. Private key access is isolated inside the
+/// identity service and never exposed to enrollment callers.
 fn sign_payload(handle: &AppHandle, message: &str) -> Result<String, String> {
-    let signing_key = crate::identity::get_signing_key(handle)?;
-    let sig = signing_key.sign(message.as_bytes());
-    Ok(hex::encode(sig.to_bytes()))
+    crate::identity::sign_payload(handle, message)
 }
 
 fn require_signed_signature(
@@ -227,13 +224,7 @@ pub async fn sync_capabilities(handle: AppHandle) -> Result<bool, String> {
     let cap_json = capabilities_to_registry_json(&caps);
 
     // Sign node_id to prove authenticity
-    let signature = require_signed_signature(
-        crate::identity::get_signing_key(&handle).map(|sk| {
-            use ed25519_dalek::Signer;
-            hex::encode(sk.sign(node_id.as_bytes()).to_bytes())
-        }),
-        "capability sync",
-    )?;
+    let signature = require_signed_signature(sign_payload(&handle, &node_id), "capability sync")?;
 
     let req = RegistryCapabilitiesRequest {
         node_id: node_id.clone(),

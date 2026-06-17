@@ -1,6 +1,9 @@
+use crate::identity::{
+    IDENTITY_FILE, KEY_NAME as IDENTITY_KEY_NAME, SERVICE_NAME as IDENTITY_SERVICE_NAME,
+};
+use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use keyring::Entry;
 use tauri::Manager;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -20,16 +23,21 @@ pub async fn factory_reset_local_state(handle: tauri::AppHandle) -> Result<Reset
         warnings: vec![],
     };
 
-    let app_dir = handle.path().app_data_dir().expect("Failed to get app data dir");
+    let app_dir = handle
+        .path()
+        .app_data_dir()
+        .expect("Failed to get app data dir");
 
     // 1. Delete app data files
-    let identity_path = app_dir.join("identity.json");
+    let identity_path = app_dir.join(IDENTITY_FILE);
     if identity_path.exists() {
         match fs::remove_file(&identity_path) {
-            Ok(_) => result.deleted_files.push("identity.json".to_string()),
+            Ok(_) => result.deleted_files.push(IDENTITY_FILE.to_string()),
             Err(e) => {
                 result.success = false;
-                result.warnings.push(format!("Failed to delete identity.json: {}", e));
+                result
+                    .warnings
+                    .push(format!("Failed to delete {}: {}", IDENTITY_FILE, e));
             }
         }
     }
@@ -40,7 +48,9 @@ pub async fn factory_reset_local_state(handle: tauri::AppHandle) -> Result<Reset
             Ok(_) => result.deleted_files.push("enrollment.json".to_string()),
             Err(e) => {
                 result.success = false;
-                result.warnings.push(format!("Failed to delete enrollment.json: {}", e));
+                result
+                    .warnings
+                    .push(format!("Failed to delete enrollment.json: {}", e));
             }
         }
     }
@@ -58,13 +68,18 @@ pub async fn factory_reset_local_state(handle: tauri::AppHandle) -> Result<Reset
     }
 
     // 2. Delete Keyring info
-    if let Ok(entry) = Entry::new("com.daarion.edge.identity", "node_private_key") {
+    if let Ok(entry) = Entry::new(IDENTITY_SERVICE_NAME, IDENTITY_KEY_NAME) {
         if entry.get_password().is_ok() {
             match entry.delete_credential() {
-                Ok(_) => result.deleted_keyring_entries.push("com.daarion.edge.identity / node_private_key".to_string()),
+                Ok(_) => result
+                    .deleted_keyring_entries
+                    .push(format!("{} / {}", IDENTITY_SERVICE_NAME, IDENTITY_KEY_NAME)),
                 Err(e) => {
                     result.success = false;
-                    result.warnings.push(format!("Failed to delete node_private_key from keyring: {}", e));
+                    result.warnings.push(format!(
+                        "Failed to delete {} from keyring: {}",
+                        IDENTITY_KEY_NAME, e
+                    ));
                 }
             }
         }
@@ -73,10 +88,14 @@ pub async fn factory_reset_local_state(handle: tauri::AppHandle) -> Result<Reset
     if let Ok(entry) = Entry::new("com.daarion.edge.node", "node_token") {
         if entry.get_password().is_ok() {
             match entry.delete_credential() {
-                Ok(_) => result.deleted_keyring_entries.push("com.daarion.edge.node / node_token".to_string()),
+                Ok(_) => result
+                    .deleted_keyring_entries
+                    .push("com.daarion.edge.node / node_token".to_string()),
                 Err(e) => {
                     result.success = false;
-                    result.warnings.push(format!("Failed to delete node_token from keyring: {}", e));
+                    result
+                        .warnings
+                        .push(format!("Failed to delete node_token from keyring: {}", e));
                 }
             }
         }
