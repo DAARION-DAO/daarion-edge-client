@@ -12,9 +12,13 @@ pub mod relay_client;
 pub mod runner;
 pub mod onboarding;
 
+#[allow(unused_imports)]
 pub use admission::{AdmissionController, ExecutionDecision, AdmissionInput, JobClass};
+#[allow(unused_imports)]
 pub use queue::LocalQueue;
+#[allow(unused_imports)]
 pub use worker_loop::start_worker_loop;
+#[allow(unused_imports)]
 pub use models::{SpecializationClass, SpecializationProfile, SpecializationPolicy};
 
 use tauri::State;
@@ -93,7 +97,7 @@ fn save_worker_optin(app: &tauri::AppHandle, opted_in: bool) {
 }
 
 use relay_client::{
-    RelayClient, MockRelayClient, WsRelayClient, WorkerHello, WorkerHelloPayload,
+    RelayClient, WsRelayClient, WorkerHello, WorkerHelloPayload,
     EnrollmentRequest, EnrollmentReqPayload, AdvisoryResult, AdvisoryOutput, 
     ExecutionReceipt, ExecutionReceiptPayload
 };

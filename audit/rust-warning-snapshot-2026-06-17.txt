@@ -1,0 +1,2089 @@
+    Checking daarion-edge-client v0.2.2-3 (/Users/apple/github-projects/research/daarion-edge-client/src-tauri)
+warning: unused import: `SecretKey`
+ --> src/identity.rs:4:47
+  |
+4 | use ed25519_dalek::{SigningKey, VerifyingKey, SecretKey};
+  |                                               ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `tauri::AppHandle`
+ --> src/worker/nats_client.rs:1:5
+  |
+1 | use tauri::AppHandle;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+  --> src/worker/worker_loop.rs:10:5
+   |
+10 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+
+warning: unused import: `tokio::sync::Mutex`
+  --> src/worker/worker_loop.rs:11:5
+   |
+11 | use tokio::sync::Mutex;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::path::PathBuf`
+ --> src/models/registry.rs:3:5
+  |
+3 | use std::path::PathBuf;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Path`
+ --> src/models/artifact_store.rs:1:26
+  |
+1 | use std::path::{PathBuf, Path};
+  |                          ^^^^
+
+warning: unused import: `crate::worker::models::ModelRuntimeState`
+ --> src/models/runtime_loader.rs:1:5
+  |
+1 | use crate::worker::models::ModelRuntimeState;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::sync::Arc`
+ --> src/models/runtime_loader.rs:2:5
+  |
+2 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `tokio::sync::Mutex`
+ --> src/models/runtime_loader.rs:3:5
+  |
+3 | use tokio::sync::Mutex;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Manager`
+ --> src/models/runtime_loader.rs:5:13
+  |
+5 | use tauri::{Manager, Emitter};
+  |             ^^^^^^^
+
+warning: unused imports: `Duration` and `Instant`
+ --> src/models/residency_score.rs:1:17
+  |
+1 | use std::time::{Instant, Duration};
+  |                 ^^^^^^^  ^^^^^^^^
+
+warning: unused import: `uuid::Uuid`
+ --> src/models/inference_session.rs:2:5
+  |
+2 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+
+warning: unused import: `Manager`
+ --> src/models/local_inference.rs:1:24
+  |
+1 | use tauri::{AppHandle, Manager, Emitter};
+  |                        ^^^^^^^
+
+warning: unused import: `InferenceSessionState`
+ --> src/models/local_inference.rs:3:87
+  |
+3 | use crate::models::inference_session::{LocalInferenceRequest, LocalInferenceResponse, InferenceSessionState};
+  |                                                                                       ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::models::residency_score::ResidencyScore`
+ --> src/models/inference_arbitrator.rs:2:5
+  |
+2 | use crate::models::residency_score::ResidencyScore;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `PlacementActivationDecision`
+ --> src/models/placement_intent.rs:2:72
+  |
+2 | use crate::models::placement_recommendation::{PlacementRecommendation, PlacementActivationDecision};
+  |                                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `State`
+  --> src/models/mod.rs:31:33
+   |
+31 | use tauri::{AppHandle, command, State};
+   |                                 ^^^^^
+
+warning: unused import: `crate::models::artifact_store::ArtifactStore`
+  --> src/models/mod.rs:33:5
+   |
+33 | use crate::models::artifact_store::ArtifactStore;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `TrustLink`
+ --> src/trust/trust_propagation.rs:1:38
+  |
+1 | use super::trust_chain::{TrustChain, TrustLink};
+  |                                      ^^^^^^^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+ --> src/authorities/authority_conflict_resolver.rs:1:13
+  |
+1 | use serde::{Deserialize, Serialize};
+  |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `authority_trace::AuthorityTraceEntry`
+  --> src/authorities/mod.rs:13:5
+   |
+13 | use authority_trace::AuthorityTraceEntry;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `AipContext` and `AipResult`
+  --> src/authorities/mod.rs:14:20
+   |
+14 | use aip_enforcer::{AipContext, AipResult};
+   |                    ^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused import: `uuid::Uuid`
+  --> src/authorities/mod.rs:16:5
+   |
+16 | use uuid::Uuid;
+   |     ^^^^^^^^^^
+
+warning: unused import: `chrono::Utc`
+  --> src/authorities/mod.rs:17:5
+   |
+17 | use chrono::Utc;
+   |     ^^^^^^^^^^^
+
+warning: unused import: `uuid::Uuid`
+ --> src/market/market_activation.rs:1:5
+  |
+1 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+
+warning: unused import: `super::evolution_signal::EvolutionSignal`
+ --> src/evolution/evolution_policy.rs:2:5
+  |
+2 | use super::evolution_signal::EvolutionSignal;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Deserialize` and `Serialize`
+ --> src/evolution/evolution_engine.rs:1:13
+  |
+1 | use serde::{Deserialize, Serialize};
+  |             ^^^^^^^^^^^  ^^^^^^^^^
+
+warning: unused imports: `EvolutionSignalClass` and `EvolutionSignal`
+ --> src/evolution/mod.rs:6:28
+  |
+6 | pub use evolution_signal::{EvolutionSignal, EvolutionSignalClass};
+  |                            ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `EvolutionConstraintSet`, `EvolutionDecision`, `EvolutionPolicy`, and `EvolutionScope`
+ --> src/evolution/mod.rs:7:28
+  |
+7 | pub use evolution_policy::{EvolutionDecision, EvolutionScope, EvolutionPolicy, EvolutionConstraintSet};
+  |                            ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `EvolutionCycleStage` and `EvolutionCycleState`
+ --> src/evolution/mod.rs:8:27
+  |
+8 | pub use evolution_cycle::{EvolutionCycleStage, EvolutionCycleState};
+  |                           ^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `evolution_engine::EvolutionEngine`
+ --> src/evolution/mod.rs:9:9
+  |
+9 | pub use evolution_engine::EvolutionEngine;
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `AlignmentClass`, `AlignmentSignal`, and `GlobalDirectionVector`
+ --> src/coordination/mod.rs:6:28
+  |
+6 | pub use alignment_signal::{AlignmentSignal, AlignmentClass, GlobalDirectionVector};
+  |                            ^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `DivergenceMetric` and `DivergenceType`
+ --> src/coordination/mod.rs:7:31
+  |
+7 | pub use divergence_detector::{DivergenceMetric, DivergenceType};
+  |                               ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^
+
+warning: unused imports: `CoordinationDecision`, `CoordinationPolicy`, and `CoordinationScope`
+ --> src/coordination/mod.rs:8:31
+  |
+8 | pub use coordination_policy::{CoordinationDecision, CoordinationScope, CoordinationPolicy};
+  |                               ^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `CoordinationEngine` and `CoordinationState`
+ --> src/coordination/mod.rs:9:31
+  |
+9 | pub use coordination_engine::{CoordinationEngine, CoordinationState};
+  |                               ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `ReasoningTrace`
+ --> src/intelligence/collective_engine.rs:2:79
+  |
+2 | use crate::intelligence::reasoning_model::{ReasoningModel, CollectiveInsight, ReasoningTrace};
+  |                                                                               ^^^^^^^^^^^^^^
+
+warning: unused import: `collective_engine::CollectiveEngine`
+ --> src/intelligence/mod.rs:6:9
+  |
+6 | pub use collective_engine::CollectiveEngine;
+  |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::fs::File`
+ --> src/genesis.rs:6:5
+  |
+6 | use std::fs::File;
+  |     ^^^^^^^^^^^^^
+
+warning: unused variable: `expected_hash_hex`
+ --> src/models/verifier.rs:6:37
+  |
+6 |     pub fn verify_hash(path: &Path, expected_hash_hex: &str) -> Result<bool, String> {
+  |                                     ^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_hash_hex`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `expected_size_gb`
+  --> src/models/verifier.rs:20:37
+   |
+20 |     pub fn verify_size(path: &Path, expected_size_gb: f32) -> Result<bool, String> {
+   |                                     ^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_size_gb`
+
+warning: unused variable: `start_time`
+  --> src/models/local_inference.rs:17:13
+   |
+17 |         let start_time = Instant::now();
+   |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_start_time`
+
+warning: unused variable: `request_id`
+  --> src/models/local_inference.rs:18:13
+   |
+18 |         let request_id = request.request_id.clone();
+   |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_request_id`
+
+warning: unused variable: `model_id`
+  --> src/models/inference_arbitrator.rs:23:9
+   |
+23 |         model_id: &str,
+   |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_model_id`
+
+warning: unused variable: `app`
+  --> src/models/mod.rs:51:29
+   |
+51 | pub async fn download_model(app: AppHandle, entry: CandidateModel) -> Result<(), String> {
+   |                             ^^^ help: if this is intentional, prefix it with an underscore: `_app`
+
+warning: unused variable: `entry`
+  --> src/models/mod.rs:51:45
+   |
+51 | pub async fn download_model(app: AppHandle, entry: CandidateModel) -> Result<(), String> {
+   |                                             ^^^^^ help: if this is intentional, prefix it with an underscore: `_entry`
+
+warning: unused variable: `parent`
+ --> src/trust/scope_narrowing.rs:8:9
+  |
+8 |         parent: &TrustScopeBinding,
+  |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_parent`
+
+warning: variable does not need to be mutable
+  --> src/authorities/mod.rs:43:13
+   |
+43 |         let mut current_result = AuthorityProtocolResult::Allowed;
+   |             ----^^^^^^^^^^^^^^
+   |             |
+   |             help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `role`
+  --> src/agents/plan_executor.rs:10:55
+   |
+10 |                  PlanAction::PromoteModel { model_id, role } => {
+   |                                                       ^^^^ help: try ignoring the field: `role: _`
+
+warning: unused variable: `e`
+  --> src/districts/specialization_rollout.rs:13:20
+   |
+13 |         if let Err(e) = SpecializationSafetyEngine::validate_intent(&intent, &guard) {
+   |                    ^ help: if this is intentional, prefix it with an underscore: `_e`
+
+warning: unused variable: `global_signal`
+ --> src/market/model_market.rs:8:9
+  |
+8 |         global_signal: &GlobalResourceSignal,
+  |         ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_global_signal`
+
+warning: enum `JobClass` is never used
+ --> src/worker/admission.rs:4:10
+  |
+4 | pub enum JobClass {
+  |          ^^^^^^^^
+  |
+  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: enum `ExecutionDecision` is never used
+  --> src/worker/admission.rs:11:10
+   |
+11 | pub enum ExecutionDecision {
+   |          ^^^^^^^^^^^^^^^^^
+
+warning: struct `AdmissionInput` is never constructed
+  --> src/worker/admission.rs:21:12
+   |
+21 | pub struct AdmissionInput {
+   |            ^^^^^^^^^^^^^^
+
+warning: struct `AdmissionController` is never constructed
+  --> src/worker/admission.rs:33:12
+   |
+33 | pub struct AdmissionController;
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `decide` is never used
+  --> src/worker/admission.rs:36:12
+   |
+35 | impl AdmissionController {
+   | ------------------------ associated function in this implementation
+36 |     pub fn decide(input: AdmissionInput) -> ExecutionDecision {
+   |            ^^^^^^
+
+warning: struct `LocalQueue` is never constructed
+ --> src/worker/queue.rs:4:12
+  |
+4 | pub struct LocalQueue {
+  |            ^^^^^^^^^^
+
+warning: associated items `new`, `push`, `pop_next`, and `len` are never used
+  --> src/worker/queue.rs:11:12
+   |
+10 | impl LocalQueue {
+   | --------------- associated items in this implementation
+11 |     pub fn new() -> Self {
+   |            ^^^
+...
+19 |     pub fn push(&mut self, input: AdmissionInput) {
+   |            ^^^^
+...
+27 |     pub fn pop_next(&mut self) -> Option<AdmissionInput> {
+   |            ^^^^^^^^
+...
+33 |     pub fn len(&self) -> usize {
+   |            ^^^
+
+warning: struct `ResourceLimits` is never constructed
+ --> src/worker/lease_validator.rs:6:12
+  |
+6 | pub struct ResourceLimits {
+  |            ^^^^^^^^^^^^^^
+
+warning: struct `JobPayload` is never constructed
+  --> src/worker/lease_validator.rs:14:12
+   |
+14 | pub struct JobPayload {
+   |            ^^^^^^^^^^
+
+warning: struct `Lease` is never constructed
+  --> src/worker/lease_validator.rs:20:12
+   |
+20 | pub struct Lease {
+   |            ^^^^^
+
+warning: struct `LeaseValidator` is never constructed
+  --> src/worker/lease_validator.rs:31:12
+   |
+31 | pub struct LeaseValidator;
+   |            ^^^^^^^^^^^^^^
+
+warning: associated function `validate` is never used
+  --> src/worker/lease_validator.rs:34:12
+   |
+33 | impl LeaseValidator {
+   | ------------------- associated function in this implementation
+34 |     pub fn validate(app: &tauri::AppHandle, lease: &Lease, public_key_hex: &str) -> Result<(), String> {
+   |            ^^^^^^^^
+
+warning: struct `NatsClient` is never constructed
+ --> src/worker/nats_client.rs:4:12
+  |
+4 | pub struct NatsClient;
+  |            ^^^^^^^^^^
+
+warning: associated functions `connect` and `pull_task` are never used
+  --> src/worker/nats_client.rs:7:18
+   |
+ 6 | impl NatsClient {
+   | --------------- associated functions in this implementation
+ 7 |     pub async fn connect() -> Result<(), String> {
+   |                  ^^^^^^^
+...
+13 |     pub async fn pull_task() -> Result<Option<String>, String> {
+   |                  ^^^^^^^^^
+
+warning: struct `JobResult` is never constructed
+ --> src/worker/sandbox_executor.rs:4:12
+  |
+4 | pub struct JobResult {
+  |            ^^^^^^^^^
+
+warning: struct `SandboxExecutor` is never constructed
+  --> src/worker/sandbox_executor.rs:12:12
+   |
+12 | pub struct SandboxExecutor;
+   |            ^^^^^^^^^^^^^^^
+
+warning: associated function `execute_echo` is never used
+  --> src/worker/sandbox_executor.rs:15:18
+   |
+14 | impl SandboxExecutor {
+   | -------------------- associated function in this implementation
+15 |     pub async fn execute_echo(task_id: String, node_id: String, input: String) -> JobResult {
+   |                  ^^^^^^^^^^^^
+
+warning: struct `ResultPublisher` is never constructed
+ --> src/worker/result_publisher.rs:4:12
+  |
+4 | pub struct ResultPublisher;
+  |            ^^^^^^^^^^^^^^^
+
+warning: associated function `publish` is never used
+ --> src/worker/result_publisher.rs:7:18
+  |
+6 | impl ResultPublisher {
+  | -------------------- associated function in this implementation
+7 |     pub async fn publish(app: AppHandle, result: JobResult) -> Result<(), String> {
+  |                  ^^^^^^^
+
+warning: function `start_worker_loop` is never used
+  --> src/worker/worker_loop.rs:13:14
+   |
+13 | pub async fn start_worker_loop(app: AppHandle) {
+   |              ^^^^^^^^^^^^^^^^^
+
+warning: function `create_mock_lease` is never used
+  --> src/worker/worker_loop.rs:93:4
+   |
+93 | fn create_mock_lease() -> Lease {
+   |    ^^^^^^^^^^^^^^^^^
+
+warning: enum `SpecializationClass` is never used
+ --> src/worker/models.rs:4:10
+  |
+4 | pub enum SpecializationClass {
+  |          ^^^^^^^^^^^^^^^^^^^
+
+warning: enum `ModelRuntimeState` is never used
+  --> src/worker/models.rs:12:10
+   |
+12 | pub enum ModelRuntimeState {
+   |          ^^^^^^^^^^^^^^^^^
+
+warning: struct `ModelInventoryEntry` is never constructed
+  --> src/worker/models.rs:21:12
+   |
+21 | pub struct ModelInventoryEntry {
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SpecializationProfile` is never constructed
+  --> src/worker/models.rs:29:12
+   |
+29 | pub struct SpecializationProfile {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SpecializationPolicy` is never constructed
+  --> src/worker/models.rs:36:12
+   |
+36 | pub struct SpecializationPolicy;
+   |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `get_default_profile` and `is_affinity_match` are never used
+  --> src/worker/models.rs:39:12
+   |
+38 | impl SpecializationPolicy {
+   | ------------------------- associated functions in this implementation
+39 |     pub fn get_default_profile() -> SpecializationProfile {
+   |            ^^^^^^^^^^^^^^^^^^^
+...
+49 |     pub fn is_affinity_match(profile: &SpecializationProfile, job_type: &str) -> bool {
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `RoutingContext` is never constructed
+ --> src/worker/routing_lane.rs:4:12
+  |
+4 | pub struct RoutingContext {
+  |            ^^^^^^^^^^^^^^
+
+warning: struct `RoutingLane` is never constructed
+  --> src/worker/routing_lane.rs:12:12
+   |
+12 | pub struct RoutingLane;
+   |            ^^^^^^^^^^^
+
+warning: associated functions `derive_subject` and `to_subscription_filter` are never used
+  --> src/worker/routing_lane.rs:15:12
+   |
+14 | impl RoutingLane {
+   | ---------------- associated functions in this implementation
+15 |     pub fn derive_subject(ctx: &RoutingContext) -> String {
+   |            ^^^^^^^^^^^^^^
+...
+26 |     pub fn to_subscription_filter(
+   |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MockRelayClient` is never constructed
+   --> src/worker/relay_client.rs:120:12
+    |
+120 | pub struct MockRelayClient {
+    |            ^^^^^^^^^^^^^^^
+
+warning: associated function `new` is never used
+   --> src/worker/relay_client.rs:125:12
+    |
+124 | impl MockRelayClient {
+    | -------------------- associated function in this implementation
+125 |     pub fn new() -> Self {
+    |            ^^^
+
+warning: function `get_placement_recommendation` is never used
+  --> src/models/mod.rs:83:8
+   |
+83 | pub fn get_placement_recommendation(model_id: String, signal: ModelGravitySignal) -> Result<ModelPlacementRecommendation, String> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ArtifactStore` is never constructed
+ --> src/models/artifact_store.rs:5:12
+  |
+5 | pub struct ArtifactStore;
+  |            ^^^^^^^^^^^^^
+
+warning: associated functions `get_models_dir`, `list_local_models`, and `download_model` are never used
+  --> src/models/artifact_store.rs:8:12
+   |
+ 7 | impl ArtifactStore {
+   | ------------------ associated functions in this implementation
+ 8 |     pub fn get_models_dir(app: &AppHandle) -> Result<PathBuf, String> {
+   |            ^^^^^^^^^^^^^^
+...
+19 |     pub async fn list_local_models(app: &AppHandle) -> Result<Vec<String>, String> {
+   |                  ^^^^^^^^^^^^^^^^^
+...
+36 |     pub async fn download_model(app: AppHandle, entry: CandidateModel) -> Result<(), String> {
+   |                  ^^^^^^^^^^^^^^
+
+warning: struct `Verifier` is never constructed
+ --> src/models/verifier.rs:3:12
+  |
+3 | pub struct Verifier;
+  |            ^^^^^^^^
+
+warning: associated functions `verify_hash` and `verify_size` are never used
+  --> src/models/verifier.rs:6:12
+   |
+ 5 | impl Verifier {
+   | ------------- associated functions in this implementation
+ 6 |     pub fn verify_hash(path: &Path, expected_hash_hex: &str) -> Result<bool, String> {
+   |            ^^^^^^^^^^^
+...
+20 |     pub fn verify_size(path: &Path, expected_size_gb: f32) -> Result<bool, String> {
+   |            ^^^^^^^^^^^
+
+warning: fields `utility_component`, `cost_penalty`, and `specialization_bonus` are never read
+  --> src/models/residency_score.rs:31:9
+   |
+29 | pub struct ResidencyScore {
+   |            -------------- fields in this struct
+30 |     pub total_score: f32,
+31 |     pub utility_component: f32,
+   |         ^^^^^^^^^^^^^^^^^
+32 |     pub cost_penalty: f32,
+   |         ^^^^^^^^^^^^
+33 |     pub specialization_bonus: f32,
+   |         ^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `ResidencyDecision` is never used
+ --> src/models/residency_policy.rs:4:10
+  |
+4 | pub enum ResidencyDecision {
+  |          ^^^^^^^^^^^^^^^^^
+
+warning: struct `ResidencyPolicy` is never constructed
+  --> src/models/residency_policy.rs:11:12
+   |
+11 | pub struct ResidencyPolicy;
+   |            ^^^^^^^^^^^^^^^
+
+warning: associated functions `decide` and `should_evict_under_pressure` are never used
+  --> src/models/residency_policy.rs:14:12
+   |
+13 | impl ResidencyPolicy {
+   | -------------------- associated functions in this implementation
+14 |     pub fn decide(score: f32, current_state: &str) -> ResidencyDecision {
+   |            ^^^^^^
+...
+30 |     pub fn should_evict_under_pressure(score: f32, is_specialized: bool) -> bool {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `trigger_eviction` is never used
+ --> src/models/eviction_policy.rs:7:18
+  |
+6 | impl EvictionPolicy {
+  | ------------------- associated function in this implementation
+7 |     pub async fn trigger_eviction(app: AppHandle, model_id: String) -> Result<(), String> {
+  |                  ^^^^^^^^^^^^^^^^
+
+warning: enum `InferenceSessionState` is never used
+ --> src/models/inference_session.rs:5:10
+  |
+5 | pub enum InferenceSessionState {
+  |          ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `InferenceLimits` is never constructed
+  --> src/models/inference_session.rs:15:12
+   |
+15 | pub struct InferenceLimits {
+   |            ^^^^^^^^^^^^^^^
+
+warning: struct `InferenceSession` is never constructed
+  --> src/models/inference_session.rs:57:12
+   |
+57 | pub struct InferenceSession {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: associated function `new` is never used
+  --> src/models/inference_session.rs:64:12
+   |
+63 | impl InferenceSession {
+   | --------------------- associated function in this implementation
+64 |     pub fn new(request: LocalInferenceRequest) -> Self {
+   |            ^^^
+
+warning: method `clamp_tokens` is never used
+  --> src/models/inference_limits.rs:29:12
+   |
+20 | impl InferenceLimits {
+   | -------------------- method in this implementation
+...
+29 |     pub fn clamp_tokens(&self, requested: u32) -> u32 {
+   |            ^^^^^^^^^^^^
+
+warning: enum `TrustLevel` is never used
+ --> src/models/trust_topology.rs:4:10
+  |
+4 | pub enum TrustLevel {
+  |          ^^^^^^^^^^
+
+warning: struct `TrustScope` is never constructed
+  --> src/models/trust_topology.rs:13:12
+   |
+13 | pub struct TrustScope {
+   |            ^^^^^^^^^^
+
+warning: struct `RegionalIssuer` is never constructed
+  --> src/models/trust_topology.rs:22:12
+   |
+22 | pub struct RegionalIssuer {
+   |            ^^^^^^^^^^^^^^
+
+warning: struct `NodeCertificateProfile` is never constructed
+  --> src/models/trust_topology.rs:30:12
+   |
+30 | pub struct NodeCertificateProfile {
+   |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SessionCredentialProfile` is never constructed
+  --> src/models/trust_topology.rs:39:12
+   |
+39 | pub struct SessionCredentialProfile {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `RevocationReason` is never used
+  --> src/models/trust_topology.rs:47:10
+   |
+47 | pub enum RevocationReason {
+   |          ^^^^^^^^^^^^^^^^
+
+warning: enum `HeartbeatClass` is never used
+ --> src/models/heartbeat_topology.rs:4:10
+  |
+4 | pub enum HeartbeatClass {
+  |          ^^^^^^^^^^^^^^
+
+warning: struct `PresenceHeartbeat` is never constructed
+  --> src/models/heartbeat_topology.rs:11:12
+   |
+11 | pub struct PresenceHeartbeat {
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `NodeCapabilities` is never constructed
+  --> src/models/heartbeat_topology.rs:20:12
+   |
+20 | pub struct NodeCapabilities {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: struct `MetadataHeartbeat` is never constructed
+  --> src/models/heartbeat_topology.rs:29:12
+   |
+29 | pub struct MetadataHeartbeat {
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `AnomalyMetrics` is never constructed
+  --> src/models/heartbeat_topology.rs:41:12
+   |
+41 | pub struct AnomalyMetrics {
+   |            ^^^^^^^^^^^^^^
+
+warning: struct `AnomalyHeartbeat` is never constructed
+  --> src/models/heartbeat_topology.rs:48:12
+   |
+48 | pub struct AnomalyHeartbeat {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: struct `CollectorSnapshot` is never constructed
+  --> src/models/heartbeat_topology.rs:59:12
+   |
+59 | pub struct CollectorSnapshot {
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `SummaryPublishEnvelope` is never constructed
+  --> src/models/heartbeat_topology.rs:72:12
+   |
+72 | pub struct SummaryPublishEnvelope {
+   |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ModelPlacementRecommendation` is never constructed
+ --> src/models/model_gravity.rs:6:12
+  |
+6 | pub struct ModelPlacementRecommendation {
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ModelGravity` is never constructed
+  --> src/models/model_gravity.rs:14:12
+   |
+14 | pub struct ModelGravity;
+   |            ^^^^^^^^^^^^
+
+warning: associated function `get_recommendation` is never used
+  --> src/models/model_gravity.rs:17:12
+   |
+16 | impl ModelGravity {
+   | ----------------- associated function in this implementation
+17 |     pub fn get_recommendation(model_id: String, signal: ModelGravitySignal) -> ModelPlacementRecommendation {
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: struct `ModelGravitySignal` is never constructed
+ --> src/models/gravity_score.rs:9:12
+  |
+9 | pub struct ModelGravitySignal {
+  |            ^^^^^^^^^^^^^^^^^^
+
+warning: struct `GravityScore` is never constructed
+  --> src/models/gravity_score.rs:25:12
+   |
+25 | pub struct GravityScore {
+   |            ^^^^^^^^^^^^
+
+warning: struct `GravityEngine` is never constructed
+  --> src/models/gravity_score.rs:32:12
+   |
+32 | pub struct GravityEngine;
+   |            ^^^^^^^^^^^^^
+
+warning: associated function `calculate_score` is never used
+  --> src/models/gravity_score.rs:35:12
+   |
+34 | impl GravityEngine {
+   | ------------------ associated function in this implementation
+35 |     pub fn calculate_score(model_id: &str, signal: &ModelGravitySignal) -> GravityScore {
+   |            ^^^^^^^^^^^^^^^
+
+warning: enum `PlacementDecision` is never used
+ --> src/models/placement_policy.rs:5:10
+  |
+5 | pub enum PlacementDecision {
+  |          ^^^^^^^^^^^^^^^^^
+
+warning: enum `PlacementScope` is never used
+  --> src/models/placement_policy.rs:13:10
+   |
+13 | pub enum PlacementScope {
+   |          ^^^^^^^^^^^^^^
+
+warning: struct `PlacementPolicy` is never constructed
+  --> src/models/placement_policy.rs:20:12
+   |
+20 | pub struct PlacementPolicy;
+   |            ^^^^^^^^^^^^^^^
+
+warning: associated function `decide` is never used
+  --> src/models/placement_policy.rs:23:12
+   |
+22 | impl PlacementPolicy {
+   | -------------------- associated function in this implementation
+23 |     pub fn decide(score: &GravityScore) -> (PlacementDecision, PlacementScope) {
+   |            ^^^^^^
+
+warning: struct `TokenChunk` is never constructed
+ --> src/models/token_stream.rs:4:12
+  |
+4 | pub struct TokenChunk {
+  |            ^^^^^^^^^^
+
+warning: enum `StreamEventType` is never used
+  --> src/models/token_stream.rs:12:10
+   |
+12 | pub enum StreamEventType {
+   |          ^^^^^^^^^^^^^^^
+
+warning: struct `StreamEvent` is never constructed
+  --> src/models/token_stream.rs:20:12
+   |
+20 | pub struct StreamEvent {
+   |            ^^^^^^^^^^^
+
+warning: struct `InferenceStreamState` is never constructed
+ --> src/models/inference_stream.rs:5:12
+  |
+5 | pub struct InferenceStreamState {
+  |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `InferenceStream` is never constructed
+  --> src/models/inference_stream.rs:13:12
+   |
+13 | pub struct InferenceStream;
+   |            ^^^^^^^^^^^^^^^
+
+warning: associated functions `create_event` and `calculate_tps` are never used
+  --> src/models/inference_stream.rs:16:12
+   |
+15 | impl InferenceStream {
+   | -------------------- associated functions in this implementation
+16 |     pub fn create_event(session_id: &str, event_type: StreamEventType, payload: &str) -> StreamEvent {
+   |            ^^^^^^^^^^^^
+...
+25 |     pub fn calculate_tps(tokens: u32, duration_ms: u64) -> f32 {
+   |            ^^^^^^^^^^^^^
+
+warning: enum `SessionEventChannel` is never used
+ --> src/models/session_routing.rs:8:10
+  |
+8 | pub enum SessionEventChannel {
+  |          ^^^^^^^^^^^^^^^^^^^
+
+warning: method `as_str` is never used
+  --> src/models/session_routing.rs:16:12
+   |
+15 | impl SessionEventChannel {
+   | ------------------------ method in this implementation
+16 |     pub fn as_str(&self) -> &str {
+   |            ^^^^^^
+
+warning: struct `SessionRouting` is never constructed
+  --> src/models/session_routing.rs:26:12
+   |
+26 | pub struct SessionRouting;
+   |            ^^^^^^^^^^^^^^
+
+warning: associated functions `get_sharded_subject`, `get_fallback_subject`, and `validate_session` are never used
+  --> src/models/session_routing.rs:29:12
+   |
+28 | impl SessionRouting {
+   | ------------------- associated functions in this implementation
+29 |     pub fn get_sharded_subject(
+   |            ^^^^^^^^^^^^^^^^^^^
+...
+49 |     pub fn get_fallback_subject(session_id: &str) -> String {
+   |            ^^^^^^^^^^^^^^^^^^^^
+...
+53 |     pub fn validate_session(session_id: &str, session_class: &str) -> Result<(), String> {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: struct `SessionShard` is never constructed
+ --> src/models/session_shard.rs:4:12
+  |
+4 | pub struct SessionShard {
+  |            ^^^^^^^^^^^^
+
+warning: struct `ShardDeriver` is never constructed
+ --> src/models/session_shard.rs:9:12
+  |
+9 | pub struct ShardDeriver;
+  |            ^^^^^^^^^^^^
+
+warning: associated functions `derive_shard` and `get_shard_name` are never used
+  --> src/models/session_shard.rs:14:12
+   |
+11 | impl ShardDeriver {
+   | ----------------- associated functions in this implementation
+...
+14 |     pub fn derive_shard(session_id: &str, shard_count: u32) -> u32 {
+   |            ^^^^^^^^^^^^
+...
+26 |     pub fn get_shard_name(shard_id: u32) -> String {
+   |            ^^^^^^^^^^^^^^
+
+warning: struct `PlacementActivationState` is never constructed
+ --> src/models/placement_activation.rs:5:12
+  |
+5 | pub struct PlacementActivationState {
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `process_recommendation` is never used
+  --> src/models/placement_activation.rs:17:12
+   |
+17 |     pub fn process_recommendation(rec: PlacementRecommendation) -> Option<PlacementIntent> {
+   |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `PlacementScope` is never used
+ --> src/models/placement_recommendation.rs:4:10
+  |
+4 | pub enum PlacementScope {
+  |          ^^^^^^^^^^^^^^
+
+warning: enum `PlacementActivationDecision` is never used
+  --> src/models/placement_recommendation.rs:11:10
+   |
+11 | pub enum PlacementActivationDecision {
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `PlacementRecommendation` is never constructed
+  --> src/models/placement_recommendation.rs:19:12
+   |
+19 | pub struct PlacementRecommendation {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `PlacementApprovalState` is never used
+ --> src/models/placement_intent.rs:5:10
+  |
+5 | pub enum PlacementApprovalState {
+  |          ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `PlacementIntent` is never constructed
+  --> src/models/placement_intent.rs:13:12
+   |
+13 | pub struct PlacementIntent {
+   |            ^^^^^^^^^^^^^^^
+
+warning: struct `PlacementActivation` is never constructed
+  --> src/models/placement_intent.rs:21:12
+   |
+21 | pub struct PlacementActivation;
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `create_intent` is never used
+  --> src/models/placement_intent.rs:24:12
+   |
+23 | impl PlacementActivation {
+   | ------------------------ associated function in this implementation
+24 |     pub fn create_intent(recommendation: PlacementRecommendation) -> PlacementIntent {
+   |            ^^^^^^^^^^^^^
+
+warning: struct `CollectorGravitySignal` is never constructed
+ --> src/models/collector_signal.rs:5:12
+  |
+5 | pub struct CollectorGravitySignal {
+  |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SaturationSignal` is never constructed
+  --> src/models/collector_signal.rs:17:12
+   |
+17 | pub struct SaturationSignal {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: struct `DistrictDemandSignal` is never constructed
+  --> src/models/collector_signal.rs:24:12
+   |
+24 | pub struct DistrictDemandSignal {
+   |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `GravityCollectorSync` is never constructed
+ --> src/models/gravity_collector_sync.rs:3:12
+  |
+3 | pub struct GravityCollectorSync;
+  |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `calculate_saturation_penalty` and `calculate_specialization_bonus` are never used
+  --> src/models/gravity_collector_sync.rs:6:12
+   |
+ 5 | impl GravityCollectorSync {
+   | ------------------------- associated functions in this implementation
+ 6 |     pub fn calculate_saturation_penalty(model_id: &str, signal: &CollectorGravitySignal) -> f32 {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+20 |     pub fn calculate_specialization_bonus(model_id: &str, signal: &CollectorGravitySignal) -> f32 {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `ArtifactHolderRole` is never used
+ --> src/models/artifact_holder.rs:4:10
+  |
+4 | pub enum ArtifactHolderRole {
+  |          ^^^^^^^^^^^^^^^^^^
+
+warning: struct `ArtifactHolderStatus` is never constructed
+  --> src/models/artifact_holder.rs:12:12
+   |
+12 | pub struct ArtifactHolderStatus {
+   |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `CoDownloadRequest` is never constructed
+ --> src/models/co_download.rs:5:12
+  |
+5 | pub struct CoDownloadRequest {
+  |            ^^^^^^^^^^^^^^^^^
+
+warning: enum `CoDownloadStatus` is never used
+  --> src/models/co_download.rs:16:10
+   |
+16 | pub enum CoDownloadStatus {
+   |          ^^^^^^^^^^^^^^^^
+
+warning: struct `CoDownloadIntent` is never constructed
+ --> src/models/co_download_intent.rs:6:12
+  |
+6 | pub struct CoDownloadIntent {
+  |            ^^^^^^^^^^^^^^^^
+
+warning: struct `CoDownloadDecision` is never constructed
+  --> src/models/co_download_intent.rs:17:12
+   |
+17 | pub struct CoDownloadDecision {
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: enum `IdentityType` is never used
+ --> src/trust/identity_authority.rs:6:10
+  |
+6 | pub enum IdentityType {
+  |          ^^^^^^^^^^^^
+
+warning: enum `IdentityTrustLevel` is never used
+  --> src/trust/identity_authority.rs:15:10
+   |
+15 | pub enum IdentityTrustLevel {
+   |          ^^^^^^^^^^^^^^^^^^
+
+warning: struct `IdentityAuthorityProfile` is never constructed
+  --> src/trust/identity_authority.rs:22:12
+   |
+22 | pub struct IdentityAuthorityProfile {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `TrustBinding` is never constructed
+ --> src/trust/trust_binding.rs:5:12
+  |
+5 | pub struct TrustBinding {
+  |            ^^^^^^^^^^^^
+
+warning: struct `RevocationRecord` is never constructed
+ --> src/trust/revocation_registry.rs:6:12
+  |
+6 | pub struct RevocationRecord {
+  |            ^^^^^^^^^^^^^^^^
+
+warning: struct `IdentityScope` is never constructed
+ --> src/trust/identity_scope.rs:5:12
+  |
+5 | pub struct IdentityScope {
+  |            ^^^^^^^^^^^^^
+
+warning: struct `ScopeNarrowing` is never constructed
+ --> src/trust/scope_narrowing.rs:3:12
+  |
+3 | pub struct ScopeNarrowing;
+  |            ^^^^^^^^^^^^^^
+
+warning: associated function `narrow` is never used
+ --> src/trust/scope_narrowing.rs:7:12
+  |
+5 | impl ScopeNarrowing {
+  | ------------------- associated function in this implementation
+6 |     /// Create a narrower scope from a parent scope.
+7 |     pub fn narrow(
+  |            ^^^^^^
+
+warning: struct `RevocationPropagation` is never constructed
+ --> src/trust/revocation_propagation.rs:4:12
+  |
+4 | pub struct RevocationPropagation;
+  |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `is_any_revoked` is never used
+ --> src/trust/revocation_propagation.rs:8:12
+  |
+6 | impl RevocationPropagation {
+  | -------------------------- associated function in this implementation
+7 |     /// Check if any link in the chain has been revoked.
+8 |     pub fn is_any_revoked(chain: &TrustChain, _revocation_registry: &Vec<Uuid>) -> bool {
+  |            ^^^^^^^^^^^^^^
+
+warning: struct `SentinelAuthorityProfile` is never constructed
+ --> src/observability/sentinel_authority.rs:5:12
+  |
+5 | pub struct SentinelAuthorityProfile {
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ObservabilityScope` is never constructed
+  --> src/observability/sentinel_authority.rs:12:12
+   |
+12 | pub struct ObservabilityScope {
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: struct `EvidenceBasis` is never constructed
+ --> src/observability/evidence_basis.rs:6:12
+  |
+6 | pub struct EvidenceBasis {
+  |            ^^^^^^^^^^^^^
+
+warning: struct `AnomalyInterpretation` is never constructed
+ --> src/observability/anomaly_interpretation.rs:5:12
+  |
+5 | pub struct AnomalyInterpretation {
+  |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `TelemetryNormalizationRule` is never constructed
+ --> src/observability/telemetry_normalization.rs:5:12
+  |
+5 | pub struct TelemetryNormalizationRule {
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SentinelSignal` is never constructed
+ --> src/observability/sentinel_signal.rs:9:12
+  |
+9 | pub struct SentinelSignal {
+  |            ^^^^^^^^^^^^^^
+
+warning: struct `SentinelStandardizer` is never constructed
+  --> src/observability/sentinel_signal.rs:22:12
+   |
+22 | pub struct SentinelStandardizer;
+   |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `normalize` is never used
+  --> src/observability/sentinel_signal.rs:25:12
+   |
+24 | impl SentinelStandardizer {
+   | ------------------------- associated function in this implementation
+25 |     pub fn normalize(raw_telemetry: String, class: SignalClass, source: String) -> SentinelSignal {
+   |            ^^^^^^^^^
+
+warning: enum `SignalClass` is never used
+ --> src/observability/signal_class.rs:4:10
+  |
+4 | pub enum SignalClass {
+  |          ^^^^^^^^^^^
+
+warning: struct `SignalConfidence` is never constructed
+ --> src/observability/signal_confidence.rs:4:12
+  |
+4 | pub struct SignalConfidence {
+  |            ^^^^^^^^^^^^^^^^
+
+warning: struct `EvidenceFreshness` is never constructed
+ --> src/observability/evidence_freshness.rs:5:12
+  |
+5 | pub struct EvidenceFreshness {
+  |            ^^^^^^^^^^^^^^^^^
+
+warning: method `is_stale` is never used
+  --> src/observability/evidence_freshness.rs:11:12
+   |
+10 | impl EvidenceFreshness {
+   | ---------------------- method in this implementation
+11 |     pub fn is_stale(&self) -> bool {
+   |            ^^^^^^^^
+
+warning: enum `AuthorityProtocolResult` is never used
+  --> src/authorities/mod.rs:20:10
+   |
+20 | pub enum AuthorityProtocolResult {
+   |          ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `AuthorityInteractionProtocol` is never constructed
+  --> src/authorities/mod.rs:28:12
+   |
+28 | pub struct AuthorityInteractionProtocol;
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `evaluate_action` is never used
+  --> src/authorities/mod.rs:32:12
+   |
+30 | impl AuthorityInteractionProtocol {
+   | --------------------------------- associated function in this implementation
+31 |     /// Evaluate a multi-authority action context based on AIP v1 precedence.
+32 |     pub fn evaluate_action(
+   |            ^^^^^^^^^^^^^^^
+
+warning: struct `AuthorityLayerDecision` is never constructed
+  --> src/authorities/authority_decision.rs:17:12
+   |
+17 | pub struct AuthorityLayerDecision {
+   |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `AuthorityConflict` is never constructed
+ --> src/authorities/authority_conflict.rs:6:12
+  |
+6 | pub struct AuthorityConflict {
+  |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `AuthorityEscalationPath` is never constructed
+ --> src/authorities/authority_escalation.rs:6:12
+  |
+6 | pub struct AuthorityEscalationPath {
+  |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `AuthorityConflictResolver` is never constructed
+ --> src/authorities/authority_conflict_resolver.rs:5:12
+  |
+5 | pub struct AuthorityConflictResolver;
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `resolve_precedence` is never used
+ --> src/authorities/authority_conflict_resolver.rs:8:12
+  |
+7 | impl AuthorityConflictResolver {
+  | ------------------------------ associated function in this implementation
+8 |     pub fn resolve_precedence(
+  |            ^^^^^^^^^^^^^^^^^^
+
+warning: enum `AuthorityEmbodimentType` is never used
+ --> src/authorities/authority_embodiment.rs:4:10
+  |
+4 | pub enum AuthorityEmbodimentType {
+  |          ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `AuthorityEmbodimentProfile` is never constructed
+  --> src/authorities/authority_embodiment.rs:14:12
+   |
+14 | pub struct AuthorityEmbodimentProfile {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `new_sofia`, `new_aistalk`, and `new_sentinel` are never used
+  --> src/authorities/authority_embodiment.rs:25:12
+   |
+24 | impl AuthorityEmbodimentProfile {
+   | ------------------------------- associated functions in this implementation
+25 |     pub fn new_sofia() -> Self {
+   |            ^^^^^^^^^
+...
+37 |     pub fn new_aistalk() -> Self {
+   |            ^^^^^^^^^^^
+...
+49 |     pub fn new_sentinel() -> Self {
+   |            ^^^^^^^^^^^^
+
+warning: enum `AuthorityFieldType` is never used
+ --> src/authorities/ontology.rs:4:10
+  |
+4 | pub enum AuthorityFieldType {
+  |          ^^^^^^^^^^^^^^^^^^
+
+warning: struct `AuthorityFieldProfile` is never constructed
+  --> src/authorities/ontology.rs:20:12
+   |
+20 | pub struct AuthorityFieldProfile {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `FieldScope` is never used
+  --> src/authorities/ontology.rs:28:10
+   |
+28 | pub enum FieldScope {
+   |          ^^^^^^^^^^
+
+warning: enum `OntologicalConstraint` is never used
+  --> src/authorities/ontology.rs:36:10
+   |
+36 | pub enum OntologicalConstraint {
+   |          ^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `name` and `primary_authority` are never used
+  --> src/authorities/ontology.rs:50:12
+   |
+49 | impl AuthorityFieldType {
+   | ----------------------- methods in this implementation
+50 |     pub fn name(&self) -> &'static str {
+   |            ^^^^
+...
+61 |     pub fn primary_authority(&self) -> &'static str {
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `AgentExecutionRequest` is never constructed
+ --> src/agents/agent_execution.rs:8:12
+  |
+8 | pub struct AgentExecutionRequest {
+  |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `AgentExecutionManager` is never constructed
+  --> src/agents/agent_execution.rs:15:12
+   |
+15 | pub struct AgentExecutionManager;
+   |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `translate_intent_to_request` is never used
+  --> src/agents/agent_execution.rs:18:12
+   |
+17 | impl AgentExecutionManager {
+   | -------------------------- associated function in this implementation
+18 |     pub fn translate_intent_to_request(
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `AgentIntent` is never constructed
+ --> src/agents/agent_intent.rs:4:12
+  |
+4 | pub struct AgentIntent {
+  |            ^^^^^^^^^^^
+
+warning: struct `AgentExecutionLeaseRef` is never constructed
+  --> src/agents/agent_intent.rs:16:12
+   |
+16 | pub struct AgentExecutionLeaseRef {
+   |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `AgentExecutionResult` is never constructed
+ --> src/agents/agent_result_binding.rs:4:12
+  |
+4 | pub struct AgentExecutionResult {
+  |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `AgentExecutionMetrics` is never constructed
+  --> src/agents/agent_result_binding.rs:12:12
+   |
+12 | pub struct AgentExecutionMetrics {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `AgentResultBinder` is never constructed
+  --> src/agents/agent_result_binding.rs:18:12
+   |
+18 | pub struct AgentResultBinder;
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: associated function `bind_stream_to_session` is never used
+  --> src/agents/agent_result_binding.rs:21:12
+   |
+20 | impl AgentResultBinder {
+   | ---------------------- associated function in this implementation
+21 |     pub fn bind_stream_to_session(session_id: &str, result_stream_ref: &str) -> String {
+   |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `ApprovalScope` is never used
+ --> src/agents/approval_proposal.rs:4:10
+  |
+4 | pub enum ApprovalScope {
+  |          ^^^^^^^^^^^^^
+
+warning: enum `ApprovalAction` is never used
+  --> src/agents/approval_proposal.rs:11:10
+   |
+11 | pub enum ApprovalAction {
+   |          ^^^^^^^^^^^^^^
+
+warning: struct `ApprovalProposal` is never constructed
+  --> src/agents/approval_proposal.rs:20:12
+   |
+20 | pub struct ApprovalProposal {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: enum `ApprovalDecision` is never used
+ --> src/agents/approval_policy.rs:5:10
+  |
+5 | pub enum ApprovalDecision {
+  |          ^^^^^^^^^^^^^^^^
+
+warning: struct `ApprovalPolicyResult` is never constructed
+  --> src/agents/approval_policy.rs:13:12
+   |
+13 | pub struct ApprovalPolicyResult {
+   |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ApprovalPolicyEvaluator` is never constructed
+  --> src/agents/approval_policy.rs:20:12
+   |
+20 | pub struct ApprovalPolicyEvaluator;
+   |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `evaluate` is never used
+  --> src/agents/approval_policy.rs:23:12
+   |
+22 | impl ApprovalPolicyEvaluator {
+   | ---------------------------- associated function in this implementation
+23 |     pub fn evaluate(proposal: &ApprovalProposal) -> ApprovalPolicyResult {
+   |            ^^^^^^^^
+
+warning: struct `ApprovedActivationRef` is never constructed
+ --> src/agents/approval_executor.rs:5:12
+  |
+5 | pub struct ApprovedActivationRef {
+  |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ApprovalExecutor` is never constructed
+  --> src/agents/approval_executor.rs:11:12
+   |
+11 | pub struct ApprovalExecutor;
+   |            ^^^^^^^^^^^^^^^^
+
+warning: associated function `create_activation_ref` is never used
+  --> src/agents/approval_executor.rs:14:12
+   |
+13 | impl ApprovalExecutor {
+   | --------------------- associated function in this implementation
+14 |     pub fn create_activation_ref(result: &ApprovalPolicyResult) -> Option<ApprovedActivationRef> {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `PlanPriority` is never used
+ --> src/agents/optimization_plan.rs:4:10
+  |
+4 | pub enum PlanPriority {
+  |          ^^^^^^^^^^^^
+
+warning: enum `PlanAction` is never used
+  --> src/agents/optimization_plan.rs:12:10
+   |
+12 | pub enum PlanAction {
+   |          ^^^^^^^^^^
+
+warning: struct `OptimizationPlan` is never constructed
+  --> src/agents/optimization_plan.rs:21:12
+   |
+21 | pub struct OptimizationPlan {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: struct `PlanningAgent` is never constructed
+ --> src/agents/planning_agent.rs:4:12
+  |
+4 | pub struct PlanningAgent {
+  |            ^^^^^^^^^^^^^
+
+warning: method `generate_plan` is never used
+ --> src/agents/planning_agent.rs:9:12
+  |
+8 | impl PlanningAgent {
+  | ------------------ method in this implementation
+9 |     pub fn generate_plan(&self, district_id: &str) -> OptimizationPlan {
+  |            ^^^^^^^^^^^^^
+
+warning: struct `PlanExecutor` is never constructed
+ --> src/agents/plan_executor.rs:4:12
+  |
+4 | pub struct PlanExecutor;
+  |            ^^^^^^^^^^^^
+
+warning: associated function `convert_to_proposals` is never used
+ --> src/agents/plan_executor.rs:7:12
+  |
+6 | impl PlanExecutor {
+  | ----------------- associated function in this implementation
+7 |     pub fn convert_to_proposals(plan: &OptimizationPlan) -> Vec<ApprovalProposal> {
+  |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `AuthorityTeamProfile` is never constructed
+ --> src/agents/authority_team.rs:7:12
+  |
+7 | pub struct AuthorityTeamProfile {
+  |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `AuthorityTeamValidator` is never constructed
+  --> src/agents/authority_team.rs:17:12
+   |
+17 | pub struct AuthorityTeamValidator;
+   |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `validate_team_legitimacy` is never used
+  --> src/agents/authority_team.rs:20:12
+   |
+19 | impl AuthorityTeamValidator {
+   | --------------------------- associated function in this implementation
+20 |     pub fn validate_team_legitimacy(profile: &AuthorityTeamProfile) -> bool {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `AuthorityEmbodimentType` is never used
+ --> src/agents/authority_embodiment.rs:4:10
+  |
+4 | pub enum AuthorityEmbodimentType {
+  |          ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `AuthorityEmbodiment` is never constructed
+  --> src/agents/authority_embodiment.rs:13:12
+   |
+13 | pub struct AuthorityEmbodiment {
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: enum `InterfaceSurfaceType` is never used
+ --> src/agents/authority_interface.rs:4:10
+  |
+4 | pub enum InterfaceSurfaceType {
+  |          ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `AuthorityInterfaceSurface` is never constructed
+  --> src/agents/authority_interface.rs:12:12
+   |
+12 | pub struct AuthorityInterfaceSurface {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `AuthoritySubrole` is never constructed
+ --> src/agents/authority_subrole.rs:4:12
+  |
+4 | pub struct AuthoritySubrole {
+  |            ^^^^^^^^^^^^^^^^
+
+warning: enum `GovernanceRole` is never used
+ --> src/agents/governance_role.rs:4:10
+  |
+4 | pub enum GovernanceRole {
+  |          ^^^^^^^^^^^^^^
+
+warning: enum `GovernanceDecision` is never used
+ --> src/agents/governance_review.rs:5:10
+  |
+5 | pub enum GovernanceDecision {
+  |          ^^^^^^^^^^^^^^^^^^
+
+warning: struct `GovernanceReview` is never constructed
+  --> src/agents/governance_review.rs:14:12
+   |
+14 | pub struct GovernanceReview {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: struct `GovernanceQuorum` is never constructed
+ --> src/agents/governance_quorum.rs:5:12
+  |
+5 | pub struct GovernanceQuorum;
+  |            ^^^^^^^^^^^^^^^^
+
+warning: associated function `compute_final_decision` is never used
+ --> src/agents/governance_quorum.rs:8:12
+  |
+7 | impl GovernanceQuorum {
+  | --------------------- associated function in this implementation
+8 |     pub fn compute_final_decision(reviews: &[GovernanceReview]) -> GovernanceDecision {
+  |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `GovernanceEscalationRef` is never constructed
+ --> src/agents/governance_escalation.rs:4:12
+  |
+4 | pub struct GovernanceEscalationRef {
+  |            ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `DistrictSpecializationClass` is never used
+ --> src/districts/district_specialization.rs:4:10
+  |
+4 | pub enum DistrictSpecializationClass {
+  |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `DistrictSpecializationRecommendation` is never constructed
+  --> src/districts/district_specialization.rs:13:12
+   |
+13 | pub struct DistrictSpecializationRecommendation {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `DistrictSpecializationGap` is never constructed
+  --> src/districts/district_specialization.rs:23:12
+   |
+23 | pub struct DistrictSpecializationGap {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `DistrictSpecializationSignal` is never constructed
+ --> src/districts/specialization_signal.rs:5:12
+  |
+5 | pub struct DistrictSpecializationSignal {
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SpecializationStrategy` is never constructed
+ --> src/districts/specialization_strategy.rs:7:12
+  |
+7 | pub struct SpecializationStrategy;
+  |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `compute_recommendation`, `detect_gaps`, and `create_activation_intent` are never used
+  --> src/districts/specialization_strategy.rs:10:12
+   |
+ 9 | impl SpecializationStrategy {
+   | --------------------------- associated functions in this implementation
+10 |     pub fn compute_recommendation(signal: &DistrictSpecializationSignal) -> DistrictSpecializationRecommendation {
+   |            ^^^^^^^^^^^^^^^^^^^^^^
+...
+56 |     pub fn detect_gaps(signal: &DistrictSpecializationSignal) -> Vec<DistrictSpecializationGap> {
+   |            ^^^^^^^^^^^
+...
+76 |     pub fn create_activation_intent(
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `RolloutState` is never used
+ --> src/districts/specialization_activation.rs:7:10
+  |
+7 | pub enum RolloutState {
+  |          ^^^^^^^^^^^^
+
+warning: struct `DistrictSpecializationActivationIntent` is never constructed
+  --> src/districts/specialization_activation.rs:18:12
+   |
+18 | pub struct DistrictSpecializationActivationIntent {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SpecializationActivationDecision` is never constructed
+  --> src/districts/specialization_activation.rs:33:12
+   |
+33 | pub struct SpecializationActivationDecision {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `DistrictSpecializationTransition` is never constructed
+ --> src/districts/specialization_transition.rs:6:12
+  |
+6 | pub struct DistrictSpecializationTransition {
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: methods `is_complete` and `advance_rollout` are never used
+  --> src/districts/specialization_transition.rs:15:12
+   |
+14 | impl DistrictSpecializationTransition {
+   | ------------------------------------- methods in this implementation
+15 |     pub fn is_complete(&self) -> bool {
+   |            ^^^^^^^^^^^
+...
+19 |     pub fn advance_rollout(&mut self, step: u32) {
+   |            ^^^^^^^^^^^^^^^
+
+warning: struct `SpecializationRolloutOrchestrator` is never constructed
+ --> src/districts/specialization_rollout.rs:6:12
+  |
+6 | pub struct SpecializationRolloutOrchestrator;
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `propose_activation`, `process_governance_approval`, and `step_rollout` are never used
+  --> src/districts/specialization_rollout.rs:9:12
+   |
+ 8 | impl SpecializationRolloutOrchestrator {
+   | -------------------------------------- associated functions in this implementation
+ 9 |     pub fn propose_activation(mut intent: DistrictSpecializationActivationIntent) -> DistrictSpecializationTransition {
+   |            ^^^^^^^^^^^^^^^^^^
+...
+29 |     pub fn process_governance_approval(transition: &mut DistrictSpecializationTransition, approved: bool) {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+38 |     pub fn step_rollout(transition: &mut DistrictSpecializationTransition) {
+   |            ^^^^^^^^^^^^
+
+warning: struct `DistrictSpecializationGuardrail` is never constructed
+ --> src/districts/specialization_guardrails.rs:5:12
+  |
+5 | pub struct DistrictSpecializationGuardrail {
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SpecializationSafetyEngine` is never constructed
+  --> src/districts/specialization_guardrails.rs:25:12
+   |
+25 | pub struct SpecializationSafetyEngine;
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `validate_intent` is never used
+  --> src/districts/specialization_guardrails.rs:28:12
+   |
+27 | impl SpecializationSafetyEngine {
+   | ------------------------------- associated function in this implementation
+28 |     pub fn validate_intent(intent: &DistrictSpecializationActivationIntent, guard: &DistrictSpecializationGuardrail) -> Result<(), S...
+   |            ^^^^^^^^^^^^^^^
+
+warning: struct `MarketRecommendation` is never constructed
+ --> src/market/market_recommendation.rs:4:12
+  |
+4 | pub struct MarketRecommendation {
+  |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `MarketAction` is never used
+  --> src/market/market_recommendation.rs:17:10
+   |
+17 | pub enum MarketAction {
+   |          ^^^^^^^^^^^^
+
+warning: struct `MarketConfidence` is never constructed
+  --> src/market/market_recommendation.rs:26:12
+   |
+26 | pub struct MarketConfidence {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: struct `ModelMarket` is never constructed
+ --> src/market/model_market.rs:4:12
+  |
+4 | pub struct ModelMarket;
+  |            ^^^^^^^^^^^
+
+warning: associated function `coordinate_resources` is never used
+ --> src/market/model_market.rs:7:12
+  |
+6 | impl ModelMarket {
+  | ---------------- associated function in this implementation
+7 |     pub fn coordinate_resources(
+  |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `GlobalResourceSignal` is never constructed
+ --> src/market/resource_signal.rs:5:12
+  |
+5 | pub struct GlobalResourceSignal {
+  |            ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MarketDemandSignal` is never constructed
+  --> src/market/resource_signal.rs:16:12
+   |
+16 | pub struct MarketDemandSignal {
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: struct `MarketSupplySignal` is never constructed
+  --> src/market/resource_signal.rs:25:12
+   |
+25 | pub struct MarketSupplySignal {
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: enum `MarketResourceType` is never used
+ --> src/market/market_activation_intent.rs:6:10
+  |
+6 | pub enum MarketResourceType {
+  |          ^^^^^^^^^^^^^^^^^^
+
+warning: enum `MarketActivationRolloutState` is never used
+  --> src/market/market_activation_intent.rs:13:10
+   |
+13 | pub enum MarketActivationRolloutState {
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MarketActivationIntent` is never constructed
+  --> src/market/market_activation_intent.rs:25:12
+   |
+25 | pub struct MarketActivationIntent {
+   |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MarketActivationOrchestrator` is never constructed
+ --> src/market/market_activation.rs:5:12
+  |
+5 | pub struct MarketActivationOrchestrator;
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: associated functions `propose_intent` and `advance_rollout` are never used
+  --> src/market/market_activation.rs:8:12
+   |
+ 7 | impl MarketActivationOrchestrator {
+   | --------------------------------- associated functions in this implementation
+ 8 |     pub fn propose_intent(mut intent: MarketActivationIntent) -> MarketActivationIntent {
+   |            ^^^^^^^^^^^^^^
+...
+30 |     pub fn advance_rollout(intent: &mut MarketActivationIntent) {
+   |            ^^^^^^^^^^^^^^^
+
+warning: enum `MarketRebalanceAction` is never used
+ --> src/market/market_rebalance.rs:4:10
+  |
+4 | pub enum MarketRebalanceAction {
+  |          ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MarketGuardrail` is never constructed
+ --> src/market/market_guardrails.rs:4:12
+  |
+4 | pub struct MarketGuardrail {
+  |            ^^^^^^^^^^^^^^^
+
+warning: struct `MarketSafetyEngine` is never constructed
+  --> src/market/market_guardrails.rs:28:12
+   |
+28 | pub struct MarketSafetyEngine;
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: associated function `is_safe_to_activate` is never used
+  --> src/market/market_guardrails.rs:31:12
+   |
+30 | impl MarketSafetyEngine {
+   | ----------------------- associated function in this implementation
+31 |     pub fn is_safe_to_activate(
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: enum `EvolutionSignalClass` is never used
+ --> src/evolution/evolution_signal.rs:4:10
+  |
+4 | pub enum EvolutionSignalClass {
+  |          ^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `EvolutionSignal` is never constructed
+  --> src/evolution/evolution_signal.rs:14:12
+   |
+14 | pub struct EvolutionSignal {
+   |            ^^^^^^^^^^^^^^^
+
+warning: enum `EvolutionDecision` is never used
+ --> src/evolution/evolution_policy.rs:5:10
+  |
+5 | pub enum EvolutionDecision {
+  |          ^^^^^^^^^^^^^^^^^
+
+warning: enum `EvolutionScope` is never used
+  --> src/evolution/evolution_policy.rs:16:10
+   |
+16 | pub enum EvolutionScope {
+   |          ^^^^^^^^^^^^^^
+
+warning: struct `EvolutionPolicy` is never constructed
+  --> src/evolution/evolution_policy.rs:24:12
+   |
+24 | pub struct EvolutionPolicy {
+   |            ^^^^^^^^^^^^^^^
+
+warning: methods `is_stable` and `can_evolve` are never used
+  --> src/evolution/evolution_policy.rs:33:12
+   |
+31 | impl EvolutionPolicy {
+   | -------------------- methods in this implementation
+32 |     /// Verify if the current stability index meets the threshold for evolution steps.
+33 |     pub fn is_stable(&self, current_stability: f32) -> bool {
+   |            ^^^^^^^^^
+...
+38 |     pub fn can_evolve(&self, current_stability: f32) -> bool {
+   |            ^^^^^^^^^^
+
+warning: struct `EvolutionConstraintSet` is never constructed
+  --> src/evolution/evolution_policy.rs:44:12
+   |
+44 | pub struct EvolutionConstraintSet {
+   |            ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `EvolutionCycleStage` is never used
+ --> src/evolution/evolution_cycle.rs:5:10
+  |
+5 | pub enum EvolutionCycleStage {
+  |          ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `EvolutionCycleState` is never constructed
+  --> src/evolution/evolution_cycle.rs:16:12
+   |
+16 | pub struct EvolutionCycleState {
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `EvolutionEngine` is never constructed
+ --> src/evolution/evolution_engine.rs:6:12
+  |
+6 | pub struct EvolutionEngine {
+  |            ^^^^^^^^^^^^^^^
+
+warning: associated items `new`, `evaluate_signals`, and `generate_intelligence_signal` are never used
+  --> src/evolution/evolution_engine.rs:11:12
+   |
+10 | impl EvolutionEngine {
+   | -------------------- associated items in this implementation
+11 |     pub fn new() -> Self {
+   |            ^^^
+...
+23 |     pub fn evaluate_signals(&mut self, signals: Vec<EvolutionSignal>, policy: &super::evolution_policy::EvolutionPolicy) -> Evolutio...
+   |            ^^^^^^^^^^^^^^^^
+...
+41 |     pub fn generate_intelligence_signal(&self) -> crate::intelligence::signal_aggregator::IntelligenceSignal {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `AlignmentClass` is never used
+ --> src/coordination/alignment_signal.rs:4:10
+  |
+4 | pub enum AlignmentClass {
+  |          ^^^^^^^^^^^^^^
+
+warning: struct `AlignmentSignal` is never constructed
+  --> src/coordination/alignment_signal.rs:13:12
+   |
+13 | pub struct AlignmentSignal {
+   |            ^^^^^^^^^^^^^^^
+
+warning: struct `GlobalDirectionVector` is never constructed
+  --> src/coordination/alignment_signal.rs:23:12
+   |
+23 | pub struct GlobalDirectionVector {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `DivergenceType` is never used
+ --> src/coordination/divergence_detector.rs:4:10
+  |
+4 | pub enum DivergenceType {
+  |          ^^^^^^^^^^^^^^
+
+warning: struct `DivergenceMetric` is never constructed
+  --> src/coordination/divergence_detector.rs:13:12
+   |
+13 | pub struct DivergenceMetric {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: enum `CoordinationDecision` is never used
+ --> src/coordination/coordination_policy.rs:4:10
+  |
+4 | pub enum CoordinationDecision {
+  |          ^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `CoordinationScope` is never used
+  --> src/coordination/coordination_policy.rs:12:10
+   |
+12 | pub enum CoordinationScope {
+   |          ^^^^^^^^^^^^^^^^^
+
+warning: struct `CoordinationPolicy` is never constructed
+  --> src/coordination/coordination_policy.rs:19:12
+   |
+19 | pub struct CoordinationPolicy {
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: struct `CoordinationState` is never constructed
+ --> src/coordination/coordination_engine.rs:7:12
+  |
+7 | pub struct CoordinationState {
+  |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `CoordinationEngine` is never constructed
+  --> src/coordination/coordination_engine.rs:13:12
+   |
+13 | pub struct CoordinationEngine {
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: associated items `new` and `process_signals` are never used
+  --> src/coordination/coordination_engine.rs:19:12
+   |
+18 | impl CoordinationEngine {
+   | ----------------------- associated items in this implementation
+19 |     pub fn new(policy: CoordinationPolicy) -> Self {
+   |            ^^^
+...
+35 |     pub fn process_signals(&mut self, signals: Vec<AlignmentSignal>) -> CoordinationDecision {
+   |            ^^^^^^^^^^^^^^^
+
+warning: enum `SignalSource` is never used
+ --> src/intelligence/signal_aggregator.rs:7:10
+  |
+7 | pub enum SignalSource {
+  |          ^^^^^^^^^^^^
+
+warning: struct `IntelligenceSignal` is never constructed
+  --> src/intelligence/signal_aggregator.rs:17:12
+   |
+17 | pub struct IntelligenceSignal {
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: struct `SignalAggregator` is never constructed
+  --> src/intelligence/signal_aggregator.rs:26:12
+   |
+26 | pub struct SignalAggregator;
+   |            ^^^^^^^^^^^^^^^^
+
+warning: associated function `aggregate` is never used
+  --> src/intelligence/signal_aggregator.rs:29:12
+   |
+28 | impl SignalAggregator {
+   | --------------------- associated function in this implementation
+29 |     pub fn aggregate(signals: Vec<IntelligenceSignal>) -> Vec<IntelligenceSignal> {
+   |            ^^^^^^^^^
+
+warning: struct `CollectiveInsight` is never constructed
+ --> src/intelligence/reasoning_model.rs:6:12
+  |
+6 | pub struct CollectiveInsight {
+  |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `ReasoningTrace` is never constructed
+  --> src/intelligence/reasoning_model.rs:15:12
+   |
+15 | pub struct ReasoningTrace {
+   |            ^^^^^^^^^^^^^^
+
+warning: struct `ReasoningModel` is never constructed
+  --> src/intelligence/reasoning_model.rs:23:12
+   |
+23 | pub struct ReasoningModel;
+   |            ^^^^^^^^^^^^^^
+
+warning: associated function `generate_insight` is never used
+  --> src/intelligence/reasoning_model.rs:26:12
+   |
+25 | impl ReasoningModel {
+   | ------------------- associated function in this implementation
+26 |     pub fn generate_insight(summary: &str, confidence: f32) -> CollectiveInsight {
+   |            ^^^^^^^^^^^^^^^^
+
+warning: struct `SystemStateVector` is never constructed
+ --> src/intelligence/strategy_vector.rs:5:12
+  |
+5 | pub struct SystemStateVector {
+  |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `StrategicDirective` is never constructed
+  --> src/intelligence/strategy_vector.rs:13:12
+   |
+13 | pub struct StrategicDirective {
+   |            ^^^^^^^^^^^^^^^^^^
+
+warning: struct `StrategyVector` is never constructed
+  --> src/intelligence/strategy_vector.rs:20:12
+   |
+20 | pub struct StrategyVector;
+   |            ^^^^^^^^^^^^^^
+
+warning: struct `CollectiveEngine` is never constructed
+ --> src/intelligence/collective_engine.rs:6:12
+  |
+6 | pub struct CollectiveEngine;
+  |            ^^^^^^^^^^^^^^^^
+
+warning: associated functions `process_intelligence_cycle` and `generate_strategic_directive` are never used
+  --> src/intelligence/collective_engine.rs:9:18
+   |
+ 8 | impl CollectiveEngine {
+   | --------------------- associated functions in this implementation
+ 9 |     pub async fn process_intelligence_cycle(app: AppHandle, signals: Vec<IntelligenceSignal>) -> Result<CollectiveInsight, String> {
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+31 |     pub fn generate_strategic_directive(insight: &CollectiveInsight) -> StrategicDirective {
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ReasoningQualityScore` is never constructed
+ --> src/metacognition/reasoning_quality.rs:4:12
+  |
+4 | pub struct ReasoningQualityScore {
+  |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: method `compute_grade` is never used
+  --> src/metacognition/reasoning_quality.rs:12:12
+   |
+11 | impl ReasoningQualityScore {
+   | -------------------------- method in this implementation
+12 |     pub fn compute_grade(&self) -> char {
+   |            ^^^^^^^^^^^^^
+
+warning: enum `MetaRiskClass` is never used
+ --> src/metacognition/meta_risk.rs:4:10
+  |
+4 | pub enum MetaRiskClass {
+  |          ^^^^^^^^^^^^^
+
+warning: struct `MetaRiskProfile` is never constructed
+  --> src/metacognition/meta_risk.rs:14:12
+   |
+14 | pub struct MetaRiskProfile {
+   |            ^^^^^^^^^^^^^^^
+
+warning: enum `MetaCognitiveDecision` is never used
+ --> src/metacognition/reflection_gate.rs:4:10
+  |
+4 | pub enum MetaCognitiveDecision {
+  |          ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ReflectionTrigger` is never constructed
+  --> src/metacognition/reflection_gate.rs:13:12
+   |
+13 | pub struct ReflectionTrigger {
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: struct `MetaCognitiveJudgment` is never constructed
+  --> src/metacognition/meta_cognition_engine.rs:11:12
+   |
+11 | pub struct MetaCognitiveJudgment {
+   |            ^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `MetaCognitionEngine` is never constructed
+  --> src/metacognition/meta_cognition_engine.rs:20:12
+   |
+20 | pub struct MetaCognitionEngine;
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: associated function `reflect` is never used
+  --> src/metacognition/meta_cognition_engine.rs:23:18
+   |
+22 | impl MetaCognitionEngine {
+   | ------------------------ associated function in this implementation
+23 |     pub async fn reflect(app: AppHandle, insight: &CollectiveInsight) -> Result<MetaCognitiveJudgment, String> {
+   |                  ^^^^^^^
+
+warning: struct `GenesisRecord` is never constructed
+  --> src/genesis.rs:22:12
+   |
+22 | pub struct GenesisRecord {
+   |            ^^^^^^^^^^^^^
+
+warning: `daarion-edge-client` (lib) generated 311 warnings (run `cargo fix --lib -p daarion-edge-client` to apply 50 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.03s
