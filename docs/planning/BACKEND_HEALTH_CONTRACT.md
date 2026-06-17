@@ -100,7 +100,7 @@ states:
 | `edge_protocol_version` is incompatible | `version_mismatch` |
 | Client version is lower than `min_edge_client_version` | `version_mismatch` |
 | Valid response with `status: ok` | `online` |
-| Valid response with `status: degraded` | `online_degraded` |
+| Valid response with `status: degraded` | `degraded` |
 | Valid response with `status: maintenance` | `maintenance` |
 
 HTTP `401` or `403` is a backend misconfiguration for this endpoint. Public
