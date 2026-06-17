@@ -10,6 +10,13 @@ import { activeCaptureAdapter } from "../lib/captureAdapters";
 import { useGenesisLang } from "../lib/genesisStrings";
 import { fetchChallenge, uploadVoiceImprint, sealCeremony } from "../lib/voiceCeremonyApi";
 import { runPreflight, PreflightResponse, isEdgeCandidate, canRunVoiceCeremony } from "../lib/preflightApi";
+import {
+  backendHealthFallbackStatus,
+  backendHealthLabel,
+  backendHealthPanelClass,
+  backendHealthTextClass,
+  type BackendHealthStatus,
+} from "../lib/backendHealth";
 
 
 interface GenesisWizardProps {
@@ -161,6 +168,7 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
   // Device Preflight — runs once on wizard mount
   const [preflightData, setPreflightData] = useState<PreflightResponse | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendConfigStatus | null>(null);
+  const [backendHealth, setBackendHealth] = useState<BackendHealthStatus | null>(null);
 
   // Step 5 — Provisioning
   const [provisioningLog, setProvisioningLog] = useState<string[]>([]);
@@ -242,18 +250,32 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
       .then((r) => setPreflightData(r))
       .catch(() => {});
     invoke<BackendConfigStatus>("get_backend_config_status")
-      .then((status) => setBackendStatus(status))
-      .catch((e) => setBackendStatus({
-        configured: false,
-        backend_url: null,
-        environment: "unknown",
-        dev_default: false,
-        paired: false,
-        pairing_label: null,
-        pairing_source: null,
-        connection_status: "not_checked",
-        message: String(e),
-      }));
+      .then((status) => {
+        setBackendStatus(status);
+        if (status.configured) {
+          invoke<BackendHealthStatus>("check_backend_health")
+            .then((health) => setBackendHealth(health))
+            .catch((e) =>
+              setBackendHealth(backendHealthFallbackStatus("contract_invalid", String(e))),
+            );
+        } else {
+          setBackendHealth(backendHealthFallbackStatus("pairing_required", status.message));
+        }
+      })
+      .catch((e) => {
+        setBackendStatus({
+          configured: false,
+          backend_url: null,
+          environment: "unknown",
+          dev_default: false,
+          paired: false,
+          pairing_label: null,
+          pairing_source: null,
+          connection_status: "not_checked",
+          message: String(e),
+        });
+        setBackendHealth(backendHealthFallbackStatus("contract_invalid", String(e)));
+      });
   }, []);
 
   useEffect(() => {
@@ -488,10 +510,13 @@ export function GenesisWizard({ onComplete }: GenesisWizardProps) {
             </div>
           )}
           {backendStatus?.configured && (
-            <div className="mt-3 mx-auto max-w-md flex items-start gap-2 rounded-xl border border-emerald-500/15 bg-emerald-500/5 px-3 py-2 text-left">
-              <Server size={13} className="text-emerald-400 mt-0.5 flex-shrink-0" />
-              <p className="text-[10px] text-emerald-100/60 leading-relaxed">
-                {backendStatus.pairing_label || "Backend profile"} {backendStatus.paired ? "paired" : "available"} — connection not checked yet.
+            <div className={`mt-3 mx-auto max-w-md flex items-start gap-2 rounded-xl border px-3 py-2 text-left ${backendHealthPanelClass(backendHealth?.state)}`}>
+              <Server size={13} className={`mt-0.5 flex-shrink-0 ${backendHealthTextClass(backendHealth?.state)}`} />
+              <p className="text-[10px] text-white/65 leading-relaxed">
+                {backendStatus.pairing_label || "Backend profile"} {backendStatus.paired ? "paired" : "available"} —{" "}
+                <span className={backendHealthTextClass(backendHealth?.state)}>
+                  {backendHealthLabel(backendHealth?.state)}
+                </span>
               </p>
             </div>
           )}

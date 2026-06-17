@@ -2,6 +2,7 @@ mod identity;
 mod registry_client;
 mod enrollment;
 mod heartbeat;
+mod backend_health;
 mod config;
 mod pairing;
 mod capabilities;
@@ -27,6 +28,7 @@ use tokio::sync::Mutex;
 use tauri::Manager;
 #[cfg(desktop)]
 use tauri::tray::{TrayIconBuilder, MouseButton, MouseButtonState, TrayIconEvent};
+use backend_health::BackendHealthManager;
 use heartbeat::{HeartbeatManager, HeartbeatStatus};
 use messaging::MessagingState;
 
@@ -110,11 +112,12 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_shell::init());
     boot_log("  Plugin: shell initialized");
     
-    boot_log("  Managing state: HeartbeatManager, MessagingState, WorkerModeState");
+    boot_log("  Managing state: HeartbeatManager, BackendHealthManager, MessagingState, WorkerModeState");
     let builder = builder
         .manage(HeartbeatManager {
             status: Arc::new(Mutex::new(HeartbeatStatus::default())),
         })
+        .manage(BackendHealthManager::default())
         .manage(Arc::new(MessagingState::new()))
         .manage(Mutex::new(crate::worker::WorkerModeState::default()));
     
@@ -124,6 +127,8 @@ pub fn run() {
             identity::get_identity_status,
             identity::initialize_identity,
             config::get_backend_config_status,
+            backend_health::get_backend_health_status,
+            backend_health::check_backend_health,
             pairing::get_pairing_status,
             pairing::pair_backend,
             pairing::unpair_backend,
