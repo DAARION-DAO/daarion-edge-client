@@ -1,10 +1,10 @@
 /**
  * voiceCeremonyApi.ts
  * Typed client for the three canonical Voice Ceremony endpoints.
- * All paths relative to VITE_GENESIS_API_BASE (default: https://api.daarion.city)
+ * All paths resolve through the paired DAARION backend.
  */
 
-const API_BASE = (import.meta.env.VITE_GENESIS_API_BASE ?? "https://api.daarion.city").replace(/\/$/, "");
+import { getEffectiveBackendUrl } from "./backendConfig";
 
 export interface ChallengeResponse {
   ok: boolean;
@@ -36,7 +36,8 @@ export interface SealResponse {
 // ── 1. Challenge ─────────────────────────────────────────────────────────────
 
 export async function fetchChallenge(agentName: string): Promise<ChallengeResponse> {
-  const res = await fetch(`${API_BASE}/genesis/voice-imprint/challenge`, {
+  const apiBase = await getEffectiveBackendUrl();
+  const res = await fetch(`${apiBase}/genesis/voice-imprint/challenge`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ agent_name: agentName }),
@@ -53,13 +54,14 @@ export async function uploadVoiceImprint(
   audioBlob: Blob,
   creatorWallet?: string,
 ): Promise<UploadResponse> {
+  const apiBase = await getEffectiveBackendUrl();
   const form = new FormData();
   form.append("challenge_id", challengeId);
   form.append("agent_name", agentName);
   if (creatorWallet) form.append("creator_wallet", creatorWallet);
   form.append("audio", audioBlob, "voice-imprint.webm");
 
-  const res = await fetch(`${API_BASE}/genesis/voice-imprint/upload`, {
+  const res = await fetch(`${apiBase}/genesis/voice-imprint/upload`, {
     method: "POST",
     body: form,
   });
@@ -74,7 +76,8 @@ export async function sealCeremony(
   challengeId: string,
   agentPassportId?: string,
 ): Promise<SealResponse> {
-  const res = await fetch(`${API_BASE}/genesis/voice-imprint/complete`, {
+  const apiBase = await getEffectiveBackendUrl();
+  const res = await fetch(`${apiBase}/genesis/voice-imprint/complete`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

@@ -6,6 +6,7 @@ import { MessagingPanel } from "./components/MessagingPanel";
 import { EdgeActivation } from "./components/EdgeActivation";
 import { LocalInferencePanel } from "./components/LocalInferencePanel";
 import { GenesisWizard } from "./components/GenesisWizard";
+import { PairingGate, type PairingState } from "./components/PairingGate";
 interface IdentityStatus {
   initialized: boolean;
   node_id: string | null;
@@ -43,6 +44,18 @@ interface HeartbeatStatus {
   last_node_id_prefix: string | null;
   last_task_count: number;
   revoked: boolean;
+}
+
+interface BackendConfigStatus {
+  configured: boolean;
+  backend_url: string | null;
+  environment: string;
+  dev_default: boolean;
+  paired: boolean;
+  pairing_label: string | null;
+  pairing_source: string | null;
+  connection_status: string;
+  message: string;
 }
 
 interface CapabilitySummary {
@@ -103,6 +116,8 @@ function App() {
   const [enrollment, setEnrollment] = useState<EnrollmentState | null>(null);
   const [heartbeat, setHeartbeat] = useState<HeartbeatStatus | null>(null);
   const [capabilities, setCapabilities] = useState<CapabilitySummary | null>(null);
+  const [pairing, setPairing] = useState<PairingState | null>(null);
+  const [backendStatus, setBackendStatus] = useState<BackendConfigStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"dashboard" | "messaging" | "activation" | "inference">("dashboard");
@@ -127,16 +142,23 @@ function App() {
 
   async function fetchData() {
     try {
-      const [idRes, enrollRes, hbRes, capRes] = await Promise.all([
+      const [idRes, enrollRes, hbRes, capRes, backendRes] = await Promise.all([
         invoke<IdentityStatus>("get_identity_status"),
         invoke<EnrollmentState>("get_enrollment_status"),
         invoke<HeartbeatStatus>("get_heartbeat_status"),
-        invoke<CapabilitySummary>("get_capabilities")
+        invoke<CapabilitySummary>("get_capabilities"),
+        invoke<BackendConfigStatus>("get_backend_config_status")
       ]);
       setIdStatus(idRes);
       setEnrollment(enrollRes);
       setHeartbeat(hbRes);
       setCapabilities(capRes);
+      setBackendStatus(backendRes);
+      try {
+        setPairing(await invoke<PairingState>("get_pairing_status"));
+      } catch {
+        setPairing(null);
+      }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -173,6 +195,18 @@ function App() {
   // - Enrolled (status="active") → Main dashboard
   const isPending = idStatus?.initialized && enrollment?.node_id && !enrollment?.enrolled;
   const isRevoked = heartbeat?.revoked;
+
+  if (backendStatus && !backendStatus.configured) {
+    return (
+      <PairingGate
+        message={backendStatus.message}
+        onPaired={(state) => {
+          setPairing(state);
+          fetchData();
+        }}
+      />
+    );
+  }
 
   if (isRevoked) {
     return (
@@ -308,8 +342,13 @@ function App() {
         
         <div className="flex gap-2">
           <div className="glass px-3 py-2 border-white/5 flex flex-col items-end">
-            <span className="text-[8px] text-white/30 uppercase tracking-widest font-bold">Infrastructure</span>
-            <span className="text-[10px] font-mono text-white/70">{enrollment?.environment || 'LOCAL ONLY'}</span>
+            <span className="text-[8px] text-white/30 uppercase tracking-widest font-bold">Pairing</span>
+            <span className="text-[10px] font-mono text-white/70">
+              {backendStatus?.pairing_label || pairing?.label || (backendStatus?.dev_default ? 'Local Development' : 'Unpaired')}
+            </span>
+            <span className="text-[8px] font-mono text-white/25">
+              {backendStatus?.connection_status === 'not_checked' ? 'connection not checked yet' : backendStatus?.connection_status}
+            </span>
           </div>
           
           {/* Local Runtime Activity */}
