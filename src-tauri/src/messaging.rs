@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tauri::{AppHandle, Manager, State, Emitter};
+use tauri::{AppHandle, State, Emitter};
 use rand::Rng;
 use crate::enrollment::get_node_token;
 use std::time::Duration;
@@ -73,7 +73,7 @@ pub async fn bootstrap_messaging(
     *conn = ConnectivityState::Connecting;
     app.emit("messaging-status-changed", conn.clone()).unwrap();
 
-    let node_token = match get_node_token() {
+    let _node_token = match get_node_token() {
         Ok(t) => t,
         Err(_) => {
             let err = "Node token not found. Enroll first.".to_string();
@@ -159,7 +159,7 @@ fn start_poller(app: AppHandle, state: Arc<MessagingState>) {
     });
 }
 
-async fn poll_endpoint(state: &MessagingState) -> Result<Vec<Message>, String> {
+async fn poll_endpoint(_state: &MessagingState) -> Result<Vec<Message>, String> {
     // In a final implementation, this would be:
     // let client = reqwest::Client::new();
     // let res = client.get("https://api.daarion.city/v1/messaging/poll")
