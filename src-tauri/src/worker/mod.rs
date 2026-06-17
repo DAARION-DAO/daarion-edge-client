@@ -101,7 +101,6 @@ use relay_client::{
     EnrollmentRequest, EnrollmentReqPayload, AdvisoryResult, AdvisoryOutput, 
     ExecutionReceipt, ExecutionReceiptPayload
 };
-use ed25519_dalek::{Signer};
 
 #[tauri::command]
 pub async fn toggle_worker_mode(
@@ -246,24 +245,26 @@ pub async fn toggle_worker_mode(
                                                         };
                                                         
                                                         let raw_advisory_json = serde_json::to_string(&adv).unwrap();
-                                                        let signing_key = crate::identity::get_signing_key(&app_handle_clone).expect("Missing private key");
-                                                        let sig = signing_key.sign(raw_advisory_json.as_bytes());
-                                                        
-                                                        let receipt = ExecutionReceipt {
-                                                            event_type: "execution_receipt".into(),
-                                                            payload: ExecutionReceiptPayload {
-                                                                worker_id: identity_clone.node_id.clone(),
-                                                                lease_id: task.payload.lease_id.clone(),
-                                                                raw_advisory_json,
-                                                                signature: hex::encode(sig.to_bytes()),
+                                                        match crate::identity::sign_payload(&app_handle_clone, &raw_advisory_json) {
+                                                            Ok(signature) => {
+                                                                let receipt = ExecutionReceipt {
+                                                                    event_type: "execution_receipt".into(),
+                                                                    payload: ExecutionReceiptPayload {
+                                                                        worker_id: identity_clone.node_id.clone(),
+                                                                        lease_id: task.payload.lease_id.clone(),
+                                                                        raw_advisory_json,
+                                                                        signature,
+                                                                    }
+                                                                };
+
+                                                                let _ = relay.send_receipt(receipt).await;
+
+                                                                match relay.wait_for_verify().await {
+                                                                    Ok(verify) => println!("Backend Verify Object: {:?}", verify),
+                                                                    Err(e) => println!("Verify Timeout/Error: {}", e),
+                                                                }
                                                             }
-                                                        };
-                                                        
-                                                        let _ = relay.send_receipt(receipt).await;
-                                                        
-                                                        match relay.wait_for_verify().await {
-                                                            Ok(verify) => println!("Backend Verify Object: {:?}", verify),
-                                                            Err(e) => println!("Verify Timeout/Error: {}", e),
+                                                            Err(e) => println!("Execution receipt blocked: Ed25519 signature required: {}", e),
                                                         }
                                                     },
                                                     Err(envelope_err) => println!("Envelope HARD FAIL-CLOSED: {}", envelope_err),
@@ -282,24 +283,26 @@ pub async fn toggle_worker_mode(
                                                         };
                                                         
                                                         let raw_advisory_json = serde_json::to_string(&adv).unwrap();
-                                                        let signing_key = crate::identity::get_signing_key(&app_handle_clone).expect("Missing private key");
-                                                        let sig = signing_key.sign(raw_advisory_json.as_bytes());
-                                                        
-                                                        let receipt = ExecutionReceipt {
-                                                            event_type: "execution_receipt".into(),
-                                                            payload: ExecutionReceiptPayload {
-                                                                worker_id: identity_clone.node_id.clone(),
-                                                                lease_id: task.payload.lease_id.clone(),
-                                                                raw_advisory_json,
-                                                                signature: hex::encode(sig.to_bytes()),
+                                                        match crate::identity::sign_payload(&app_handle_clone, &raw_advisory_json) {
+                                                            Ok(signature) => {
+                                                                let receipt = ExecutionReceipt {
+                                                                    event_type: "execution_receipt".into(),
+                                                                    payload: ExecutionReceiptPayload {
+                                                                        worker_id: identity_clone.node_id.clone(),
+                                                                        lease_id: task.payload.lease_id.clone(),
+                                                                        raw_advisory_json,
+                                                                        signature,
+                                                                    }
+                                                                };
+
+                                                                let _ = relay.send_receipt(receipt).await;
+
+                                                                match relay.wait_for_verify().await {
+                                                                    Ok(verify) => println!("Backend Verify Object: {:?}", verify),
+                                                                    Err(e) => println!("Verify Timeout/Error: {}", e),
+                                                                }
                                                             }
-                                                        };
-                                                        
-                                                        let _ = relay.send_receipt(receipt).await;
-                                                        
-                                                        match relay.wait_for_verify().await {
-                                                            Ok(verify) => println!("Backend Verify Object: {:?}", verify),
-                                                            Err(e) => println!("Verify Timeout/Error: {}", e),
+                                                            Err(e) => println!("Execution receipt blocked: Ed25519 signature required: {}", e),
                                                         }
                                                     },
                                                     Err(envelope_err) => println!("Envelope HARD FAIL-CLOSED: {}", envelope_err),
