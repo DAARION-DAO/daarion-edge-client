@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 // 1. Read version from package.json
 const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
@@ -146,6 +147,22 @@ if (found > 0 && artifactsMeta.length > 0) {
   const manifestPath = path.join(outputDir, manifestFilename);
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
   console.log(`Generated release manifest at: ${manifestPath}`);
+
+  const checksumFilename = `SHA256SUMS-${label || 'unknown'}.txt`;
+  const checksumPath = path.join(outputDir, checksumFilename);
+  const checksumLines = fs.readdirSync(outputDir)
+    .filter((file) => !file.startsWith('SHA256SUMS-'))
+    .sort()
+    .map((file) => {
+      const filePath = path.join(outputDir, file);
+      const digest = crypto
+        .createHash('sha256')
+        .update(fs.readFileSync(filePath))
+        .digest('hex');
+      return `${digest}  ${file}`;
+    });
+  fs.writeFileSync(checksumPath, `${checksumLines.join('\n')}\n`);
+  console.log(`Generated SHA-256 checksums at: ${checksumPath}`);
 }
 
 if (found === 0) {

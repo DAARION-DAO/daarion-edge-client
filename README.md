@@ -35,10 +35,10 @@ The client is compiled for cross-platform availability, leveraging Tauri v2:
 | Platform | Target Architecture | Release Format | Release Status |
 |---|---|---|---|
 | **Windows** | x86_64 | `.exe` (NSIS) / `.msi` | ⚠️ Beta / Canary (Execution Proof Pending) |
-| **macOS Apple Silicon** | ARM64 (`aarch64`) | `.dmg` | ✅ Beta / Canary (Active) |
-| **macOS Intel** | x86_64 | `.dmg` | ✅ Beta / Canary (Active) |
+| **macOS Apple Silicon** | ARM64 (`aarch64`) | `.dmg` | ⚠️ Beta / Canary (Signing & Notarization Proof Required) |
+| **macOS Intel** | x86_64 | `.dmg` | ⚠️ Beta / Canary (Signing & Notarization Proof Required) |
 | **Linux** | x86_64 | `.AppImage` | ⚠️ Beta / Canary (Untested) |
-| **Android** | arm64-v8a | `.apk` (Signed) | ⚠️ Release-Signed Sideload (Install Proof Pending) |
+| **Android** | arm64-v8a | `.apk` | ⚠️ Sideload Beta (Signature & Install Proof Pending) |
 | **iOS** | arm64 | Native App | ❌ Future / Coming Soon |
 
 ---
