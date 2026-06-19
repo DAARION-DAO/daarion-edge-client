@@ -102,7 +102,9 @@ complete trust/install proof.
 Public release is blocked until these gates pass:
 
 1. **Truthful release notes**
-   - Current workflow release body says macOS artifacts are `Release-Signed`.
+   - Earlier workflow release body language overstated macOS signing status.
+     The current workflow labels macOS artifacts as tester/canary and requires
+     signing and notarization proof before public release.
    - Latest audit found no usable DMG signature, ad-hoc Apple Silicon signing,
      unsigned Intel app, and no notarization ticket.
    - Future release notes must distinguish `build exists`, `signed`,
