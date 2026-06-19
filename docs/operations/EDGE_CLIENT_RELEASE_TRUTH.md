@@ -16,7 +16,7 @@ To maintain compatibility with public download links, installation wizards, and 
 | **Linux** | x86_64 | `Daarion.Edge_<version>_amd64.AppImage` | Tauri Bundle AppImage |
 | **Android** | arm64-v8a | `Daarion.Edge_<version>_android_universal_release.apk` | Gradle Assembler + CI Stager |
 
-> **⚠️ NOTE ON ANDROID**: The APK is initially output by the Gradle build system as `app-universal-release.apk` (signed using the Google Play Keystore Base64 secret), and is subsequently renamed by the CI script `scripts/prepare-release-artifacts.js` to match the canonical versioned pattern before upload.
+> **⚠️ NOTE ON ANDROID**: The APK is initially output by the Gradle build system as `app-universal-release.apk` and is subsequently renamed by the CI script `scripts/prepare-release-artifacts.cjs` to match the canonical versioned pattern before upload. Android release signing must be proven from the generated APK before release notes claim a signed public artifact.
 
 ---
 
@@ -42,10 +42,10 @@ An artifact is only marked **Green (Verified)** if it completes all verification
 - **Diagnostics**: Hardened with native boot logging to `%APPDATA%/DAARION Edge/logs/boot.log`.
 - **Blockers**: In-app execution durability on non-developer environments is still undergoing tester verification.
 
-### macOS Apple Silicon & Intel (Green)
-- **Status**: DMGs are built, signed, and verified in active development environments.
+### macOS Apple Silicon & Intel (Yellow)
+- **Status**: DMGs build in the release workflow, but public signing and notarization proof must be attached before public onboarding.
 - **Diagnostics**: Writes to `~/.daarion-edge/logs/boot.log`.
-- **Blockers**: None. Fully validated for the current pilot Wave.
+- **Blockers**: Developer ID signing, notarization, Gatekeeper, and first-run proof must be recorded for each architecture.
 
 ### Linux (Yellow)
 - **Status**: AppImage builds successfully under Ubuntu GitHub runners.
@@ -53,7 +53,7 @@ An artifact is only marked **Green (Verified)** if it completes all verification
 - **Blockers**: Sideload and Boot testing are currently unverified.
 
 ### Android (Yellow)
-- **Status**: Release-signed APK compiles successfully under NDK toolchains in CI.
+- **Status**: APK build remains tester/canary unless signature and install proof are attached.
 - **Diagnostics**: Monitored via standard `adb logcat -s "CrashAnrDetector"`.
 - **Blockers**: Awaiting test report validation (`adb install` verification on pure Android 14+ targets).
 
