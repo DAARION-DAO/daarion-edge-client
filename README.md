@@ -5,6 +5,12 @@
 
 The **DAARION Edge Client** is the public desktop and mobile gateway into the **DAARION.city / DAGI** (Decentralized Agentic Governance Infrastructure) ecosystem. It serves as a sovereign interface and edge-client runtime that allows users to birth, manage, and coordinate personal AI agents locally on their own hardware.
 
+## Repository Role
+
+This repository is part of the DAARION.city ecosystem. See
+`docs/REPOSITORY_ROLE.md` for the repository boundary and public/private
+information rules.
+
 ---
 
 ## 🌌 Core Architecture Levels
