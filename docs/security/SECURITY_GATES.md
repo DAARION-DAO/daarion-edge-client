@@ -6,7 +6,7 @@ No gate is satisfied by documentation or module names alone. “Open” means im
 
 | Gate | Current state | Required evidence to close | Owner/phase |
 | --- | --- | --- | --- |
-| Local-only inference | REPOSITORY PASS — MERGE PENDING | Phase 1A has only `LocalOnly`, validated/revalidated loopback Ollama composition, redirect/proxy denial, unique canonical mapping, a service-owned five-second health/inventory probe deadline, bounded streaming/buffering, deterministic stalled-probe and timeout/cancel race tests, sole-terminal enforcement, typed UI contract and no main-webview shell authority. All repository checks pass under the documented changed-scope formatting amendment. No approved mapped model was available for a real Ollama smoke, so live provider behavior remains unverified. | Edge / 1A |
+| Local-only inference | REPOSITORY PASS — MERGE PENDING | Phase 1A has only `LocalOnly`, validated/revalidated loopback Ollama composition, redirect/proxy denial, unique canonical mapping, service-owned probe/chat/preparation deadlines, one kind-aware chat/preparation cancellation registry, bounded chat and pull streaming, deterministic stalled-socket/race/isolation tests, truthful preparation Cancel UI, sole-terminal chat enforcement and no main-webview shell authority. All repository checks pass under the documented changed-scope formatting amendment. No approved mapped model was available for a real Ollama smoke, so live provider and daemon-side cancellation behavior remain unverified. | Edge / 1A |
 | Durable runtime state | OPEN | SQLite migrations, transactions, restart recovery, deletion/export, permissions and corruption/migration tests | Edge / 1B |
 | Inert Supervisor | OPEN | Deterministic IDs, explicit bounded state machine, idempotency, cancellation and crash recovery; no tools/network/scheduling | Edge / 1C |
 | Production pairing | OPEN | Signed purpose-bound invitation, trusted issuer, membership/device binding, expiry, nonce/replay, single use, revocation and downgrade tests | Both / ADR 0004 |
@@ -72,5 +72,9 @@ The candidate implementation is intentionally narrower than production readiness
 - NDJSON record and aggregate-buffer limits are enforced before buffer growth, and post-terminal or malformed provider records fail closed.
 - health and installed-model probes use one service-owned deadline; actual loopback fixtures prove that accepted sockets stalled before headers or during the inventory body return controlled `timed_out` rather than hanging or producing false success;
 - the probe deadline is not a global reqwest timeout and a delayed-chat test proves streaming chat retains its separate request deadline.
+- model preparation requires a UUID and canonical model ID, registers before concurrency/provider work, and has a dedicated kind-isolated cancel command;
+- streamed pull progress reuses bounded NDJSON framing and rejects malformed, oversized, error, incomplete and post-terminal records;
+- stalled-header/body fixtures prove cancellation drops the DAARION future/stream, cleans the registry and leaves chat/other preparation operations active;
+- mounted UI cancellation says only that the local request stopped; no claim is made that the Ollama daemon immediately stopped network or disk work.
 
 This evidence does not close the model-download trust gate, packaging/mobile gate or production-release gate. It does not authorize merge or Phase 1B. The exact commands, formatting amendment and known baseline limitations are recorded in the Phase 1A completion report.

@@ -58,9 +58,39 @@ impl EventGate {
 }
 
 #[derive(Clone)]
+pub struct OperationControl {
+    cancellation: watch::Receiver<bool>,
+}
+
+impl OperationControl {
+    pub(crate) fn new(cancellation: watch::Receiver<bool>) -> Self {
+        Self { cancellation }
+    }
+
+    pub fn ensure_active(&self) -> Result<(), InferenceError> {
+        if *self.cancellation.borrow() {
+            Err(InferenceError::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub async fn cancelled(&mut self) {
+        loop {
+            if *self.cancellation.borrow() {
+                return;
+            }
+            if self.cancellation.changed().await.is_err() {
+                std::future::pending::<()>().await;
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct RequestControl {
     request_id: String,
-    cancellation: watch::Receiver<bool>,
+    operation: OperationControl,
     gate: Arc<EventGate>,
 }
 
@@ -72,17 +102,13 @@ impl RequestControl {
     ) -> Self {
         Self {
             request_id,
-            cancellation,
+            operation: OperationControl::new(cancellation),
             gate,
         }
     }
 
     pub fn ensure_active(&self) -> Result<(), InferenceError> {
-        if *self.cancellation.borrow() {
-            Err(InferenceError::Cancelled)
-        } else {
-            Ok(())
-        }
+        self.operation.ensure_active()
     }
 
     pub fn emit_token(&self, content: String) -> Result<(), InferenceError> {
@@ -101,7 +127,11 @@ pub trait InferenceProvider: Send + Sync {
 
     async fn health(&self) -> Result<ProviderHealth, InferenceError>;
     async fn list_installed_models(&self) -> Result<Vec<InstalledProviderModel>, InferenceError>;
-    async fn prepare_model(&self, provider_model_id: &str) -> Result<(), InferenceError>;
+    async fn prepare_model(
+        &self,
+        provider_model_id: &str,
+        control: OperationControl,
+    ) -> Result<(), InferenceError>;
     async fn chat(
         &self,
         request: ProviderChatRequest,

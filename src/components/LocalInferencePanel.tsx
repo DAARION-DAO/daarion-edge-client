@@ -14,12 +14,14 @@ import {
 } from "lucide-react";
 import {
   cancelLocalInference,
+  cancelLocalModelPreparation,
   getLocalInferenceStatus,
   listInferenceModels,
   listenForInferenceEvents,
   prepareLocalModel,
   runLocalInference,
   type ChatMessage,
+  InferenceClientError,
   type InferenceEvent,
   type InferenceModelSummary,
   type InferenceResponse,
@@ -31,6 +33,7 @@ type RuntimeState =
   | "unavailable"
   | "model_missing"
   | "ready"
+  | "preparing"
   | "running"
   | "cancelling"
   | "cancelled"
@@ -43,6 +46,7 @@ const stateLabels: Record<RuntimeState, string> = {
   unavailable: "Local provider unavailable",
   model_missing: "Model not installed",
   ready: "Ready for local inference",
+  preparing: "Preparing local model",
   running: "Running locally",
   cancelling: "Cancelling",
   cancelled: "Cancelled",
@@ -62,7 +66,8 @@ export function LocalInferencePanel() {
   const [streamingText, setStreamingText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPreparing, setIsPreparing] = useState(false);
-  const activeRequestId = useRef<string | null>(null);
+  const activeChatRequestId = useRef<string | null>(null);
+  const activePreparationRequestId = useRef<string | null>(null);
   const runtimeStateRef = useRef<RuntimeState>("checking");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -116,7 +121,7 @@ export function LocalInferencePanel() {
   }, [messages, streamingText]);
 
   function handleInferenceEvent(event: InferenceEvent) {
-    if (event.request_id !== activeRequestId.current) return;
+    if (event.request_id !== activeChatRequestId.current) return;
     switch (event.kind) {
       case "running":
         transition("running");
@@ -151,17 +156,40 @@ export function LocalInferencePanel() {
 
   async function handlePrepare() {
     if (!selectedModel || !providerStatus?.available) return;
+    const requestId = crypto.randomUUID();
+    activePreparationRequestId.current = requestId;
     setIsPreparing(true);
-    transition("checking");
+    transition("preparing");
     setError(null);
     try {
-      await prepareLocalModel(selectedModel);
-      await refresh();
+      await prepareLocalModel({
+        request_id: requestId,
+        canonical_model_id: selectedModel,
+      });
+      if (activePreparationRequestId.current === requestId) {
+        await refresh();
+        if (activePreparationRequestId.current === requestId) {
+          transition("completed_locally");
+        }
+      }
     } catch (reason) {
-      setError(String(reason));
-      transition("failed");
+      if (activePreparationRequestId.current === requestId) {
+        if (reason instanceof InferenceClientError && reason.code === "cancelled") {
+          setError("The local preparation request was cancelled. Ollama may retain resumable download progress.");
+          transition("cancelled");
+        } else if (reason instanceof InferenceClientError && reason.code === "timed_out") {
+          setError("The bounded local model preparation deadline was reached.");
+          transition("timed_out");
+        } else {
+          setError(reason instanceof Error ? reason.message : "Local model preparation failed.");
+          transition("failed");
+        }
+      }
     } finally {
-      setIsPreparing(false);
+      if (activePreparationRequestId.current === requestId) {
+        activePreparationRequestId.current = null;
+        setIsPreparing(false);
+      }
     }
   }
 
@@ -175,7 +203,7 @@ export function LocalInferencePanel() {
     setError(null);
     setResponse(null);
     setStreamingText("");
-    activeRequestId.current = requestId;
+    activeChatRequestId.current = requestId;
     transition("running");
 
     try {
@@ -187,7 +215,7 @@ export function LocalInferencePanel() {
         temperature: 0.7,
         stream: true,
       });
-      if (activeRequestId.current === requestId) {
+      if (activeChatRequestId.current === requestId) {
         setResponse(result);
         setMessages((current) => [
           ...current,
@@ -198,7 +226,7 @@ export function LocalInferencePanel() {
       }
     } catch (reason) {
       if (
-        activeRequestId.current === requestId &&
+        activeChatRequestId.current === requestId &&
         runtimeStateRef.current !== "cancelled" &&
         runtimeStateRef.current !== "timed_out"
       ) {
@@ -207,23 +235,41 @@ export function LocalInferencePanel() {
         transition("failed");
       }
     } finally {
-      if (activeRequestId.current === requestId) activeRequestId.current = null;
+      if (activeChatRequestId.current === requestId) activeChatRequestId.current = null;
     }
   }
 
-  async function handleCancel() {
-    const requestId = activeRequestId.current;
+  async function handleCancelInference() {
+    const requestId = activeChatRequestId.current;
     if (!requestId || runtimeState !== "running") return;
     transition("cancelling");
     try {
       const accepted = await cancelLocalInference(requestId);
-      if (!accepted && activeRequestId.current === requestId) {
+      if (!accepted && activeChatRequestId.current === requestId) {
         setError("The request was no longer active.");
         transition("failed");
       }
     } catch (reason) {
       setError(String(reason));
       transition("failed");
+    }
+  }
+
+  async function handleCancelPreparation() {
+    const requestId = activePreparationRequestId.current;
+    if (!requestId || !isPreparing || runtimeState === "cancelling") return;
+    transition("cancelling");
+    try {
+      const accepted = await cancelLocalModelPreparation(requestId);
+      if (!accepted && activePreparationRequestId.current === requestId) {
+        setError("The preparation request was no longer registered; waiting for its terminal result.");
+        transition("preparing");
+      }
+    } catch (reason) {
+      if (activePreparationRequestId.current === requestId) {
+        setError(reason instanceof Error ? reason.message : "Cancellation could not be requested; preparation may still be active.");
+        transition("preparing");
+      }
     }
   }
 
@@ -281,11 +327,11 @@ export function LocalInferencePanel() {
             <div className="flex items-end gap-2 rounded-xl border border-white/10 bg-black/40 px-4 py-3 focus-within:border-emerald-500/40">
               <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} disabled={!selected?.installed || busy} placeholder={selected?.installed ? "Ask the local model…" : "Select and install a local model first"} className="max-h-[160px] min-h-[40px] w-full resize-none bg-transparent text-sm text-white outline-none placeholder:text-white/20 disabled:opacity-40" />
               {isPreparing ? (
-                <button disabled className="shrink-0 rounded-lg bg-amber-500/10 p-2 text-amber-300" aria-label="Preparing local model">
-                  <Loader2 size={18} className="animate-spin" />
+                <button onClick={() => void handleCancelPreparation()} disabled={runtimeState === "cancelling"} className="shrink-0 rounded-lg bg-red-500/20 p-2 text-red-300 disabled:opacity-40" aria-label="Cancel local model preparation">
+                  {runtimeState === "cancelling" ? <Loader2 size={18} className="animate-spin" /> : <Square size={18} />}
                 </button>
               ) : busy ? (
-                <button onClick={() => void handleCancel()} disabled={runtimeState === "cancelling"} className="shrink-0 rounded-lg bg-red-500/20 p-2 text-red-300 disabled:opacity-40" aria-label="Cancel local inference">
+                <button onClick={() => void handleCancelInference()} disabled={runtimeState === "cancelling"} className="shrink-0 rounded-lg bg-red-500/20 p-2 text-red-300 disabled:opacity-40" aria-label="Cancel local inference">
                   {runtimeState === "cancelling" ? <Loader2 size={18} className="animate-spin" /> : <Square size={18} />}
                 </button>
               ) : (

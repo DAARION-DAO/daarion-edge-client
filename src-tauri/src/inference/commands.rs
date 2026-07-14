@@ -4,7 +4,8 @@ use crate::inference::provider::EventSink;
 use crate::inference::service::{InferenceService, ServiceLimits};
 use crate::inference::types::{
     ChatMessage, InferenceError, InferenceEvent, InferenceModelSummary, InferencePublicError,
-    InferenceRequest, InferenceResponse, InferenceStatus,
+    InferenceRequest, InferenceResponse, InferenceStatus, ModelPreparationResponse,
+    PrepareLocalModelRequest,
 };
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
@@ -54,12 +55,12 @@ pub async fn list_inference_models(
 
 #[tauri::command]
 pub async fn prepare_local_model(
-    canonical_model_id: String,
+    request: PrepareLocalModelRequest,
     state: State<'_, InferenceRuntimeState>,
-) -> Result<(), InferencePublicError> {
+) -> Result<ModelPreparationResponse, InferencePublicError> {
     state
         .0
-        .prepare_model(&canonical_model_id)
+        .prepare_model(request)
         .await
         .map_err(InferencePublicError::from)
 }
@@ -85,6 +86,17 @@ pub fn cancel_local_inference(
     state
         .0
         .cancel(&request_id)
+        .map_err(InferencePublicError::from)
+}
+
+#[tauri::command]
+pub fn cancel_local_model_preparation(
+    request_id: String,
+    state: State<'_, InferenceRuntimeState>,
+) -> Result<bool, InferencePublicError> {
+    state
+        .0
+        .cancel_preparation(&request_id)
         .map_err(InferencePublicError::from)
 }
 

@@ -51,6 +51,19 @@ pub struct InferenceModelSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PrepareLocalModelRequest {
+    pub request_id: String,
+    pub canonical_model_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelPreparationResponse {
+    pub request_id: String,
+    pub canonical_model_id: String,
+    pub provider_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InferenceEvent {
     Started {

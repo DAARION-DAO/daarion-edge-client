@@ -1,18 +1,18 @@
 use crate::inference::model_resolver::ModelResolver;
 use crate::inference::policy::LocalEndpoint;
 use crate::inference::provider::{
-    EventGate, EventSink, InferenceProvider, ProviderChatRequest, RequestControl,
+    EventGate, EventSink, InferenceProvider, OperationControl, ProviderChatRequest, RequestControl,
 };
 use crate::inference::types::{
     InferenceError, InferenceEvent, InferenceModelSummary, InferencePolicy, InferenceRequest,
-    InferenceResponse, InferenceStatus,
+    InferenceResponse, InferenceStatus, ModelPreparationResponse, PrepareLocalModelRequest,
 };
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{watch, Semaphore};
-use tokio::time::{sleep_until, timeout, timeout_at, Instant as TokioInstant};
+use tokio::time::{sleep_until, timeout_at, Instant as TokioInstant};
 use uuid::Uuid;
 
 const MAX_PROMPT_BYTES: usize = 64 * 1024;
@@ -28,6 +28,7 @@ pub struct ServiceLimits {
     pub max_tokens: u32,
     pub request_timeout: Duration,
     pub probe_timeout: Duration,
+    pub prepare_timeout: Duration,
     pub max_concurrent_requests: usize,
 }
 
@@ -38,9 +39,21 @@ impl Default for ServiceLimits {
             max_tokens: MAX_TOKENS,
             request_timeout: REQUEST_TIMEOUT,
             probe_timeout: PROBE_TIMEOUT,
+            prepare_timeout: PREPARE_TIMEOUT,
             max_concurrent_requests: MAX_CONCURRENT_REQUESTS,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OperationKind {
+    Chat,
+    ModelPreparation,
+}
+
+struct ActiveOperation {
+    kind: OperationKind,
+    cancellation: watch::Sender<bool>,
 }
 
 pub struct InferenceService {
@@ -48,17 +61,17 @@ pub struct InferenceService {
     resolver: ModelResolver,
     limits: ServiceLimits,
     concurrency: Arc<Semaphore>,
-    active_requests: Arc<Mutex<HashMap<String, watch::Sender<bool>>>>,
+    active_operations: Arc<Mutex<HashMap<String, ActiveOperation>>>,
 }
 
-struct ActiveRequestGuard {
+struct ActiveOperationGuard {
     request_id: String,
-    active_requests: Arc<Mutex<HashMap<String, watch::Sender<bool>>>>,
+    active_operations: Arc<Mutex<HashMap<String, ActiveOperation>>>,
 }
 
-impl Drop for ActiveRequestGuard {
+impl Drop for ActiveOperationGuard {
     fn drop(&mut self) {
-        if let Ok(mut active) = self.active_requests.lock() {
+        if let Ok(mut active) = self.active_operations.lock() {
             active.remove(&self.request_id);
         }
     }
@@ -75,7 +88,7 @@ impl InferenceService {
             provider,
             resolver,
             concurrency: Arc::new(Semaphore::new(limits.max_concurrent_requests)),
-            active_requests: Arc::new(Mutex::new(HashMap::new())),
+            active_operations: Arc::new(Mutex::new(HashMap::new())),
             limits,
         })
     }
@@ -105,34 +118,49 @@ impl InferenceService {
         Ok(self.resolver.summaries(&installed))
     }
 
-    pub async fn prepare_model(&self, canonical_model_id: &str) -> Result<(), InferenceError> {
+    pub async fn prepare_model(
+        &self,
+        request: PrepareLocalModelRequest,
+    ) -> Result<ModelPreparationResponse, InferenceError> {
+        Self::validate_request_id(&request.request_id)?;
         self.ensure_local_provider()?;
-        let model = self.resolver.resolve(canonical_model_id)?;
-        timeout(
-            PREPARE_TIMEOUT,
-            self.provider.prepare_model(&model.provider_model_id),
-        )
-        .await
-        .map_err(|_| InferenceError::TimedOut)??;
-        Ok(())
+        let model = self.resolver.resolve(&request.canonical_model_id)?;
+        let (mut cancel_receiver, _active_guard) =
+            self.register_operation(&request.request_id, OperationKind::ModelPreparation)?;
+        let deadline = TokioInstant::now() + self.limits.prepare_timeout;
+
+        let permit = tokio::select! {
+            biased;
+            _ = cancel_receiver.changed() => return Err(InferenceError::Cancelled),
+            _ = sleep_until(deadline) => return Err(InferenceError::TimedOut),
+            permit = self.concurrency.clone().acquire_owned() => {
+                permit.map_err(|_| InferenceError::Internal("Inference concurrency gate is closed".to_string()))?
+            }
+        };
+
+        let control = OperationControl::new(cancel_receiver.clone());
+        let provider_result = tokio::select! {
+            biased;
+            _ = cancel_receiver.changed() => Err(InferenceError::Cancelled),
+            _ = sleep_until(deadline) => Err(InferenceError::TimedOut),
+            result = self.provider.prepare_model(&model.provider_model_id, control) => result,
+        };
+        drop(permit);
+        provider_result?;
+
+        Ok(ModelPreparationResponse {
+            request_id: request.request_id,
+            canonical_model_id: request.canonical_model_id,
+            provider_id: self.provider.provider_id().to_string(),
+        })
     }
 
     pub fn cancel(&self, request_id: &str) -> Result<bool, InferenceError> {
-        let sender = self
-            .active_requests
-            .lock()
-            .map_err(|_| {
-                InferenceError::Internal("Active request registry is unavailable".to_string())
-            })?
-            .get(request_id)
-            .cloned();
-        match sender {
-            Some(sender) => {
-                let _ = sender.send(true);
-                Ok(true)
-            }
-            None => Ok(false),
-        }
+        self.cancel_operation(request_id, OperationKind::Chat)
+    }
+
+    pub fn cancel_preparation(&self, request_id: &str) -> Result<bool, InferenceError> {
+        self.cancel_operation(request_id, OperationKind::ModelPreparation)
     }
 
     pub async fn run(
@@ -143,21 +171,8 @@ impl InferenceService {
         self.validate_request(&request)?;
         self.ensure_local_provider()?;
         let resolved = self.resolver.resolve(&request.canonical_model_id)?;
-        let (cancel_sender, mut cancel_receiver) = watch::channel(false);
-
-        {
-            let mut active = self.active_requests.lock().map_err(|_| {
-                InferenceError::Internal("Active request registry is unavailable".to_string())
-            })?;
-            if active.contains_key(&request.request_id) {
-                return Err(InferenceError::DuplicateRequest);
-            }
-            active.insert(request.request_id.clone(), cancel_sender);
-        }
-        let _active_guard = ActiveRequestGuard {
-            request_id: request.request_id.clone(),
-            active_requests: Arc::clone(&self.active_requests),
-        };
+        let (mut cancel_receiver, _active_guard) =
+            self.register_operation(&request.request_id, OperationKind::Chat)?;
 
         let gate = Arc::new(EventGate::new(sink));
         gate.emit(InferenceEvent::Started {
@@ -241,8 +256,7 @@ impl InferenceService {
     }
 
     fn validate_request(&self, request: &InferenceRequest) -> Result<(), InferenceError> {
-        Uuid::parse_str(&request.request_id)
-            .map_err(|_| InferenceError::InvalidRequest("Request ID must be a UUID".to_string()))?;
+        Self::validate_request_id(&request.request_id)?;
         if request.messages.is_empty() {
             return Err(InferenceError::InvalidRequest(
                 "At least one chat message is required".to_string(),
@@ -285,6 +299,65 @@ impl InferenceService {
         Ok(())
     }
 
+    fn validate_request_id(request_id: &str) -> Result<(), InferenceError> {
+        Uuid::parse_str(request_id)
+            .map(|_| ())
+            .map_err(|_| InferenceError::InvalidRequest("Request ID must be a UUID".to_string()))
+    }
+
+    fn register_operation(
+        &self,
+        request_id: &str,
+        kind: OperationKind,
+    ) -> Result<(watch::Receiver<bool>, ActiveOperationGuard), InferenceError> {
+        let (cancel_sender, cancel_receiver) = watch::channel(false);
+        let mut active = self.active_operations.lock().map_err(|_| {
+            InferenceError::Internal("Active operation registry is unavailable".to_string())
+        })?;
+        if active.contains_key(request_id) {
+            return Err(InferenceError::DuplicateRequest);
+        }
+        active.insert(
+            request_id.to_string(),
+            ActiveOperation {
+                kind,
+                cancellation: cancel_sender,
+            },
+        );
+        drop(active);
+        Ok((
+            cancel_receiver,
+            ActiveOperationGuard {
+                request_id: request_id.to_string(),
+                active_operations: Arc::clone(&self.active_operations),
+            },
+        ))
+    }
+
+    fn cancel_operation(
+        &self,
+        request_id: &str,
+        expected_kind: OperationKind,
+    ) -> Result<bool, InferenceError> {
+        let sender = self
+            .active_operations
+            .lock()
+            .map_err(|_| {
+                InferenceError::Internal("Active operation registry is unavailable".to_string())
+            })?
+            .get(request_id)
+            .and_then(|operation| {
+                (operation.kind == expected_kind).then(|| operation.cancellation.clone())
+            });
+        match sender {
+            Some(sender) => {
+                let _ = sender.send(true);
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
     fn ensure_local_provider(&self) -> Result<(), InferenceError> {
         LocalEndpoint::parse(&self.provider.endpoint()).map(|_| ())
     }
@@ -311,6 +384,7 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::Notify;
+    use tokio::time::timeout;
 
     #[derive(Clone, Copy)]
     enum FakeMode {
@@ -323,6 +397,19 @@ mod tests {
 
     struct FakeProvider {
         mode: FakeMode,
+    }
+
+    #[derive(Clone, Copy)]
+    enum PreparationMode {
+        Success,
+        SlowSuccess,
+        Never,
+        Error,
+    }
+
+    struct PreparationTestProvider {
+        mode: PreparationMode,
+        preparation_called: Arc<AtomicBool>,
     }
 
     #[async_trait]
@@ -346,7 +433,11 @@ mod tests {
                 provider_model_id: "qwen3.5:2b".to_string(),
             }])
         }
-        async fn prepare_model(&self, _provider_model_id: &str) -> Result<(), InferenceError> {
+        async fn prepare_model(
+            &self,
+            _provider_model_id: &str,
+            _control: OperationControl,
+        ) -> Result<(), InferenceError> {
             Ok(())
         }
         async fn chat(
@@ -376,6 +467,56 @@ mod tests {
         }
     }
 
+    #[async_trait]
+    impl InferenceProvider for PreparationTestProvider {
+        fn provider_id(&self) -> &'static str {
+            "preparation-test-local"
+        }
+
+        fn endpoint(&self) -> String {
+            "http://127.0.0.1:1/".to_string()
+        }
+
+        async fn health(&self) -> Result<ProviderHealth, InferenceError> {
+            unreachable!()
+        }
+
+        async fn list_installed_models(
+            &self,
+        ) -> Result<Vec<InstalledProviderModel>, InferenceError> {
+            unreachable!()
+        }
+
+        async fn prepare_model(
+            &self,
+            _provider_model_id: &str,
+            control: OperationControl,
+        ) -> Result<(), InferenceError> {
+            self.preparation_called.store(true, Ordering::SeqCst);
+            control.ensure_active()?;
+            match self.mode {
+                PreparationMode::Success => Ok(()),
+                PreparationMode::SlowSuccess => {
+                    tokio::time::sleep(Duration::from_millis(60)).await;
+                    control.ensure_active()?;
+                    Ok(())
+                }
+                PreparationMode::Never => pending().await,
+                PreparationMode::Error => Err(InferenceError::ProviderProtocol(
+                    "Controlled model preparation failure".to_string(),
+                )),
+            }
+        }
+
+        async fn chat(
+            &self,
+            _request: ProviderChatRequest,
+            _control: RequestControl,
+        ) -> Result<String, InferenceError> {
+            pending().await
+        }
+    }
+
     #[derive(Default)]
     struct RecordingSink(Mutex<Vec<InferenceEvent>>);
 
@@ -400,6 +541,13 @@ mod tests {
         }
     }
 
+    fn preparation_request() -> PrepareLocalModelRequest {
+        PrepareLocalModelRequest {
+            request_id: Uuid::new_v4().to_string(),
+            canonical_model_id: "qwen35-2b-stable".to_string(),
+        }
+    }
+
     fn service(mode: FakeMode, request_timeout: Duration) -> Arc<InferenceService> {
         service_with_concurrency(mode, request_timeout, MAX_CONCURRENT_REQUESTS)
     }
@@ -421,6 +569,40 @@ mod tests {
             )
             .unwrap(),
         )
+    }
+
+    fn preparation_service(
+        mode: PreparationMode,
+        prepare_timeout: Duration,
+        max_concurrent_requests: usize,
+    ) -> (Arc<InferenceService>, Arc<AtomicBool>) {
+        let preparation_called = Arc::new(AtomicBool::new(false));
+        let service = Arc::new(
+            InferenceService::new(
+                Arc::new(PreparationTestProvider {
+                    mode,
+                    preparation_called: preparation_called.clone(),
+                }),
+                ModelResolver::from_bundled_registry().unwrap(),
+                ServiceLimits {
+                    prepare_timeout,
+                    max_concurrent_requests,
+                    ..ServiceLimits::default()
+                },
+            )
+            .unwrap(),
+        );
+        (service, preparation_called)
+    }
+
+    async fn wait_until_called(called: &AtomicBool) {
+        for _ in 0..100 {
+            if called.load(Ordering::SeqCst) {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("provider was not called");
     }
 
     enum ProbeFixture {
@@ -485,6 +667,63 @@ mod tests {
     async fn abort_fixture(task: tokio::task::JoinHandle<()>) {
         task.abort();
         let _ = task.await;
+    }
+
+    enum PreparationFixture {
+        StallHeaders,
+        StallBody,
+    }
+
+    async fn preparation_fixture_service(
+        fixture: PreparationFixture,
+    ) -> (
+        Arc<InferenceService>,
+        Arc<Notify>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let ready = Arc::new(Notify::new());
+        let task_ready = ready.clone();
+        let task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = vec![0u8; 8192];
+            let _ = socket.read(&mut request).await;
+
+            if matches!(fixture, PreparationFixture::StallBody) {
+                let body = b"{\"status\":\"pulling private-provider-detail\"}\n";
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n",
+                    body.len() + 256
+                );
+                socket.write_all(response.as_bytes()).await.unwrap();
+                socket.write_all(body).await.unwrap();
+            }
+            task_ready.notify_one();
+
+            let mut trailing = [0u8; 256];
+            loop {
+                match socket.read(&mut trailing).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => continue,
+                }
+            }
+        });
+        let provider =
+            OllamaProvider::new(LocalEndpoint::parse(&format!("http://{address}/")).unwrap())
+                .unwrap();
+        let service = Arc::new(
+            InferenceService::new(
+                Arc::new(provider),
+                ModelResolver::from_bundled_registry().unwrap(),
+                ServiceLimits {
+                    prepare_timeout: Duration::from_secs(2),
+                    ..ServiceLimits::default()
+                },
+            )
+            .unwrap(),
+        );
+        (service, ready, task)
     }
 
     #[tokio::test]
@@ -602,6 +841,336 @@ mod tests {
             sink.0.lock().unwrap().last(),
             Some(InferenceEvent::Completed { .. })
         ));
+    }
+
+    #[tokio::test]
+    async fn preparation_fast_success_is_request_scoped_and_cleans_up() {
+        let (service, called) = preparation_service(
+            PreparationMode::Success,
+            Duration::from_millis(200),
+            MAX_CONCURRENT_REQUESTS,
+        );
+        let request = preparation_request();
+        let response = timeout(
+            Duration::from_millis(500),
+            service.prepare_model(request.clone()),
+        )
+        .await
+        .expect("outer test guard elapsed")
+        .unwrap();
+
+        assert!(called.load(Ordering::SeqCst));
+        assert_eq!(response.request_id, request.request_id);
+        assert_eq!(response.canonical_model_id, request.canonical_model_id);
+        assert_eq!(response.provider_id, "preparation-test-local");
+        assert!(!service.cancel_preparation(&response.request_id).unwrap());
+    }
+
+    #[tokio::test]
+    async fn preparation_rejects_invalid_uuid_and_provider_tag_before_execution() {
+        let (service, called) = preparation_service(
+            PreparationMode::Success,
+            Duration::from_millis(200),
+            MAX_CONCURRENT_REQUESTS,
+        );
+        let invalid_id = PrepareLocalModelRequest {
+            request_id: "not-a-uuid".to_string(),
+            canonical_model_id: "qwen35-2b-stable".to_string(),
+        };
+        assert!(matches!(
+            service.prepare_model(invalid_id).await,
+            Err(InferenceError::InvalidRequest(_))
+        ));
+
+        let provider_tag = PrepareLocalModelRequest {
+            request_id: Uuid::new_v4().to_string(),
+            canonical_model_id: "qwen3.5:2b".to_string(),
+        };
+        assert!(matches!(
+            service.prepare_model(provider_tag).await,
+            Err(InferenceError::UnknownModel(_))
+        ));
+        assert!(!called.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn preparation_duplicate_active_request_id_is_rejected_and_cancelled_cleanup_is_final() {
+        let (service, called) = preparation_service(
+            PreparationMode::Never,
+            Duration::from_secs(2),
+            MAX_CONCURRENT_REQUESTS,
+        );
+        let request = preparation_request();
+        let request_id = request.request_id.clone();
+        let task_service = service.clone();
+        let first_request = request.clone();
+        let task = tokio::spawn(async move { task_service.prepare_model(first_request).await });
+        wait_until_called(&called).await;
+
+        assert_eq!(
+            service.prepare_model(request).await,
+            Err(InferenceError::DuplicateRequest)
+        );
+        assert!(service.cancel_preparation(&request_id).unwrap());
+        assert_eq!(
+            timeout(Duration::from_millis(500), task)
+                .await
+                .expect("outer test guard elapsed")
+                .unwrap(),
+            Err(InferenceError::Cancelled)
+        );
+        assert!(!service.cancel_preparation(&request_id).unwrap());
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(!service.cancel_preparation(&request_id).unwrap());
+    }
+
+    #[tokio::test]
+    async fn preparation_cancellation_during_queue_wait_never_reaches_provider() {
+        let (service, called) =
+            preparation_service(PreparationMode::Success, Duration::from_secs(2), 1);
+        let held_permit = service.concurrency.clone().acquire_owned().await.unwrap();
+        let request = preparation_request();
+        let request_id = request.request_id.clone();
+        let task_service = service.clone();
+        let task = tokio::spawn(async move { task_service.prepare_model(request).await });
+
+        tokio::task::yield_now().await;
+        assert!(service.cancel_preparation(&request_id).unwrap());
+        assert_eq!(
+            timeout(Duration::from_millis(500), task)
+                .await
+                .expect("outer test guard elapsed")
+                .unwrap(),
+            Err(InferenceError::Cancelled)
+        );
+        assert!(!called.load(Ordering::SeqCst));
+        assert!(!service.cancel_preparation(&request_id).unwrap());
+        drop(held_permit);
+    }
+
+    #[tokio::test]
+    async fn preparation_cancel_before_headers_drops_the_local_http_operation() {
+        let (service, ready, fixture_task) =
+            preparation_fixture_service(PreparationFixture::StallHeaders).await;
+        let request = preparation_request();
+        let request_id = request.request_id.clone();
+        let task_service = service.clone();
+        let task = tokio::spawn(async move { task_service.prepare_model(request).await });
+
+        timeout(Duration::from_millis(500), ready.notified())
+            .await
+            .expect("fixture did not accept the request");
+        assert!(service.cancel_preparation(&request_id).unwrap());
+        assert_eq!(
+            timeout(Duration::from_millis(500), task)
+                .await
+                .expect("outer test guard elapsed")
+                .unwrap(),
+            Err(InferenceError::Cancelled)
+        );
+        timeout(Duration::from_millis(500), fixture_task)
+            .await
+            .expect("client connection remained open after cancellation")
+            .unwrap();
+        assert!(!service.cancel_preparation(&request_id).unwrap());
+    }
+
+    #[tokio::test]
+    async fn preparation_cancel_during_streamed_body_drops_without_exposing_body() {
+        let (service, ready, fixture_task) =
+            preparation_fixture_service(PreparationFixture::StallBody).await;
+        let request = preparation_request();
+        let request_id = request.request_id.clone();
+        let task_service = service.clone();
+        let task = tokio::spawn(async move { task_service.prepare_model(request).await });
+
+        timeout(Duration::from_millis(500), ready.notified())
+            .await
+            .expect("fixture did not send its partial body");
+        assert!(service.cancel_preparation(&request_id).unwrap());
+        let error = timeout(Duration::from_millis(500), task)
+            .await
+            .expect("outer test guard elapsed")
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error, InferenceError::Cancelled);
+        let public = InferencePublicError::from(error);
+        assert_eq!(public.code, "cancelled");
+        assert!(!public.message.contains("private-provider-detail"));
+        timeout(Duration::from_millis(500), fixture_task)
+            .await
+            .expect("client stream remained open after cancellation")
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn preparation_timeout_remains_distinct_and_cannot_later_succeed() {
+        let (service, called) = preparation_service(
+            PreparationMode::SlowSuccess,
+            Duration::from_millis(20),
+            MAX_CONCURRENT_REQUESTS,
+        );
+        let request = preparation_request();
+        let request_id = request.request_id.clone();
+        assert_eq!(
+            timeout(Duration::from_millis(500), service.prepare_model(request))
+                .await
+                .expect("outer test guard elapsed"),
+            Err(InferenceError::TimedOut)
+        );
+        assert!(called.load(Ordering::SeqCst));
+        tokio::time::sleep(Duration::from_millis(70)).await;
+        assert!(!service.cancel_preparation(&request_id).unwrap());
+    }
+
+    #[tokio::test]
+    async fn preparation_targeted_cancellation_does_not_cancel_another_preparation() {
+        let (service, _) = preparation_service(
+            PreparationMode::Never,
+            Duration::from_secs(2),
+            MAX_CONCURRENT_REQUESTS,
+        );
+        let first = preparation_request();
+        let second = preparation_request();
+        let first_id = first.request_id.clone();
+        let second_id = second.request_id.clone();
+        let first_service = service.clone();
+        let second_service = service.clone();
+        let first_task = tokio::spawn(async move { first_service.prepare_model(first).await });
+        let second_task = tokio::spawn(async move { second_service.prepare_model(second).await });
+
+        for _ in 0..100 {
+            let both_active = {
+                let active = service.active_operations.lock().unwrap();
+                active.contains_key(&first_id) && active.contains_key(&second_id)
+            };
+            if both_active {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(service.cancel_preparation(&first_id).unwrap());
+        assert_eq!(first_task.await.unwrap(), Err(InferenceError::Cancelled));
+        assert!(service
+            .active_operations
+            .lock()
+            .unwrap()
+            .contains_key(&second_id));
+        assert!(service.cancel_preparation(&second_id).unwrap());
+        assert_eq!(second_task.await.unwrap(), Err(InferenceError::Cancelled));
+    }
+
+    #[tokio::test]
+    async fn preparation_cancellation_does_not_cancel_active_chat() {
+        let (service, _) = preparation_service(
+            PreparationMode::Never,
+            Duration::from_secs(2),
+            MAX_CONCURRENT_REQUESTS,
+        );
+        let preparation = preparation_request();
+        let preparation_id = preparation.request_id.clone();
+        let chat = request();
+        let chat_id = chat.request_id.clone();
+        let preparation_service = service.clone();
+        let chat_service = service.clone();
+        let preparation_task =
+            tokio::spawn(async move { preparation_service.prepare_model(preparation).await });
+        let chat_task = tokio::spawn(async move {
+            chat_service
+                .run(chat, Arc::new(RecordingSink::default()))
+                .await
+        });
+
+        for _ in 0..100 {
+            let both_active = {
+                let active = service.active_operations.lock().unwrap();
+                active.contains_key(&preparation_id) && active.contains_key(&chat_id)
+            };
+            if both_active {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(service.cancel_preparation(&preparation_id).unwrap());
+        assert_eq!(
+            preparation_task.await.unwrap(),
+            Err(InferenceError::Cancelled)
+        );
+        assert!(service
+            .active_operations
+            .lock()
+            .unwrap()
+            .contains_key(&chat_id));
+        assert!(service.cancel(&chat_id).unwrap());
+        assert_eq!(chat_task.await.unwrap(), Err(InferenceError::Cancelled));
+    }
+
+    #[tokio::test]
+    async fn preparation_request_id_cannot_alias_active_chat() {
+        let (service, _) = preparation_service(
+            PreparationMode::Success,
+            Duration::from_secs(2),
+            MAX_CONCURRENT_REQUESTS,
+        );
+        let chat = request();
+        let request_id = chat.request_id.clone();
+        let task_service = service.clone();
+        let chat_task = tokio::spawn(async move {
+            task_service
+                .run(chat, Arc::new(RecordingSink::default()))
+                .await
+        });
+        for _ in 0..100 {
+            if service
+                .active_operations
+                .lock()
+                .unwrap()
+                .contains_key(&request_id)
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        assert_eq!(
+            service
+                .prepare_model(PrepareLocalModelRequest {
+                    request_id: request_id.clone(),
+                    canonical_model_id: "qwen35-2b-stable".to_string(),
+                })
+                .await,
+            Err(InferenceError::DuplicateRequest)
+        );
+        assert!(!service.cancel_preparation(&request_id).unwrap());
+        assert!(service.cancel(&request_id).unwrap());
+        assert_eq!(chat_task.await.unwrap(), Err(InferenceError::Cancelled));
+    }
+
+    #[tokio::test]
+    async fn preparation_provider_error_is_controlled_and_registry_is_cleaned() {
+        let (service, called) = preparation_service(
+            PreparationMode::Error,
+            Duration::from_millis(200),
+            MAX_CONCURRENT_REQUESTS,
+        );
+        let request = preparation_request();
+        let request_id = request.request_id.clone();
+        let result = service.prepare_model(request).await;
+        assert!(matches!(result, Err(InferenceError::ProviderProtocol(_))));
+        assert!(called.load(Ordering::SeqCst));
+        assert!(!service.cancel_preparation(&request_id).unwrap());
+    }
+
+    #[test]
+    fn preparation_unknown_request_id_cancellation_fails_safely() {
+        let (service, _) = preparation_service(
+            PreparationMode::Success,
+            Duration::from_secs(1),
+            MAX_CONCURRENT_REQUESTS,
+        );
+        assert!(!service
+            .cancel_preparation(&Uuid::new_v4().to_string())
+            .unwrap());
     }
 
     #[tokio::test]
@@ -790,7 +1359,7 @@ mod tests {
             unreachable!()
         }
 
-        async fn prepare_model(&self, _: &str) -> Result<(), InferenceError> {
+        async fn prepare_model(&self, _: &str, _: OperationControl) -> Result<(), InferenceError> {
             unreachable!()
         }
 
@@ -869,7 +1438,7 @@ mod tests {
             unreachable!()
         }
 
-        async fn prepare_model(&self, _: &str) -> Result<(), InferenceError> {
+        async fn prepare_model(&self, _: &str, _: OperationControl) -> Result<(), InferenceError> {
             unreachable!()
         }
 
@@ -976,7 +1545,11 @@ mod tests {
             ) -> Result<Vec<InstalledProviderModel>, InferenceError> {
                 unreachable!()
             }
-            async fn prepare_model(&self, _: &str) -> Result<(), InferenceError> {
+            async fn prepare_model(
+                &self,
+                _: &str,
+                _: OperationControl,
+            ) -> Result<(), InferenceError> {
                 unreachable!()
             }
             async fn chat(
@@ -1028,7 +1601,11 @@ mod tests {
                 unreachable!()
             }
 
-            async fn prepare_model(&self, _: &str) -> Result<(), InferenceError> {
+            async fn prepare_model(
+                &self,
+                _: &str,
+                _: OperationControl,
+            ) -> Result<(), InferenceError> {
                 unreachable!()
             }
 
@@ -1061,7 +1638,12 @@ mod tests {
             Err(InferenceError::PolicyViolation(_))
         ));
         assert!(matches!(
-            service.prepare_model("qwen35-2b-stable").await,
+            service
+                .prepare_model(PrepareLocalModelRequest {
+                    request_id: Uuid::new_v4().to_string(),
+                    canonical_model_id: "qwen35-2b-stable".to_string(),
+                })
+                .await,
             Err(InferenceError::PolicyViolation(_))
         ));
         assert!(matches!(

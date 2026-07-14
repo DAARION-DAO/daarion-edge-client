@@ -8,9 +8,13 @@ The first controlled-finalize attempt correctly stopped with `FAIL` on an
 unresolved review finding: status and installed-model probes had no overall
 deadline after TCP connect. The follow-up correction adds a service-owned
 5-second production probe deadline plus deterministic stalled-header/body
-fixtures. See
-`phase-01a-probe-deadline-correction-completion.md`. The final candidate has 43
-inference tests and 92 full Rust tests; merge remains a separate action.
+fixtures. See `phase-01a-probe-deadline-correction-completion.md`. A later fresh
+review correctly identified that model preparation remained outside the
+request-scoped cancellation registry. The follow-up correction adds a typed
+preparation UUID, kind-aware shared registry, dedicated cancel command, bounded
+streamed pull parsing, and mounted UI cancellation. See
+`phase-01a-model-preparation-cancellation-completion.md`. The final candidate
+has 55 inference tests and 104 full Rust tests; merge remains a separate action.
 
 ## Baseline and scope
 
@@ -40,7 +44,7 @@ The candidate adds one cohesive `inference` module:
 - provider construction, service admission and every provider-facing service boundary validate a plain HTTP loopback origin;
 - the fixed production endpoint is normalized to IPv4 loopback; redirects and system proxies are disabled;
 - canonical DAARION model IDs resolve only when the bundled registry contains exactly one canonical entry and one adapter-private Ollama mapping with a bounded valid tag;
-- one service owns request validation, server-side limits, concurrency, absolute deadline, request-ID cancellation, cleanup and terminal ordering;
+- one service owns request validation, server-side limits, concurrency, absolute deadlines, kind-aware chat/preparation request-ID cancellation, cleanup and terminal ordering;
 - a bounded incremental NDJSON decoder preserves split UTF-8 and final buffered records, rejects malformed/post-terminal/oversized/incomplete streams, and checks aggregate buffer growth before appending input;
 - stable public error codes and controlled messages cross Tauri IPC;
 - the mounted UI uses one typed adapter, filters events by active request ID and exposes only truthful local states;
@@ -66,6 +70,7 @@ Registered commands:
 - `get_local_inference_status`
 - `list_inference_models`
 - `prepare_local_model`
+- `cancel_local_model_preparation`
 - `run_local_inference`
 - `cancel_local_inference`
 - `run_local_inference_smoke`
@@ -76,7 +81,7 @@ Terminal events are `completed`, `failed`, `cancelled` and `timed_out`. The Rust
 
 ## Model mapping
 
-Tauri callers provide `canonical_model_id`. `ModelResolver` reads only the bundled registry during inference and requires exactly one matching canonical entry and exactly one Ollama mapping. Provider tags are bounded to 256 ASCII bytes and a conservative name/tag grammar. Tests prove `qwen35-2b-stable` maps to `qwen3.5:2b`; unknown, duplicate canonical, missing, duplicate-source, empty, whitespace, URL-shaped and otherwise malformed mappings fail before provider execution.
+Tauri callers provide `canonical_model_id`; preparation additionally requires a UUID `request_id`. `ModelResolver` reads only the bundled registry during inference and requires exactly one matching canonical entry and exactly one Ollama mapping. Provider tags are bounded to 256 ASCII bytes and a conservative name/tag grammar. Tests prove `qwen35-2b-stable` maps to `qwen3.5:2b`; unknown, duplicate canonical, missing, duplicate-source, empty, whitespace, URL-shaped and otherwise malformed mappings fail before provider execution.
 
 No registry payload, model artifact, lockfile or remote registry contract changed. Ollama pull remains only a canonical-ID compatibility path; artifact signature/digest verification remains a separate open security gate.
 
@@ -86,8 +91,9 @@ No registry payload, model artifact, lockfile or remote registry contract change
 | --- | --- |
 | changed-scope command shown below for every added/modified Rust file | PASS, 12/12 files |
 | probe-deadline correction fixtures | PASS, 6 tests using bounded loopback/fake-provider fixtures |
-| `cargo test --manifest-path src-tauri/Cargo.toml inference:: --lib` | PASS, 43 tests |
-| `cargo test --manifest-path src-tauri/Cargo.toml` | PASS, 92 tests |
+| model-preparation cancellation correction | PASS, 13 focused tests; 6/6 correction Rust files pass scoped rustfmt |
+| `cargo test --manifest-path src-tauri/Cargo.toml inference:: --lib` | PASS, 55 tests |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | PASS, 104 tests |
 | `cargo check --manifest-path src-tauri/Cargo.toml` | PASS |
 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets` | PASS command exit; 0 findings reference `src/inference/**` |
 | `npm ci` | PASS; lockfile unchanged |
@@ -143,6 +149,7 @@ classification is recorded below.
 | Arbitrary provider tag | Closed: commands accept canonical IDs and the local resolver owns provider tags |
 | Malformed/provider-controlled stream | Closed within phase: split, multi-record, blank, malformed schema, provider error, post-terminal data, disconnect, final-buffer, premature-EOF, record-size, aggregate-buffer and output-size cases are tested |
 | Cancellation/timeout race | Closed within phase: duplicate IDs, queue-wait cancellation/timeout, streaming cancellation/timeout, final-token-before-cancel, late provider error, cleanup, sole terminal outcome and late-event suppression are tested deterministically |
+| Non-cancellable model preparation | Closed for the DAARION boundary: preparation has a UUID, shared kind-aware registry, dedicated cancel command, absolute deadline, bounded streamed progress, stalled-header/body fixtures, cross-operation isolation and mounted UI Cancel action. Ollama daemon-side termination is not claimed |
 | Stalled local status/model probe | Closed within phase: `InferenceService` applies one 5-second production probe deadline; loopback fixtures prove stalled headers and model-list body return controlled `TimedOut` without false success or raw provider data |
 | Prompt/response leakage | No inference logging calls exist; sentinel test proves prompt text is absent from response metadata and emitted events; raw provider error bodies are not exposed |
 | Main-webview shell escalation | Closed for this surface: shell capability and plugin initialization were removed; no general command executor was added |
@@ -184,6 +191,7 @@ No new Critical or High Phase 1A finding remains. Existing repository-wide warni
 | Typed frontend/Tauri command and event contract | PASS |
 | Robust bounded incremental NDJSON handling | PASS |
 | Server-owned limits, concurrency, deadline, cancellation and cleanup | PASS |
+| Model preparation is request-scoped, cancellable and kind-isolated | PASS for DAARION-side operation; upstream daemon-stop behavior remains unverified |
 | Status and model probes remain bounded after TCP connect | PASS |
 | No late token/completion after a terminal event | PASS |
 | Truthful provider/policy/runtime/UI state | PASS |
@@ -201,7 +209,7 @@ No new Critical or High Phase 1A finding remains. Existing repository-wide warni
 - The production port is fixed at the conservative default and is not frontend-configurable.
 - Ollama is installed on the review host, but no installed model exactly matches an approved bundled canonical mapping. No model was downloaded solely for review, so no real Ollama inference smoke, packaging, notarization or mobile execution proof is claimed.
 - There is no persistence or crash recovery for active requests.
-- Model preparation is bounded but not request-ID cancellable; chat/smoke cancellation is the Phase 1A cancellation contract.
+- Model preparation cancellation proves DAARION future/stream teardown and UI cleanup only. Official Ollama documentation does not provide a daemon-wide stop guarantee; resumable upstream progress may remain.
 - Repository-wide formatting remains open across 94 legacy files and is tracked as a separate cleanup. It is non-blocking only under the explicit Phase 1A amendment above.
 
 ## Rollback
@@ -210,8 +218,8 @@ Before merge, delete the branch or revert its Phase 1A commits. After merge, rev
 
 ## Next gate
 
-1. Mark PR #24 ready for human merge review; do not merge in this task.
-2. If humans accept the ready PR, merge separately under repository policy.
+1. Complete a fresh Codex review of the exact correction head; do not merge in this task.
+2. If the review has no substantive blocker, run the separately controlled merge procedure.
 3. After merge, verify the exact merge result from fresh `main`.
 4. Only then create a separate Phase 1B planning-only task for SQLite durable runtime state.
 

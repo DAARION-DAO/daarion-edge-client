@@ -5,6 +5,7 @@ export const inferenceCommands = {
   status: "get_local_inference_status",
   models: "list_inference_models",
   prepare: "prepare_local_model",
+  cancelPreparation: "cancel_local_model_preparation",
   run: "run_local_inference",
   cancel: "cancel_local_inference",
   smoke: "run_local_inference_smoke",
@@ -48,6 +49,17 @@ export interface InferenceModelSummary {
   installed: boolean;
 }
 
+export interface PrepareLocalModelRequest {
+  request_id: string;
+  canonical_model_id: string;
+}
+
+export interface ModelPreparationResponse {
+  request_id: string;
+  canonical_model_id: string;
+  provider_id: string;
+}
+
 export type InferenceEvent =
   | { kind: "started"; request_id: string }
   | { kind: "running"; request_id: string }
@@ -60,6 +72,16 @@ export type InferenceEvent =
 interface InferenceCommandError {
   code: string;
   message: string;
+}
+
+export class InferenceClientError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = "InferenceClientError";
+    this.code = code;
+  }
 }
 
 async function invokeInference<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -75,9 +97,12 @@ async function invokeInference<T>(command: string, args?: Record<string, unknown
       typeof (reason as InferenceCommandError).message === "string"
     ) {
       const error = reason as InferenceCommandError;
-      throw new Error(`${error.code}: ${error.message}`);
+      throw new InferenceClientError(error.code, error.message);
     }
-    throw new Error("local_inference_error: Local inference command failed");
+    throw new InferenceClientError(
+      "local_inference_error",
+      "Local inference command failed",
+    );
   }
 }
 
@@ -89,8 +114,14 @@ export function listInferenceModels(): Promise<InferenceModelSummary[]> {
   return invokeInference<InferenceModelSummary[]>(inferenceCommands.models);
 }
 
-export function prepareLocalModel(canonicalModelId: string): Promise<void> {
-  return invokeInference<void>(inferenceCommands.prepare, { canonicalModelId });
+export function prepareLocalModel(
+  request: PrepareLocalModelRequest,
+): Promise<ModelPreparationResponse> {
+  return invokeInference<ModelPreparationResponse>(inferenceCommands.prepare, { request });
+}
+
+export function cancelLocalModelPreparation(requestId: string): Promise<boolean> {
+  return invokeInference<boolean>(inferenceCommands.cancelPreparation, { requestId });
 }
 
 export function runLocalInference(request: InferenceRequest): Promise<InferenceResponse> {

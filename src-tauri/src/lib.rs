@@ -161,6 +161,7 @@ pub fn run() {
         inference::commands::get_local_inference_status,
         inference::commands::list_inference_models,
         inference::commands::prepare_local_model,
+        inference::commands::cancel_local_model_preparation,
         inference::commands::run_local_inference,
         inference::commands::cancel_local_inference,
         inference::commands::run_local_inference_smoke,

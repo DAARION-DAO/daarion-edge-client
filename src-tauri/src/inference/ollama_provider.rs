@@ -1,7 +1,8 @@
 use crate::inference::ndjson::NdjsonDecoder;
 use crate::inference::policy::LocalEndpoint;
 use crate::inference::provider::{
-    InferenceProvider, InstalledProviderModel, ProviderChatRequest, ProviderHealth, RequestControl,
+    InferenceProvider, InstalledProviderModel, OperationControl, ProviderChatRequest,
+    ProviderHealth, RequestControl,
 };
 use crate::inference::types::InferenceError;
 use async_trait::async_trait;
@@ -169,6 +170,79 @@ impl OllamaProvider {
 
         Ok(output)
     }
+
+    fn process_prepare_record(
+        record: Value,
+        seen_success: &mut bool,
+    ) -> Result<(), InferenceError> {
+        if *seen_success {
+            return Err(InferenceError::ProviderProtocol(
+                "Local provider sent data after model preparation completed".to_string(),
+            ));
+        }
+        if record.get("error").is_some() {
+            return Err(InferenceError::ProviderProtocol(
+                "Local provider reported a model preparation error".to_string(),
+            ));
+        }
+        let status = record
+            .get("status")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                InferenceError::ProviderProtocol(
+                    "Local provider returned a malformed model preparation record".to_string(),
+                )
+            })?;
+        if status.is_empty() {
+            return Err(InferenceError::ProviderProtocol(
+                "Local provider returned a malformed model preparation record".to_string(),
+            ));
+        }
+        if status == "success" {
+            *seen_success = true;
+        }
+        Ok(())
+    }
+
+    async fn drain_prepare_records(
+        response: Response,
+        mut control: OperationControl,
+    ) -> Result<(), InferenceError> {
+        let mut stream = response.bytes_stream();
+        let mut decoder = NdjsonDecoder::default();
+        let mut seen_success = false;
+
+        loop {
+            let next = tokio::select! {
+                biased;
+                _ = control.cancelled() => return Err(InferenceError::Cancelled),
+                next = stream.next() => next,
+            };
+            let Some(chunk) = next else {
+                break;
+            };
+            control.ensure_active()?;
+            let chunk = chunk.map_err(|_| {
+                InferenceError::ProviderProtocol(
+                    "Local provider model preparation stream was interrupted".to_string(),
+                )
+            })?;
+            for record in decoder.push(&chunk)? {
+                Self::process_prepare_record(record, &mut seen_success)?;
+            }
+        }
+
+        control.ensure_active()?;
+        for record in decoder.finish()? {
+            Self::process_prepare_record(record, &mut seen_success)?;
+        }
+        if !seen_success {
+            return Err(InferenceError::ProviderProtocol(
+                "Local provider model preparation ended without completion".to_string(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -238,37 +312,31 @@ impl InferenceProvider for OllamaProvider {
         }
     }
 
-    async fn prepare_model(&self, provider_model_id: &str) -> Result<(), InferenceError> {
+    async fn prepare_model(
+        &self,
+        provider_model_id: &str,
+        mut control: OperationControl,
+    ) -> Result<(), InferenceError> {
         #[cfg(mobile)]
         {
-            let _ = provider_model_id;
+            let _ = (provider_model_id, control);
             return Err(InferenceError::ProviderUnavailable);
         }
         #[cfg(not(mobile))]
         {
-            let body = serde_json::json!({ "model": provider_model_id, "stream": false });
-            let response = self
-                .checked_response(
-                    self.client
-                        .post(self.endpoint.join("api/pull")?)
-                        .json(&body)
-                        .send()
-                        .await,
-                )
-                .await?;
-            let result = response.json::<Value>().await.map_err(|_| {
-                InferenceError::ProviderProtocol(
-                    "Local provider model preparation response is malformed".to_string(),
-                )
-            })?;
-            if result.get("error").is_some()
-                || result.get("status").and_then(Value::as_str) != Some("success")
-            {
-                return Err(InferenceError::ProviderProtocol(
-                    "Local provider could not prepare the model".to_string(),
-                ));
-            }
-            Ok(())
+            control.ensure_active()?;
+            let body = serde_json::json!({ "model": provider_model_id, "stream": true });
+            let request = self
+                .client
+                .post(self.endpoint.join("api/pull")?)
+                .json(&body);
+            let response = tokio::select! {
+                biased;
+                _ = control.cancelled() => return Err(InferenceError::Cancelled),
+                response = request.send() => response,
+            };
+            let response = self.checked_response(response).await?;
+            Self::drain_prepare_records(response, control).await
         }
     }
 
@@ -347,6 +415,11 @@ mod tests {
             RequestControl::new("fixture-request".to_string(), receiver, gate),
             sink,
         )
+    }
+
+    fn operation_control() -> (watch::Sender<bool>, OperationControl) {
+        let (sender, receiver) = watch::channel(false);
+        (sender, OperationControl::new(receiver))
     }
 
     async fn fixture_provider(
@@ -458,13 +531,30 @@ mod tests {
 
     #[tokio::test]
     async fn model_preparation_requires_explicit_success_without_leaking_errors() {
-        for (body, should_succeed) in [
-            (b"{\"status\":\"success\"}".as_slice(), true),
-            (b"{\"error\":\"private upstream detail\"}".as_slice(), false),
-            (b"{}".as_slice(), false),
-        ] {
-            let (provider, task) = fixture_provider("200 OK", &[], body, None).await;
-            let result = provider.prepare_model("fixture:1").await;
+        let mut oversized = b"{\"status\":\"".to_vec();
+        oversized.extend(vec![b'x'; 1024 * 1024]);
+        oversized.extend_from_slice(b"\"}\n");
+        let cases = vec![
+            (
+                b"{\"status\":\"pulling manifest\"}\n{\"status\":\"success\"}\n".to_vec(),
+                true,
+            ),
+            (b"{\"status\":\"success\"}".to_vec(), true),
+            (b"{\"error\":\"private upstream detail\"}\n".to_vec(), false),
+            (b"{\"status\":\"pulling manifest\"}\n".to_vec(), false),
+            (
+                b"{\"status\":\"success\"}\n{\"status\":\"late\"}\n".to_vec(),
+                false,
+            ),
+            (b"{}\n".to_vec(), false),
+            (b"not-json\n".to_vec(), false),
+            (oversized, false),
+        ];
+
+        for (body, should_succeed) in cases {
+            let (provider, task) = fixture_provider("200 OK", &[], &body, None).await;
+            let (_sender, control) = operation_control();
+            let result = provider.prepare_model("fixture:1", control).await;
             task.await.unwrap();
             assert_eq!(result.is_ok(), should_succeed);
             if let Err(error) = result {

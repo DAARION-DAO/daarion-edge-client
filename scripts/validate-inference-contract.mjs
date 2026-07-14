@@ -18,7 +18,7 @@ const commands = [...adapter.matchAll(/^\s+\w+: "([a-z0-9_]+)",$/gm)].map(
   (match) => match[1],
 );
 
-if (commands.length !== 6) fail(`expected 6 typed inference commands, found ${commands.length}`);
+if (commands.length !== 7) fail(`expected 7 typed inference commands, found ${commands.length}`);
 for (const command of commands) {
   if (!rustRoot.includes(`inference::commands::${command}`)) {
     fail(`frontend command ${command} is not registered by Tauri`);
@@ -70,6 +70,21 @@ for (const inferenceFile of [
 
 if (!adapter.includes('"local-inference-event"')) {
   fail("typed adapter does not subscribe to the canonical inference event");
+}
+if (!adapter.includes("export interface PrepareLocalModelRequest")) {
+  fail("typed adapter does not define the model-preparation request contract");
+}
+if (!adapter.includes('cancelPreparation: "cancel_local_model_preparation"')) {
+  fail("typed adapter does not expose the dedicated preparation cancellation command");
+}
+if (!panel.includes('aria-label="Cancel local model preparation"')) {
+  fail("mounted inference panel does not expose model-preparation cancellation");
+}
+if (!panel.includes('transition("preparing")') || !panel.includes('transition("cancelled")')) {
+  fail("mounted inference panel lacks truthful preparation terminal states");
+}
+if (panel.includes('aria-label="Preparing local model"')) {
+  fail("mounted inference panel still exposes a non-cancellable preparation spinner");
 }
 
 if (!process.exitCode) console.log("PASS: local inference frontend/Rust contract is aligned");
