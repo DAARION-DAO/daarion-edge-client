@@ -4,6 +4,14 @@ Final repository release result: **PASS**
 
 Merge action: **NOT PERFORMED**. The focused diff/security review is complete and the PR may be marked ready for human merge review, but this task does not authorize or perform merge. Phase 1B and every later runtime phase remain **NO_GO** until Phase 1A is merged and verified from fresh `main`.
 
+The first controlled-finalize attempt correctly stopped with `FAIL` on an
+unresolved review finding: status and installed-model probes had no overall
+deadline after TCP connect. The follow-up correction adds a service-owned
+5-second production probe deadline plus deterministic stalled-header/body
+fixtures. See
+`phase-01a-probe-deadline-correction-completion.md`. The final candidate has 43
+inference tests and 92 full Rust tests; merge remains a separate action.
+
 ## Baseline and scope
 
 - Repository: `DAARION-DAO/daarion-edge-client`
@@ -77,8 +85,9 @@ No registry payload, model artifact, lockfile or remote registry contract change
 | Check | Result |
 | --- | --- |
 | changed-scope command shown below for every added/modified Rust file | PASS, 12/12 files |
-| `cargo test --manifest-path src-tauri/Cargo.toml inference:: --lib` | PASS, 37 tests |
-| `cargo test --manifest-path src-tauri/Cargo.toml` | PASS, 86 tests |
+| probe-deadline correction fixtures | PASS, 6 tests using bounded loopback/fake-provider fixtures |
+| `cargo test --manifest-path src-tauri/Cargo.toml inference:: --lib` | PASS, 43 tests |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | PASS, 92 tests |
 | `cargo check --manifest-path src-tauri/Cargo.toml` | PASS |
 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets` | PASS command exit; 0 findings reference `src/inference/**` |
 | `npm ci` | PASS; lockfile unchanged |
@@ -134,6 +143,7 @@ classification is recorded below.
 | Arbitrary provider tag | Closed: commands accept canonical IDs and the local resolver owns provider tags |
 | Malformed/provider-controlled stream | Closed within phase: split, multi-record, blank, malformed schema, provider error, post-terminal data, disconnect, final-buffer, premature-EOF, record-size, aggregate-buffer and output-size cases are tested |
 | Cancellation/timeout race | Closed within phase: duplicate IDs, queue-wait cancellation/timeout, streaming cancellation/timeout, final-token-before-cancel, late provider error, cleanup, sole terminal outcome and late-event suppression are tested deterministically |
+| Stalled local status/model probe | Closed within phase: `InferenceService` applies one 5-second production probe deadline; loopback fixtures prove stalled headers and model-list body return controlled `TimedOut` without false success or raw provider data |
 | Prompt/response leakage | No inference logging calls exist; sentinel test proves prompt text is absent from response metadata and emitted events; raw provider error bodies are not exposed |
 | Main-webview shell escalation | Closed for this surface: shell capability and plugin initialization were removed; no general command executor was added |
 | Model artifact supply chain | OPEN and explicitly out of scope; Ollama-managed pull is not artifact verification |
@@ -174,6 +184,7 @@ No new Critical or High Phase 1A finding remains. Existing repository-wide warni
 | Typed frontend/Tauri command and event contract | PASS |
 | Robust bounded incremental NDJSON handling | PASS |
 | Server-owned limits, concurrency, deadline, cancellation and cleanup | PASS |
+| Status and model probes remain bounded after TCP connect | PASS |
 | No late token/completion after a terminal event | PASS |
 | Truthful provider/policy/runtime/UI state | PASS |
 | Privacy-safe logs, errors and metadata | PASS |

@@ -8,16 +8,18 @@ use crate::inference::types::{
     InferenceResponse, InferenceStatus,
 };
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{watch, Semaphore};
-use tokio::time::{sleep_until, timeout, Instant as TokioInstant};
+use tokio::time::{sleep_until, timeout, timeout_at, Instant as TokioInstant};
 use uuid::Uuid;
 
 const MAX_PROMPT_BYTES: usize = 64 * 1024;
 const MAX_TOKENS: u32 = 4096;
 const MAX_CONCURRENT_REQUESTS: usize = 2;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const PREPARE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, Clone)]
@@ -25,6 +27,7 @@ pub struct ServiceLimits {
     pub max_prompt_bytes: usize,
     pub max_tokens: u32,
     pub request_timeout: Duration,
+    pub probe_timeout: Duration,
     pub max_concurrent_requests: usize,
 }
 
@@ -34,6 +37,7 @@ impl Default for ServiceLimits {
             max_prompt_bytes: MAX_PROMPT_BYTES,
             max_tokens: MAX_TOKENS,
             request_timeout: REQUEST_TIMEOUT,
+            probe_timeout: PROBE_TIMEOUT,
             max_concurrent_requests: MAX_CONCURRENT_REQUESTS,
         }
     }
@@ -78,7 +82,7 @@ impl InferenceService {
 
     pub async fn status(&self) -> Result<InferenceStatus, InferenceError> {
         self.ensure_local_provider()?;
-        let health = self.provider.health().await?;
+        let health = self.run_probe(self.provider.health()).await?;
         Ok(InferenceStatus {
             execution_policy: InferencePolicy::LocalOnly,
             provider_id: self.provider.provider_id().to_string(),
@@ -90,7 +94,7 @@ impl InferenceService {
 
     pub async fn models(&self) -> Result<Vec<InferenceModelSummary>, InferenceError> {
         self.ensure_local_provider()?;
-        let installed = match self.provider.list_installed_models().await {
+        let installed = match self.run_probe(self.provider.list_installed_models()).await {
             Ok(models) => models
                 .into_iter()
                 .map(|model| model.provider_model_id)
@@ -284,21 +288,34 @@ impl InferenceService {
     fn ensure_local_provider(&self) -> Result<(), InferenceError> {
         LocalEndpoint::parse(&self.provider.endpoint()).map(|_| ())
     }
+
+    async fn run_probe<T, F>(&self, probe: F) -> Result<T, InferenceError>
+    where
+        F: Future<Output = Result<T, InferenceError>>,
+    {
+        let deadline = TokioInstant::now() + self.limits.probe_timeout;
+        timeout_at(deadline, probe)
+            .await
+            .map_err(|_| InferenceError::TimedOut)?
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::inference::ollama_provider::OllamaProvider;
     use crate::inference::provider::{InstalledProviderModel, ProviderHealth, RequestControl};
-    use crate::inference::types::ChatMessage;
+    use crate::inference::types::{ChatMessage, InferencePublicError};
     use async_trait::async_trait;
     use std::future::pending;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::Notify;
 
     #[derive(Clone, Copy)]
     enum FakeMode {
         Success,
+        SlowSuccess,
         Never,
         TokenThenNever,
         Error,
@@ -339,6 +356,11 @@ mod tests {
         ) -> Result<String, InferenceError> {
             match self.mode {
                 FakeMode::Success => {
+                    control.emit_token("local".to_string())?;
+                    Ok("local".to_string())
+                }
+                FakeMode::SlowSuccess => {
+                    tokio::time::sleep(Duration::from_millis(30)).await;
                     control.emit_token("local".to_string())?;
                     Ok("local".to_string())
                 }
@@ -399,6 +421,187 @@ mod tests {
             )
             .unwrap(),
         )
+    }
+
+    enum ProbeFixture {
+        StallHeaders,
+        StallBody {
+            body_prefix: &'static [u8],
+            declared_length: usize,
+        },
+        Respond(&'static [u8]),
+    }
+
+    async fn probe_fixture_service(
+        fixture: ProbeFixture,
+        probe_timeout: Duration,
+    ) -> (InferenceService, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = vec![0u8; 8192];
+            let _ = socket.read(&mut request).await;
+
+            match fixture {
+                ProbeFixture::StallHeaders => pending::<()>().await,
+                ProbeFixture::StallBody {
+                    body_prefix,
+                    declared_length,
+                } => {
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {declared_length}\r\nConnection: keep-alive\r\n\r\n"
+                    );
+                    socket.write_all(response.as_bytes()).await.unwrap();
+                    socket.write_all(body_prefix).await.unwrap();
+                    pending::<()>().await;
+                }
+                ProbeFixture::Respond(body) => {
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    socket.write_all(response.as_bytes()).await.unwrap();
+                    socket.write_all(body).await.unwrap();
+                    let _ = socket.shutdown().await;
+                }
+            }
+        });
+        let provider =
+            OllamaProvider::new(LocalEndpoint::parse(&format!("http://{address}/")).unwrap())
+                .unwrap();
+        let service = InferenceService::new(
+            Arc::new(provider),
+            ModelResolver::from_bundled_registry().unwrap(),
+            ServiceLimits {
+                probe_timeout,
+                ..ServiceLimits::default()
+            },
+        )
+        .unwrap();
+        (service, task)
+    }
+
+    async fn abort_fixture(task: tokio::task::JoinHandle<()>) {
+        task.abort();
+        let _ = task.await;
+    }
+
+    #[tokio::test]
+    async fn probe_deadline_bounds_health_when_loopback_stalls_before_headers() {
+        let (service, task) =
+            probe_fixture_service(ProbeFixture::StallHeaders, Duration::from_millis(20)).await;
+        let result = timeout(Duration::from_millis(500), service.status())
+            .await
+            .expect("outer test guard elapsed");
+        abort_fixture(task).await;
+
+        let error = result.unwrap_err();
+        assert_eq!(error, InferenceError::TimedOut);
+        assert_eq!(InferencePublicError::from(error).code, "timed_out");
+    }
+
+    #[tokio::test]
+    async fn probe_deadline_bounds_models_when_loopback_stalls_before_headers() {
+        let (service, task) =
+            probe_fixture_service(ProbeFixture::StallHeaders, Duration::from_millis(20)).await;
+        let result = timeout(Duration::from_millis(500), service.models())
+            .await
+            .expect("outer test guard elapsed");
+        abort_fixture(task).await;
+
+        let error = result.unwrap_err();
+        assert_eq!(error, InferenceError::TimedOut);
+        let public = InferencePublicError::from(error);
+        assert_eq!(public.code, "timed_out");
+        assert!(!public.message.contains("127.0.0.1"));
+    }
+
+    #[tokio::test]
+    async fn probe_deadline_bounds_model_inventory_when_response_body_stalls() {
+        let sensitive_prefix = b"{\"models\":[{\"name\":\"private-provider-detail";
+        let (service, task) = probe_fixture_service(
+            ProbeFixture::StallBody {
+                body_prefix: sensitive_prefix,
+                declared_length: sensitive_prefix.len() + 256,
+            },
+            Duration::from_millis(20),
+        )
+        .await;
+        let result = timeout(Duration::from_millis(500), service.models())
+            .await
+            .expect("outer test guard elapsed");
+        abort_fixture(task).await;
+
+        let error = result.unwrap_err();
+        assert_eq!(error, InferenceError::TimedOut);
+        let public = InferencePublicError::from(error);
+        assert_eq!(public.code, "timed_out");
+        assert!(!public.message.contains("private-provider-detail"));
+    }
+
+    #[tokio::test]
+    async fn probe_fast_health_response_still_succeeds() {
+        let (service, task) =
+            probe_fixture_service(ProbeFixture::Respond(b""), Duration::from_millis(200)).await;
+        let status = timeout(Duration::from_millis(500), service.status())
+            .await
+            .expect("outer test guard elapsed")
+            .unwrap();
+        task.await.unwrap();
+
+        assert!(status.available);
+        assert_eq!(status.execution_policy, InferencePolicy::LocalOnly);
+    }
+
+    #[tokio::test]
+    async fn probe_fast_model_inventory_still_succeeds() {
+        let (service, task) = probe_fixture_service(
+            ProbeFixture::Respond(b"{\"models\":[{\"name\":\"qwen3.5:2b\"}]}"),
+            Duration::from_millis(200),
+        )
+        .await;
+        let models = timeout(Duration::from_millis(500), service.models())
+            .await
+            .expect("outer test guard elapsed")
+            .unwrap();
+        task.await.unwrap();
+
+        assert!(models
+            .iter()
+            .any(|model| { model.canonical_model_id == "qwen35-2b-stable" && model.installed }));
+    }
+
+    #[tokio::test]
+    async fn probe_deadline_does_not_limit_streaming_chat() {
+        let service = Arc::new(
+            InferenceService::new(
+                Arc::new(FakeProvider {
+                    mode: FakeMode::SlowSuccess,
+                }),
+                ModelResolver::from_bundled_registry().unwrap(),
+                ServiceLimits {
+                    probe_timeout: Duration::from_millis(1),
+                    request_timeout: Duration::from_millis(500),
+                    ..ServiceLimits::default()
+                },
+            )
+            .unwrap(),
+        );
+        let sink = Arc::new(RecordingSink::default());
+        let result = timeout(
+            Duration::from_millis(500),
+            service.run(request(), sink.clone()),
+        )
+        .await
+        .expect("outer test guard elapsed")
+        .unwrap();
+
+        assert_eq!(result.output_text, "local");
+        assert!(matches!(
+            sink.0.lock().unwrap().last(),
+            Some(InferenceEvent::Completed { .. })
+        ));
     }
 
     #[tokio::test]

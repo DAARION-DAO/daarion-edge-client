@@ -96,6 +96,6 @@ Numbers are reservations for planning, not accepted decisions.
 ## Current gate
 
 - Baseline documentation: adopted with the limitations recorded in the Phase 00 completion report.
-- Phase 1A: repository-level `PASS` after focused diff/security review. Every changed Rust file, functional test, contract, build and scoped security check passes. Repository-wide formatting debt is pre-existing, reduced from 101 baseline files to 94 and tracked separately; live Ollama/model behavior remains `IMPLEMENTED_BUT_UNVERIFIED`. PR readiness does not authorize merge.
+- Phase 1A: repository-level `PASS` after focused diff/security review and the probe-deadline correction triggered by the first failed finalize attempt. Health and installed-model probes are service-bounded and covered by stalled-header/body loopback fixtures; 43 inference and 92 full Rust tests pass. Every changed Rust file, contract, build and scoped security check passes. Repository-wide formatting debt is pre-existing, reduced from 101 baseline files to 94 and tracked separately; live Ollama/model behavior remains `IMPLEMENTED_BUT_UNVERIFIED`. PR readiness does not authorize merge.
 - Phase 1B and later: `NO_GO` until Phase 1A is merged and verified from fresh `main`.
 - Production readiness: `NO_GO`.
