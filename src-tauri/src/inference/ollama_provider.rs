@@ -83,17 +83,42 @@ impl OllamaProvider {
         output: &mut String,
         seen_done: &mut bool,
     ) -> Result<(), InferenceError> {
+        if *seen_done {
+            return Err(InferenceError::ProviderProtocol(
+                "Local provider sent data after stream completion".to_string(),
+            ));
+        }
         if record.get("error").is_some() {
             return Err(InferenceError::ProviderProtocol(
                 "Local provider reported an inference error".to_string(),
             ));
         }
 
-        if let Some(content) = record
-            .get("message")
-            .and_then(|message| message.get("content"))
-            .and_then(Value::as_str)
-        {
+        let content = match record.get("message") {
+            Some(message) => Some(message.get("content").and_then(Value::as_str).ok_or_else(
+                || {
+                    InferenceError::ProviderProtocol(
+                        "Local provider returned a malformed streaming record".to_string(),
+                    )
+                },
+            )?),
+            None => None,
+        };
+        let done = match record.get("done") {
+            Some(value) => Some(value.as_bool().ok_or_else(|| {
+                InferenceError::ProviderProtocol(
+                    "Local provider returned a malformed streaming record".to_string(),
+                )
+            })?),
+            None => None,
+        };
+        if content.is_none() && done.is_none() {
+            return Err(InferenceError::ProviderProtocol(
+                "Local provider returned a malformed streaming record".to_string(),
+            ));
+        }
+
+        if let Some(content) = content {
             if output.len().saturating_add(content.len()) > MAX_OUTPUT_BYTES {
                 return Err(InferenceError::ProviderProtocol(
                     "Local provider output exceeded the safety limit".to_string(),
@@ -105,7 +130,7 @@ impl OllamaProvider {
             }
         }
 
-        if record.get("done").and_then(Value::as_bool) == Some(true) {
+        if done == Some(true) {
             *seen_done = true;
         }
         Ok(())
@@ -389,6 +414,10 @@ mod tests {
             b"not-json\n".as_slice(),
             b"{\"error\":\"sensitive provider detail\"}\n".as_slice(),
             b"{\"message\":{\"content\":\"partial\"}}\n".as_slice(),
+            b"{}\n{\"done\":true}\n".as_slice(),
+            b"{\"message\":{},\"done\":false}\n".as_slice(),
+            b"{\"done\":\"true\"}\n".as_slice(),
+            b"{\"done\":true}\n{\"message\":{\"content\":\"late\"}}\n".as_slice(),
         ] {
             let (provider, task) = fixture_provider("200 OK", &[], body, None).await;
             let (control, _) = control();

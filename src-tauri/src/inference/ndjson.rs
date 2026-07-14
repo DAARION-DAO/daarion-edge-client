@@ -2,10 +2,12 @@ use crate::inference::types::InferenceError;
 use serde_json::Value;
 
 const DEFAULT_MAX_RECORD_BYTES: usize = 1024 * 1024;
+const DEFAULT_MAX_BUFFER_BYTES: usize = DEFAULT_MAX_RECORD_BYTES;
 
 pub struct NdjsonDecoder {
     buffer: Vec<u8>,
     max_record_bytes: usize,
+    max_buffer_bytes: usize,
 }
 
 impl Default for NdjsonDecoder {
@@ -13,6 +15,7 @@ impl Default for NdjsonDecoder {
         Self {
             buffer: Vec::new(),
             max_record_bytes: DEFAULT_MAX_RECORD_BYTES,
+            max_buffer_bytes: DEFAULT_MAX_BUFFER_BYTES,
         }
     }
 }
@@ -23,23 +26,36 @@ impl NdjsonDecoder {
         Self {
             buffer: Vec::new(),
             max_record_bytes,
+            max_buffer_bytes: max_record_bytes,
+        }
+    }
+
+    #[cfg(test)]
+    fn with_limits(max_record_bytes: usize, max_buffer_bytes: usize) -> Self {
+        Self {
+            buffer: Vec::new(),
+            max_record_bytes,
+            max_buffer_bytes,
         }
     }
 
     pub fn push(&mut self, bytes: &[u8]) -> Result<Vec<Value>, InferenceError> {
-        self.buffer.extend_from_slice(bytes);
         let mut records = Vec::new();
+        let mut remaining = bytes;
 
-        while let Some(newline) = self.buffer.iter().position(|byte| *byte == b'\n') {
-            if newline > self.max_record_bytes {
+        while let Some(newline) = remaining.iter().position(|byte| *byte == b'\n') {
+            self.append_bounded(&remaining[..newline])?;
+            if self.buffer.len() > self.max_record_bytes {
                 return Err(Self::record_too_large());
             }
-            let line: Vec<u8> = self.buffer.drain(..=newline).collect();
-            if let Some(record) = Self::decode_line(&line[..line.len() - 1])? {
+            let line = std::mem::take(&mut self.buffer);
+            if let Some(record) = Self::decode_line(&line)? {
                 records.push(record);
             }
+            remaining = &remaining[newline + 1..];
         }
 
+        self.append_bounded(remaining)?;
         if self.buffer.len() > self.max_record_bytes {
             return Err(Self::record_too_large());
         }
@@ -48,7 +64,7 @@ impl NdjsonDecoder {
     }
 
     pub fn finish(&mut self) -> Result<Vec<Value>, InferenceError> {
-        if self.buffer.len() > self.max_record_bytes {
+        if self.buffer.len() > self.max_record_bytes || self.buffer.len() > self.max_buffer_bytes {
             return Err(Self::record_too_large());
         }
         let final_line = std::mem::take(&mut self.buffer);
@@ -76,6 +92,16 @@ impl NdjsonDecoder {
                 "Local provider returned a malformed streaming record".to_string(),
             )
         })
+    }
+
+    fn append_bounded(&mut self, bytes: &[u8]) -> Result<(), InferenceError> {
+        if bytes.len() > self.max_buffer_bytes.saturating_sub(self.buffer.len()) {
+            return Err(InferenceError::ProviderProtocol(
+                "Local provider streaming buffer exceeded the safety limit".to_string(),
+            ));
+        }
+        self.buffer.extend_from_slice(bytes);
+        Ok(())
     }
 
     fn record_too_large() -> InferenceError {
@@ -115,5 +141,25 @@ mod tests {
 
         let mut oversized = NdjsonDecoder::with_limit(4);
         assert!(oversized.push(b"12345").is_err());
+    }
+
+    #[test]
+    fn rejects_aggregate_buffer_growth_before_allocating_the_full_input() {
+        let mut decoder = NdjsonDecoder::with_limits(16, 4);
+        assert!(decoder.push(b"123").unwrap().is_empty());
+        assert!(matches!(
+            decoder.push(b"45"),
+            Err(InferenceError::ProviderProtocol(message))
+                if message.contains("buffer exceeded")
+        ));
+        assert_eq!(decoder.buffer, b"123");
+    }
+
+    #[test]
+    fn processes_many_bounded_records_without_accumulating_the_input_chunk() {
+        let mut decoder = NdjsonDecoder::with_limits(8, 8);
+        let records = decoder.push(b"{\"a\":1}\n{\"b\":2}\n{\"c\":3}\n").unwrap();
+        assert_eq!(records.len(), 3);
+        assert!(decoder.buffer.is_empty());
     }
 }

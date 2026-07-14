@@ -2,6 +2,8 @@ use crate::inference::types::{InferenceError, InferenceModelSummary};
 use crate::models::registry::{CandidateModel, ModelRegistry};
 use std::collections::HashSet;
 
+const MAX_PROVIDER_MODEL_ID_BYTES: usize = 256;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedModel {
     pub canonical_model_id: String,
@@ -26,25 +28,24 @@ impl ModelResolver {
     }
 
     pub fn resolve(&self, canonical_model_id: &str) -> Result<ResolvedModel, InferenceError> {
-        let model = self
+        let models = self
             .models
             .iter()
-            .find(|model| model.id == canonical_model_id)
-            .ok_or_else(|| {
-                InferenceError::UnknownModel(format!(
-                    "Unknown canonical model ID: {canonical_model_id}"
-                ))
-            })?;
+            .filter(|model| model.id == canonical_model_id)
+            .collect::<Vec<_>>();
+        if models.len() != 1 {
+            return Err(InferenceError::UnknownModel(
+                "Canonical model ID is not uniquely available".to_string(),
+            ));
+        }
+        let model = models[0];
 
         let sources = model
             .install_sources
             .iter()
             .filter(|source| source.runtime == "ollama")
             .collect::<Vec<_>>();
-        if sources.len() != 1
-            || sources[0].upstream_tag.trim().is_empty()
-            || sources[0].upstream_tag.chars().any(char::is_whitespace)
-        {
+        if sources.len() != 1 || !Self::is_valid_ollama_tag(&sources[0].upstream_tag) {
             return Err(InferenceError::UnknownModel(format!(
                 "Canonical model {canonical_model_id} has no unique valid local Ollama mapping"
             )));
@@ -76,6 +77,41 @@ impl ModelResolver {
             })
             .collect()
     }
+
+    fn is_valid_ollama_tag(candidate: &str) -> bool {
+        if candidate.is_empty()
+            || candidate.len() > MAX_PROVIDER_MODEL_ID_BYTES
+            || !candidate.is_ascii()
+        {
+            return false;
+        }
+
+        let mut parts = candidate.split(':');
+        let Some(name) = parts.next() else {
+            return false;
+        };
+        let tag = parts.next();
+        if parts.next().is_some() {
+            return false;
+        }
+
+        fn valid_segment(segment: &str) -> bool {
+            !segment.is_empty()
+                && segment
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+                && segment
+                    .as_bytes()
+                    .first()
+                    .is_some_and(u8::is_ascii_alphanumeric)
+                && segment
+                    .as_bytes()
+                    .last()
+                    .is_some_and(u8::is_ascii_alphanumeric)
+        }
+
+        name.split('/').all(valid_segment) && tag.is_none_or(valid_segment)
+    }
 }
 
 #[cfg(test)]
@@ -95,6 +131,25 @@ mod tests {
         let resolver = ModelResolver::from_bundled_registry().unwrap();
         assert!(matches!(
             resolver.resolve("unknown:remote-tag"),
+            Err(InferenceError::UnknownModel(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_canonical_model_entries() {
+        let resolver = ModelResolver::from_bundled_registry().unwrap();
+        let model = resolver
+            .models
+            .iter()
+            .find(|model| model.id == "qwen35-2b-stable")
+            .unwrap()
+            .clone();
+        let duplicate = ModelResolver {
+            models: vec![model.clone(), model],
+        };
+
+        assert!(matches!(
+            duplicate.resolve("qwen35-2b-stable"),
             Err(InferenceError::UnknownModel(_))
         ));
     }
@@ -141,5 +196,37 @@ mod tests {
                 Err(InferenceError::UnknownModel(_))
             ));
         }
+    }
+
+    #[test]
+    fn rejects_provider_tags_outside_the_bounded_ollama_grammar() {
+        for candidate in [
+            "",
+            " bad",
+            "bad ",
+            "https://example.com/model:tag",
+            "model::tag",
+            "/model:tag",
+            "model/:tag",
+            "model:@tag",
+            "model:tag/other",
+            "model:tag?remote=true",
+        ] {
+            assert!(
+                !ModelResolver::is_valid_ollama_tag(candidate),
+                "accepted malformed tag {candidate:?}"
+            );
+        }
+
+        for candidate in ["qwen3.5:2b", "namespace/model-name:latest", "model_name"] {
+            assert!(
+                ModelResolver::is_valid_ollama_tag(candidate),
+                "rejected valid tag {candidate:?}"
+            );
+        }
+
+        assert!(!ModelResolver::is_valid_ollama_tag(
+            &"x".repeat(MAX_PROVIDER_MODEL_ID_BYTES + 1)
+        ));
     }
 }

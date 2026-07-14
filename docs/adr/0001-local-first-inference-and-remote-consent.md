@@ -1,6 +1,6 @@
 # ADR 0001: Local-First Inference and Remote Consent
 
-- Status: Implemented in Phase 1A candidate; human acceptance pending
+- Status: Accepted and repository-verified in Phase 1A; merge and live-provider verification pending
 - Date: 2026-07-04
 - Scope: `daarion-edge-client` inference policy and its product disclosure boundary
 
@@ -35,6 +35,6 @@ Edge source contains a real loopback Ollama chat path and a simulated remote-off
 
 ## Verification gate
 
-The Phase 1A candidate routes status, discovery, preparation, smoke and chat through one bounded `InferenceService`; production composition constructs only the validated loopback Ollama provider. Unit and loopback-fixture tests cover endpoint rejection, canonical mapping, stream framing, provider failures, deadline, cancellation, duplicate IDs and late-event suppression. The mounted UI uses one typed command/event adapter and main-window shell authority was removed.
+The Phase 1A candidate routes status, discovery, preparation, smoke and chat through one bounded `InferenceService`; production composition constructs only the validated loopback Ollama provider and revalidates the reported endpoint at each service boundary. Unit and loopback-fixture tests cover endpoint rejection, unique canonical mapping, bounded stream framing, malformed/post-terminal provider records, queue/stream deadline and cancellation races, duplicate IDs and sole-terminal-event enforcement. The mounted UI uses one typed command/event adapter and main-window shell authority was removed.
 
-See [Local-only inference gate](../security/SECURITY_GATES.md) and the [Phase 1A completion report](../planning/phases/phase-01a-local-only-inference-completion.md). These repository checks do not prove a real installed Ollama/model, packaging, mobile execution or production readiness. Human diff/security acceptance is still required before the gate is closed.
+See [Local-only inference gate](../security/SECURITY_GATES.md) and the [Phase 1A completion report](../planning/phases/phase-01a-local-only-inference-completion.md). These repository checks do not prove an approved mapped model running through a real Ollama installation, packaging, mobile execution or production readiness. Merge remains a separate human action.

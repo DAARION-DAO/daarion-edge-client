@@ -1,7 +1,7 @@
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use tauri::{AppHandle, Manager};
-use reqwest::Client;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InstallSource {
@@ -44,7 +44,9 @@ pub struct ModelRegistry;
 impl ModelRegistry {
     /// Save registry to last_known_good_registry.json
     fn save_to_cache(app: &AppHandle, payload: &RegistryPayload) -> Result<(), String> {
-        let path = app.path().app_data_dir()
+        let path = app
+            .path()
+            .app_data_dir()
             .map_err(|_| "Failed to get app_data_dir".to_string())?;
         fs::create_dir_all(&path).ok();
         let file_path = path.join("last_known_good_registry.json");
@@ -55,7 +57,9 @@ impl ModelRegistry {
 
     /// Read registry from last_known_good_registry.json
     fn read_from_cache(app: &AppHandle) -> Result<RegistryPayload, String> {
-        let path = app.path().app_data_dir()
+        let path = app
+            .path()
+            .app_data_dir()
             .map_err(|_| "Failed to get app_data_dir".to_string())?;
         let file_path = path.join("last_known_good_registry.json");
         let content = fs::read_to_string(&file_path).map_err(|e| e.to_string())?;
@@ -77,7 +81,11 @@ impl ModelRegistry {
 
         // 1. Try Network only through the paired backend resolver.
         if let Ok(backend_url) = crate::config::resolve_backend_url(&app) {
-            match client.get(format!("{}/models/registry", backend_url)).send().await {
+            match client
+                .get(format!("{}/models/registry", backend_url))
+                .send()
+                .await
+            {
                 Ok(resp) if resp.status().is_success() => {
                     if let Ok(payload) = resp.json::<RegistryPayload>().await {
                         println!("[RegistrySync] Successfully fetched from Network");

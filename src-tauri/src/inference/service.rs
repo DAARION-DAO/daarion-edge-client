@@ -77,6 +77,7 @@ impl InferenceService {
     }
 
     pub async fn status(&self) -> Result<InferenceStatus, InferenceError> {
+        self.ensure_local_provider()?;
         let health = self.provider.health().await?;
         Ok(InferenceStatus {
             execution_policy: InferencePolicy::LocalOnly,
@@ -88,6 +89,7 @@ impl InferenceService {
     }
 
     pub async fn models(&self) -> Result<Vec<InferenceModelSummary>, InferenceError> {
+        self.ensure_local_provider()?;
         let installed = match self.provider.list_installed_models().await {
             Ok(models) => models
                 .into_iter()
@@ -100,6 +102,7 @@ impl InferenceService {
     }
 
     pub async fn prepare_model(&self, canonical_model_id: &str) -> Result<(), InferenceError> {
+        self.ensure_local_provider()?;
         let model = self.resolver.resolve(canonical_model_id)?;
         timeout(
             PREPARE_TIMEOUT,
@@ -134,6 +137,7 @@ impl InferenceService {
         sink: Arc<dyn EventSink>,
     ) -> Result<InferenceResponse, InferenceError> {
         self.validate_request(&request)?;
+        self.ensure_local_provider()?;
         let resolved = self.resolver.resolve(&request.canonical_model_id)?;
         let (cancel_sender, mut cancel_receiver) = watch::channel(false);
 
@@ -276,6 +280,10 @@ impl InferenceService {
         }
         Ok(())
     }
+
+    fn ensure_local_provider(&self) -> Result<(), InferenceError> {
+        LocalEndpoint::parse(&self.provider.endpoint()).map(|_| ())
+    }
 }
 
 #[cfg(test)]
@@ -285,11 +293,14 @@ mod tests {
     use crate::inference::types::ChatMessage;
     use async_trait::async_trait;
     use std::future::pending;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tokio::sync::Notify;
 
     #[derive(Clone, Copy)]
     enum FakeMode {
         Success,
         Never,
+        TokenThenNever,
         Error,
     }
 
@@ -332,6 +343,10 @@ mod tests {
                     Ok("local".to_string())
                 }
                 FakeMode::Never => pending().await,
+                FakeMode::TokenThenNever => {
+                    control.emit_token("partial".to_string())?;
+                    pending().await
+                }
                 FakeMode::Error => Err(InferenceError::ProviderProtocol(
                     "controlled failure".to_string(),
                 )),
@@ -364,12 +379,21 @@ mod tests {
     }
 
     fn service(mode: FakeMode, request_timeout: Duration) -> Arc<InferenceService> {
+        service_with_concurrency(mode, request_timeout, MAX_CONCURRENT_REQUESTS)
+    }
+
+    fn service_with_concurrency(
+        mode: FakeMode,
+        request_timeout: Duration,
+        max_concurrent_requests: usize,
+    ) -> Arc<InferenceService> {
         Arc::new(
             InferenceService::new(
                 Arc::new(FakeProvider { mode }),
                 ModelResolver::from_bundled_registry().unwrap(),
                 ServiceLimits {
                     request_timeout,
+                    max_concurrent_requests,
                     ..ServiceLimits::default()
                 },
             )
@@ -430,6 +454,272 @@ mod tests {
             events.last(),
             Some(InferenceEvent::Cancelled { .. })
         ));
+    }
+
+    #[tokio::test]
+    async fn cancellation_during_queue_wait_never_reaches_the_provider() {
+        let service = service_with_concurrency(FakeMode::Never, Duration::from_secs(2), 1);
+        let held_permit = service.concurrency.clone().acquire_owned().await.unwrap();
+        let sink = Arc::new(RecordingSink::default());
+        let request = request();
+        let request_id = request.request_id.clone();
+        let task_service = service.clone();
+        let task_sink = sink.clone();
+        let task = tokio::spawn(async move { task_service.run(request, task_sink).await });
+
+        tokio::task::yield_now().await;
+        assert!(service.cancel(&request_id).unwrap());
+        assert_eq!(task.await.unwrap(), Err(InferenceError::Cancelled));
+        drop(held_permit);
+
+        let events = sink.0.lock().unwrap();
+        assert_eq!(events.iter().filter(|event| event.is_terminal()).count(), 1);
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event, InferenceEvent::Running { .. })));
+        assert!(matches!(
+            events.last(),
+            Some(InferenceEvent::Cancelled { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn timeout_during_queue_wait_never_reaches_the_provider() {
+        let service = service_with_concurrency(FakeMode::Never, Duration::from_millis(20), 1);
+        let held_permit = service.concurrency.clone().acquire_owned().await.unwrap();
+        let sink = Arc::new(RecordingSink::default());
+
+        assert_eq!(
+            service.run(request(), sink.clone()).await,
+            Err(InferenceError::TimedOut)
+        );
+        drop(held_permit);
+
+        let events = sink.0.lock().unwrap();
+        assert_eq!(events.iter().filter(|event| event.is_terminal()).count(), 1);
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event, InferenceEvent::Running { .. })));
+        assert!(matches!(
+            events.last(),
+            Some(InferenceEvent::TimedOut { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn cancellation_during_streaming_keeps_the_token_then_cancels_once() {
+        let service = service(FakeMode::TokenThenNever, Duration::from_secs(2));
+        let sink = Arc::new(RecordingSink::default());
+        let request = request();
+        let request_id = request.request_id.clone();
+        let task_service = service.clone();
+        let task_sink = sink.clone();
+        let task = tokio::spawn(async move { task_service.run(request, task_sink).await });
+
+        for _ in 0..100 {
+            if sink
+                .0
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|event| matches!(event, InferenceEvent::Token { .. }))
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(service.cancel(&request_id).unwrap());
+        assert_eq!(task.await.unwrap(), Err(InferenceError::Cancelled));
+
+        let events = sink.0.lock().unwrap();
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, InferenceEvent::Token { .. })));
+        assert_eq!(events.iter().filter(|event| event.is_terminal()).count(), 1);
+        assert!(matches!(
+            events.last(),
+            Some(InferenceEvent::Cancelled { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn timeout_during_streaming_is_the_only_terminal_event() {
+        let sink = Arc::new(RecordingSink::default());
+        assert_eq!(
+            service(FakeMode::TokenThenNever, Duration::from_millis(20))
+                .run(request(), sink.clone())
+                .await,
+            Err(InferenceError::TimedOut)
+        );
+        let events = sink.0.lock().unwrap();
+        assert!(events
+            .iter()
+            .any(|event| matches!(event, InferenceEvent::Token { .. })));
+        assert_eq!(events.iter().filter(|event| event.is_terminal()).count(), 1);
+        assert!(matches!(
+            events.last(),
+            Some(InferenceEvent::TimedOut { .. })
+        ));
+    }
+
+    struct CompletionRaceProvider {
+        token_emitted: Arc<Notify>,
+        release: Arc<Notify>,
+    }
+
+    #[async_trait]
+    impl InferenceProvider for CompletionRaceProvider {
+        fn provider_id(&self) -> &'static str {
+            "completion-race-local"
+        }
+
+        fn endpoint(&self) -> String {
+            "http://127.0.0.1:1/".to_string()
+        }
+
+        async fn health(&self) -> Result<ProviderHealth, InferenceError> {
+            unreachable!()
+        }
+
+        async fn list_installed_models(
+            &self,
+        ) -> Result<Vec<InstalledProviderModel>, InferenceError> {
+            unreachable!()
+        }
+
+        async fn prepare_model(&self, _: &str) -> Result<(), InferenceError> {
+            unreachable!()
+        }
+
+        async fn chat(
+            &self,
+            _: ProviderChatRequest,
+            control: RequestControl,
+        ) -> Result<String, InferenceError> {
+            control.emit_token("final".to_string())?;
+            self.token_emitted.notify_one();
+            self.release.notified().await;
+            Ok("final".to_string())
+        }
+    }
+
+    #[tokio::test]
+    async fn cancellation_after_final_token_suppresses_provider_completion() {
+        let token_emitted = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let service = Arc::new(
+            InferenceService::new(
+                Arc::new(CompletionRaceProvider {
+                    token_emitted: token_emitted.clone(),
+                    release: release.clone(),
+                }),
+                ModelResolver::from_bundled_registry().unwrap(),
+                ServiceLimits::default(),
+            )
+            .unwrap(),
+        );
+        let sink = Arc::new(RecordingSink::default());
+        let request = request();
+        let request_id = request.request_id.clone();
+        let task_service = service.clone();
+        let task_sink = sink.clone();
+        let task = tokio::spawn(async move { task_service.run(request, task_sink).await });
+
+        token_emitted.notified().await;
+        assert!(service.cancel(&request_id).unwrap());
+        release.notify_one();
+        assert_eq!(task.await.unwrap(), Err(InferenceError::Cancelled));
+
+        let events = sink.0.lock().unwrap();
+        assert_eq!(events.iter().filter(|event| event.is_terminal()).count(), 1);
+        assert!(matches!(
+            events.last(),
+            Some(InferenceEvent::Cancelled { .. })
+        ));
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event, InferenceEvent::Completed { .. })));
+    }
+
+    struct DelayedErrorProvider {
+        entered: Arc<Notify>,
+        release: Arc<Notify>,
+    }
+
+    #[async_trait]
+    impl InferenceProvider for DelayedErrorProvider {
+        fn provider_id(&self) -> &'static str {
+            "delayed-error-local"
+        }
+
+        fn endpoint(&self) -> String {
+            "http://127.0.0.1:1/".to_string()
+        }
+
+        async fn health(&self) -> Result<ProviderHealth, InferenceError> {
+            unreachable!()
+        }
+
+        async fn list_installed_models(
+            &self,
+        ) -> Result<Vec<InstalledProviderModel>, InferenceError> {
+            unreachable!()
+        }
+
+        async fn prepare_model(&self, _: &str) -> Result<(), InferenceError> {
+            unreachable!()
+        }
+
+        async fn chat(
+            &self,
+            _: ProviderChatRequest,
+            _: RequestControl,
+        ) -> Result<String, InferenceError> {
+            self.entered.notify_one();
+            self.release.notified().await;
+            Err(InferenceError::ProviderProtocol(
+                "controlled late provider failure".to_string(),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn timeout_suppresses_a_provider_error_released_after_the_deadline() {
+        let entered = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let service = Arc::new(
+            InferenceService::new(
+                Arc::new(DelayedErrorProvider {
+                    entered: entered.clone(),
+                    release: release.clone(),
+                }),
+                ModelResolver::from_bundled_registry().unwrap(),
+                ServiceLimits {
+                    request_timeout: Duration::from_millis(20),
+                    ..ServiceLimits::default()
+                },
+            )
+            .unwrap(),
+        );
+        let sink = Arc::new(RecordingSink::default());
+        let task_service = service.clone();
+        let task_sink = sink.clone();
+        let task = tokio::spawn(async move { task_service.run(request(), task_sink).await });
+
+        entered.notified().await;
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        release.notify_one();
+        assert_eq!(task.await.unwrap(), Err(InferenceError::TimedOut));
+
+        let events = sink.0.lock().unwrap();
+        assert_eq!(events.iter().filter(|event| event.is_terminal()).count(), 1);
+        assert!(matches!(
+            events.last(),
+            Some(InferenceEvent::TimedOut { .. })
+        ));
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event, InferenceEvent::Failed { .. })));
     }
 
     #[tokio::test]
@@ -501,6 +791,80 @@ mod tests {
                 ModelResolver::from_bundled_registry().unwrap(),
                 ServiceLimits::default(),
             ),
+            Err(InferenceError::PolicyViolation(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn local_endpoint_is_revalidated_before_each_provider_boundary() {
+        struct MutableEndpointProvider {
+            remote: AtomicBool,
+        }
+
+        #[async_trait]
+        impl InferenceProvider for MutableEndpointProvider {
+            fn provider_id(&self) -> &'static str {
+                "mutable-local"
+            }
+
+            fn endpoint(&self) -> String {
+                if self.remote.load(Ordering::SeqCst) {
+                    "https://example.com/".to_string()
+                } else {
+                    "http://127.0.0.1:1/".to_string()
+                }
+            }
+
+            async fn health(&self) -> Result<ProviderHealth, InferenceError> {
+                unreachable!()
+            }
+
+            async fn list_installed_models(
+                &self,
+            ) -> Result<Vec<InstalledProviderModel>, InferenceError> {
+                unreachable!()
+            }
+
+            async fn prepare_model(&self, _: &str) -> Result<(), InferenceError> {
+                unreachable!()
+            }
+
+            async fn chat(
+                &self,
+                _: ProviderChatRequest,
+                _: RequestControl,
+            ) -> Result<String, InferenceError> {
+                unreachable!()
+            }
+        }
+
+        let provider = Arc::new(MutableEndpointProvider {
+            remote: AtomicBool::new(false),
+        });
+        let service = InferenceService::new(
+            provider.clone(),
+            ModelResolver::from_bundled_registry().unwrap(),
+            ServiceLimits::default(),
+        )
+        .unwrap();
+        provider.remote.store(true, Ordering::SeqCst);
+
+        assert!(matches!(
+            service.status().await,
+            Err(InferenceError::PolicyViolation(_))
+        ));
+        assert!(matches!(
+            service.models().await,
+            Err(InferenceError::PolicyViolation(_))
+        ));
+        assert!(matches!(
+            service.prepare_model("qwen35-2b-stable").await,
+            Err(InferenceError::PolicyViolation(_))
+        ));
+        assert!(matches!(
+            service
+                .run(request(), Arc::new(RecordingSink::default()))
+                .await,
             Err(InferenceError::PolicyViolation(_))
         ));
     }

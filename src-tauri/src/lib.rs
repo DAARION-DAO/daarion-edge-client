@@ -1,37 +1,37 @@
-mod identity;
-mod registry_client;
-mod enrollment;
-mod heartbeat;
-mod backend_health;
-mod config;
-mod pairing;
-mod capabilities;
-mod messaging;
-mod worker;
-mod models;
-mod trust;
-mod observability;
-mod authorities;
 mod agents;
-mod districts;
-mod market;
-mod evolution;
+mod authorities;
+mod backend_health;
+mod capabilities;
+mod config;
 mod coordination;
-mod intelligence;
-mod metacognition;
+mod districts;
+mod enrollment;
+mod evolution;
 mod genesis;
-mod provisioning;
-mod reset;
+mod heartbeat;
+mod identity;
 mod inference;
+mod intelligence;
+mod market;
+mod messaging;
+mod metacognition;
+mod models;
+mod observability;
+mod pairing;
+mod provisioning;
+mod registry_client;
+mod reset;
+mod trust;
+mod worker;
 
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tauri::Manager;
-#[cfg(desktop)]
-use tauri::tray::{TrayIconBuilder, MouseButton, MouseButtonState, TrayIconEvent};
 use backend_health::BackendHealthManager;
 use heartbeat::{HeartbeatManager, HeartbeatStatus};
 use messaging::MessagingState;
+use std::sync::Arc;
+#[cfg(desktop)]
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::Manager;
+use tokio::sync::Mutex;
 
 // ── Boot Logging ──────────────────────────────────────────────────────────────
 // Durable file-based logging for release builds where windows_subsystem = "windows"
@@ -60,22 +60,26 @@ fn boot_log(msg: &str) {
     let dir = boot_log_path();
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("boot.log");
-    
+
     let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S%.3f UTC");
     let line = format!("[{}] {}\n", timestamp, msg);
-    
+
     // Append to log file
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
         let _ = f.write_all(line.as_bytes());
     }
-    
+
     // Also print to stdout for dev/debug builds
     print!("{}", line);
 }
 
 fn show_fatal_error(message: &str) {
     boot_log(&format!("FATAL: {}", message));
-    
+
     // On Windows release builds, stdout is invisible. Show a native dialog.
     #[cfg(target_os = "windows")]
     {
@@ -101,23 +105,25 @@ pub fn run() {
     boot_log(&format!("Version: {}", env!("CARGO_PKG_VERSION")));
     boot_log(&format!("OS: {}", std::env::consts::OS));
     boot_log(&format!("Arch: {}", std::env::consts::ARCH));
-    
+
     boot_log("Initializing Tauri builder...");
-    
+
     let inference_state = match inference::commands::InferenceRuntimeState::new_default() {
         Ok(state) => state,
         Err(error) => {
-            show_fatal_error(&format!("Local inference runtime initialization failed: {error}"));
+            show_fatal_error(&format!(
+                "Local inference runtime initialization failed: {error}"
+            ));
             return;
         }
     };
 
     let builder = tauri::Builder::default();
     boot_log("  Tauri builder created");
-    
+
     let builder = builder.plugin(tauri_plugin_opener::init());
     boot_log("  Plugin: opener initialized");
-    
+
     boot_log("  Managing state: HeartbeatManager, BackendHealthManager, MessagingState, WorkerModeState, InferenceRuntimeState");
     let builder = builder
         .manage(HeartbeatManager {
@@ -127,58 +133,58 @@ pub fn run() {
         .manage(Arc::new(MessagingState::new()))
         .manage(Mutex::new(crate::worker::WorkerModeState::default()))
         .manage(inference_state);
-    
+
     boot_log("  Registering invoke handlers...");
     let builder = builder.invoke_handler(tauri::generate_handler![
-            greet,
-            identity::get_identity_status,
-            identity::initialize_identity,
-            config::get_backend_config_status,
-            backend_health::get_backend_health_status,
-            backend_health::check_backend_health,
-            pairing::get_pairing_status,
-            pairing::pair_backend,
-            pairing::unpair_backend,
-            enrollment::get_enrollment_status,
-            enrollment::enroll_node,
-            enrollment::sync_capabilities,
-            heartbeat::get_heartbeat_status,
-            capabilities::get_capabilities,
-            capabilities::get_device_capability_profile,
-            messaging::get_messaging_status,
-            messaging::bootstrap_messaging,
-            messaging::send_node_message,
-            messaging::get_node_messages,
-            messaging::reconnect_messaging,
-            models::sync_registry,
-            models::get_residency_score,
-            inference::commands::get_local_inference_status,
-            inference::commands::list_inference_models,
-            inference::commands::prepare_local_model,
-            inference::commands::run_local_inference,
-            inference::commands::cancel_local_inference,
-            inference::commands::run_local_inference_smoke,
-            genesis::generate_wallet_keys,
-            genesis::record_voice_imprint,
-            provisioning::check_beta_slots,
-            provisioning::provision_sovereign_genesis,
-            provisioning::register_creator_profile,
-            reset::factory_reset_local_state,
-            trust::hardware_evidence::submit_evidence_handshake,
-            crate::worker::toggle_worker_mode,
-            crate::worker::get_worker_mode,
-            crate::worker::onboarding::check_environment,
-            crate::worker::onboarding::check_operator_approval,
-            crate::worker::onboarding::activate_octelium_tunnel,
-            crate::worker::onboarding::enable_wsl_windows,
-        ]);
+        greet,
+        identity::get_identity_status,
+        identity::initialize_identity,
+        config::get_backend_config_status,
+        backend_health::get_backend_health_status,
+        backend_health::check_backend_health,
+        pairing::get_pairing_status,
+        pairing::pair_backend,
+        pairing::unpair_backend,
+        enrollment::get_enrollment_status,
+        enrollment::enroll_node,
+        enrollment::sync_capabilities,
+        heartbeat::get_heartbeat_status,
+        capabilities::get_capabilities,
+        capabilities::get_device_capability_profile,
+        messaging::get_messaging_status,
+        messaging::bootstrap_messaging,
+        messaging::send_node_message,
+        messaging::get_node_messages,
+        messaging::reconnect_messaging,
+        models::sync_registry,
+        models::get_residency_score,
+        inference::commands::get_local_inference_status,
+        inference::commands::list_inference_models,
+        inference::commands::prepare_local_model,
+        inference::commands::run_local_inference,
+        inference::commands::cancel_local_inference,
+        inference::commands::run_local_inference_smoke,
+        genesis::generate_wallet_keys,
+        genesis::record_voice_imprint,
+        provisioning::check_beta_slots,
+        provisioning::provision_sovereign_genesis,
+        provisioning::register_creator_profile,
+        reset::factory_reset_local_state,
+        trust::hardware_evidence::submit_evidence_handshake,
+        crate::worker::toggle_worker_mode,
+        crate::worker::get_worker_mode,
+        crate::worker::onboarding::check_environment,
+        crate::worker::onboarding::check_operator_approval,
+        crate::worker::onboarding::activate_octelium_tunnel,
+        crate::worker::onboarding::enable_wsl_windows,
+    ]);
     boot_log("  Invoke handlers registered");
-    
+
     boot_log("  Configuring setup()...");
     let builder = builder.setup(|app| {
             boot_log("  setup() entered");
             let handle = app.handle().clone();
-            
+
             // Add System Tray Supervisor Path
             #[cfg(desktop)]
             {
@@ -218,19 +224,19 @@ pub fn run() {
             boot_log("  Starting heartbeat loop...");
             heartbeat::start_heartbeat_loop(handle.clone());
             boot_log("  Heartbeat loop started");
-            
+
             // Start Worker Runtime (Data Plane) — only if user previously opted in.
             // Load persisted opt-in intent (not runtime state).
             let user_opted_in = worker::load_worker_optin(&handle);
             boot_log(&format!("  Worker opt-in loaded: {}", user_opted_in));
-            
+
             // Update in-memory state to reflect persisted intent
             let worker_state = app.state::<Mutex<crate::worker::WorkerModeState>>();
             {
                 let mut state = worker_state.blocking_lock();
                 state.opted_in = user_opted_in;
             }
-            
+
             if user_opted_in {
                 // Check if relay is actually configured before starting the loop
                 match crate::config::resolve_relay_endpoint() {
@@ -256,9 +262,9 @@ pub fn run() {
             boot_log("  setup() completed successfully");
             Ok(())
         });
-    
+
     boot_log("Running Tauri application...");
-    
+
     match builder.run(tauri::generate_context!()) {
         Ok(()) => {
             boot_log("Tauri application exited cleanly");
