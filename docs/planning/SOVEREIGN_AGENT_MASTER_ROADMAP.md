@@ -95,7 +95,7 @@ Numbers are reservations for planning, not accepted decisions.
 
 ## Current gate
 
-- Baseline documentation: pending Phase 00 release-gate completion.
-- Phase 1A: `CONDITIONAL_GO` to a separate plan and human review only.
+- Baseline documentation: adopted with the limitations recorded in the Phase 00 completion report.
+- Phase 1A: implementation candidate is `CONDITIONAL_PASS`. Scoped runtime, security, contract and build checks pass, but repository-wide `cargo fmt --check` still fails on pre-existing formatting debt and human diff/security acceptance is pending. This status does not authorize merge.
 - Phase 1B and later: `NO_GO`.
 - Production readiness: `NO_GO`.

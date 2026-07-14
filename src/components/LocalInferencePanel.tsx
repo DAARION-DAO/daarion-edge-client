@@ -1,309 +1,321 @@
-import { useState, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import { Send, Loader2, Sparkles, Clock, Cpu, MessageSquare, AlertCircle, TerminalSquare } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  Cpu,
+  Loader2,
+  MessageSquare,
+  RefreshCw,
+  Send,
+  Sparkles,
+  Square,
+  TerminalSquare,
+} from "lucide-react";
+import {
+  cancelLocalInference,
+  getLocalInferenceStatus,
+  listInferenceModels,
+  listenForInferenceEvents,
+  prepareLocalModel,
+  runLocalInference,
+  type ChatMessage,
+  type InferenceEvent,
+  type InferenceModelSummary,
+  type InferenceResponse,
+  type InferenceStatus,
+} from "../lib/inferenceClient";
 
-interface ChatMessage {
-  role: string;
-  content: string;
-}
+type RuntimeState =
+  | "checking"
+  | "unavailable"
+  | "model_missing"
+  | "ready"
+  | "running"
+  | "cancelling"
+  | "cancelled"
+  | "timed_out"
+  | "failed"
+  | "completed_locally";
 
-interface LocalInferenceRequest {
-  request_id: string;
-  model_id: string;
-  messages: ChatMessage[];
-  max_tokens: number;
-  temperature: number;
-  stream: boolean;
-}
-
-
-
-interface LocalInferenceResponse {
-  request_id: string;
-  status: string;
-  model_id: string;
-  runtime: string;
-  latency_ms: number;
-  output_text: string;
-}
-
-interface ModelRegistryEntry {
-  model_id: string;
-  name: string;
-}
+const stateLabels: Record<RuntimeState, string> = {
+  checking: "Checking local provider",
+  unavailable: "Local provider unavailable",
+  model_missing: "Model not installed",
+  ready: "Ready for local inference",
+  running: "Running locally",
+  cancelling: "Cancelling",
+  cancelled: "Cancelled",
+  timed_out: "Timed out",
+  failed: "Failed",
+  completed_locally: "Completed locally",
+};
 
 export function LocalInferencePanel() {
-  const [models, setModels] = useState<ModelRegistryEntry[]>([]);
+  const [models, setModels] = useState<InferenceModelSummary[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
+  const [providerStatus, setProviderStatus] = useState<InferenceStatus | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [prompt, setPrompt] = useState("");
-  const [sessionState, setSessionState] = useState<"Idle" | "Queued" | "LoadingModel" | "Running" | "RoutingToNetwork" | "Done" | "Failed">("Idle");
-  const [response, setResponse] = useState<LocalInferenceResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [runtimeState, setRuntimeState] = useState<RuntimeState>("checking");
+  const [response, setResponse] = useState<InferenceResponse | null>(null);
   const [streamingText, setStreamingText] = useState("");
-  
+  const [error, setError] = useState<string | null>(null);
+  const [isPreparing, setIsPreparing] = useState(false);
+  const activeRequestId = useRef<string | null>(null);
+  const runtimeStateRef = useRef<RuntimeState>("checking");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll chat
+  function transition(next: RuntimeState) {
+    runtimeStateRef.current = next;
+    setRuntimeState(next);
+  }
+
+  async function refresh() {
+    transition("checking");
+    setError(null);
+    try {
+      const [status, registryModels] = await Promise.all([
+        getLocalInferenceStatus(),
+        listInferenceModels(),
+      ]);
+      setProviderStatus(status);
+      setModels(registryModels);
+      const preferred =
+        registryModels.find((model) => model.installed)?.canonical_model_id ??
+        registryModels[0]?.canonical_model_id ??
+        "";
+      setSelectedModel((current) =>
+        registryModels.some((model) => model.canonical_model_id === current)
+          ? current
+          : preferred,
+      );
+      if (!status.available) {
+        transition("unavailable");
+      } else if (!registryModels.some((model) => model.installed)) {
+        transition("model_missing");
+      } else {
+        transition("ready");
+      }
+    } catch (reason) {
+      setError(String(reason));
+      transition("failed");
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+    const unlisten = listenForInferenceEvents(handleInferenceEvent);
+    return () => {
+      unlisten.then((stop) => stop());
+    };
+  }, []);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingText]);
 
-  useEffect(() => {
-    async function fetchModels() {
-      try {
-        const res = await invoke<string[]>("list_local_models");
-        setModels(res.map(t => ({ model_id: t, name: t })));
-        if (res.length > 0) setSelectedModel(res[0]);
-      } catch (e) {
-        console.error(e);
-      }
+  function handleInferenceEvent(event: InferenceEvent) {
+    if (event.request_id !== activeRequestId.current) return;
+    switch (event.kind) {
+      case "running":
+        transition("running");
+        break;
+      case "token":
+        setStreamingText((current) => current + event.content);
+        break;
+      case "cancelled":
+        transition("cancelled");
+        setStreamingText("");
+        break;
+      case "timed_out":
+        transition("timed_out");
+        setStreamingText("");
+        setError("The bounded local inference deadline was reached.");
+        break;
+      case "failed":
+        transition("failed");
+        setStreamingText("");
+        setError(event.error);
+        break;
+      case "completed":
+        transition("completed_locally");
+        break;
+      case "started":
+        break;
     }
-    fetchModels();
+  }
 
-    const unlistenStatus = listen<{ request_id: string; state: string; result?: any; reason?: string }>(
-      "inference-session-update",
-      (event) => {
-        setSessionState(event.payload.state as any);
-        if (event.payload.state === "Done" && event.payload.result) {
-          const finalResult = event.payload.result as LocalInferenceResponse;
-          setResponse(finalResult);
-          setIsLoading(false);
-          setMessages(prev => [...prev, { role: "assistant", content: finalResult.output_text }]);
-          setStreamingText(""); // Clear streaming state
-        } else if (event.payload.state === "Failed") {
-            setError(event.payload.reason || "Inference failed");
-            setIsLoading(false);
-            setStreamingText("");
-        }
-      }
-    );
+  const selected = models.find((model) => model.canonical_model_id === selectedModel);
+  const busy = isPreparing || runtimeState === "running" || runtimeState === "cancelling";
 
-    // Used if returning tokens explicitly via another event.
-    // In our backend we emit direct tokens as "inference-token-stream"
-    const unlistenTokenStream = listen<{ request_id: string, token: string }>(
-        "inference-token-stream",
-        (event) => {
-            setStreamingText(prev => prev + event.payload.token);
-        }
-    );
-
-    return () => {
-      unlistenStatus.then(f => f());
-      unlistenTokenStream.then(f => f());
-    };
-  }, []);
+  async function handlePrepare() {
+    if (!selectedModel || !providerStatus?.available) return;
+    setIsPreparing(true);
+    transition("checking");
+    setError(null);
+    try {
+      await prepareLocalModel(selectedModel);
+      await refresh();
+    } catch (reason) {
+      setError(String(reason));
+      transition("failed");
+    } finally {
+      setIsPreparing(false);
+    }
+  }
 
   async function handleSend() {
-    if (!prompt.trim() || !selectedModel) return;
-
-    const userMsg = { role: "user", content: prompt };
-    const newHistory = [...messages, userMsg];
-    setMessages(newHistory);
+    if (!prompt.trim() || !selected?.installed || busy) return;
+    const userMessage: ChatMessage = { role: "user", content: prompt.trim() };
+    const history = [...messages, userMessage];
+    const requestId = crypto.randomUUID();
+    setMessages(history);
     setPrompt("");
-
     setError(null);
     setResponse(null);
     setStreamingText("");
-    setSessionState("Queued");
-    setIsLoading(true);
-
-    // Context budget: Last 10 messages max
-    const trimmedMessages = newHistory.slice(-10);
-
-    const request: LocalInferenceRequest = {
-      request_id: crypto.randomUUID(),
-      model_id: selectedModel,
-      messages: trimmedMessages,
-      max_tokens: 2048,
-      temperature: 0.7,
-      stream: true
-    };
+    activeRequestId.current = requestId;
+    transition("running");
 
     try {
-      await invoke("run_chat", { request });
-    } catch (e) {
-      setError(String(e));
-      setIsLoading(false);
-      setSessionState("Idle");
+      const result = await runLocalInference({
+        request_id: requestId,
+        canonical_model_id: selected.canonical_model_id,
+        messages: history.slice(-10),
+        max_tokens: 2048,
+        temperature: 0.7,
+        stream: true,
+      });
+      if (activeRequestId.current === requestId) {
+        setResponse(result);
+        setMessages((current) => [
+          ...current,
+          { role: "assistant", content: result.output_text },
+        ]);
+        setStreamingText("");
+        transition("completed_locally");
+      }
+    } catch (reason) {
+      if (
+        activeRequestId.current === requestId &&
+        runtimeStateRef.current !== "cancelled" &&
+        runtimeStateRef.current !== "timed_out"
+      ) {
+        setError(String(reason));
+        setStreamingText("");
+        transition("failed");
+      }
+    } finally {
+      if (activeRequestId.current === requestId) activeRequestId.current = null;
+    }
+  }
+
+  async function handleCancel() {
+    const requestId = activeRequestId.current;
+    if (!requestId || runtimeState !== "running") return;
+    transition("cancelling");
+    try {
+      const accepted = await cancelLocalInference(requestId);
+      if (!accepted && activeRequestId.current === requestId) {
+        setError("The request was no longer active.");
+        transition("failed");
+      }
+    } catch (reason) {
+      setError(String(reason));
+      transition("failed");
     }
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto h-[85vh] flex flex-col">
-      <header className="flex justify-between items-center shrink-0">
+    <div className="mx-auto flex h-[85vh] max-w-5xl flex-col gap-6">
+      <header className="flex shrink-0 items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-black tracking-tight text-white/90">Agent Orchestration Shell</h2>
-          <p className="text-[10px] text-white/30 uppercase font-black tracking-widest mt-1 text-emerald-400">Local Tier 2 Runtime Active</p>
+          <h2 className="text-xl font-black tracking-tight text-white/90">Local Inference</h2>
+          <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-emerald-400">
+            Local-only policy · no remote fallback
+          </p>
         </div>
-        {models.length > 0 && (
-            <div className="flex items-center gap-3">
-              <span className="text-[9px] uppercase font-black text-white/20 tracking-widest">Active Model</span>
-              <select 
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-lg px-3 py-1.5 text-[10px] font-bold focus:border-emerald-500 outline-none uppercase"
-               >
-                  {models.map(m => <option key={m.model_id} value={m.model_id}>{m.name}</option>)}
-               </select>
-            </div>
-        )}
+        <button onClick={() => void refresh()} disabled={busy} className="rounded-lg border border-white/10 p-2 text-white/50 hover:text-white disabled:opacity-30" aria-label="Refresh local inference status">
+          <RefreshCw size={16} className={runtimeState === "checking" ? "animate-spin" : ""} />
+        </button>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-0">
-        
-        {/* Main Chat Interface (8 Cols) */}
-        <div className="lg:col-span-8 flex flex-col glass rounded-2xl border-white/5 overflow-hidden">
-          {/* Chat History */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-             {messages.length === 0 && !streamingText && (
-                <div className="h-full flex flex-col items-center justify-center text-white/10">
-                   <TerminalSquare size={48} className="mb-4 opacity-20" />
-                   <p className="text-sm font-bold uppercase tracking-widest mb-1">Local Inference Shell</p>
-                   <p className="text-[10px] uppercase font-black tracking-widest text-emerald-400/30 text-center max-w-xs">Zero-latency private execution via {selectedModel || 'local engine'}</p>
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-6 lg:grid-cols-12">
+        <div className="glass flex flex-col overflow-hidden rounded-2xl border-white/5 lg:col-span-8">
+          <div className="flex-1 space-y-6 overflow-y-auto p-6">
+            {messages.length === 0 && !streamingText && (
+              <div className="flex h-full flex-col items-center justify-center text-white/10">
+                <TerminalSquare size={48} className="mb-4 opacity-20" />
+                <p className="text-sm font-bold uppercase tracking-widest">Bounded local chat</p>
+                <p className="mt-2 max-w-sm text-center text-[10px] uppercase tracking-widest text-white/25">
+                  Requests are accepted only for canonical models mapped to the loopback Ollama provider.
+                </p>
+              </div>
+            )}
+            {messages.map((message, index) => (
+              <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[85%] rounded-2xl border p-4 text-sm leading-relaxed ${message.role === "user" ? "rounded-br-sm border-blue-500/20 bg-blue-600/20 text-blue-100" : "rounded-bl-sm border-white/10 bg-white/5 text-white/90"}`}>
+                  {message.role === "assistant" && <Sparkles size={12} className="mb-2 text-emerald-400" />}
+                  <div className="whitespace-pre-wrap">{message.content}</div>
                 </div>
-             )}
-             
-             {messages.map((m, i) => (
-                <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                   <div className={`max-w-[85%] p-4 rounded-2xl ${
-                      m.role === 'user' 
-                      ? 'bg-blue-600/20 border border-blue-500/20 text-blue-100 rounded-br-sm' 
-                      : 'bg-white/5 border border-white/10 text-white/90 rounded-bl-sm font-light'
-                   }`}>
-                      {m.role === 'assistant' && (
-                         <div className="flex items-center gap-2 mb-2 text-emerald-400">
-                            <Sparkles size={12} />
-                            <span className="text-[8px] font-black uppercase tracking-widest">DAARION Edge</span>
-                         </div>
-                      )}
-                      <div className="whitespace-pre-wrap text-sm leading-relaxed">{m.content}</div>
-                   </div>
+              </div>
+            ))}
+            {streamingText && (
+              <div className="flex justify-start">
+                <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-white/10 bg-white/5 p-4 text-sm text-white/90">
+                  <div className="whitespace-pre-wrap">{streamingText}<span className="ml-1 inline-block h-3 w-1.5 animate-pulse bg-emerald-400" /></div>
                 </div>
-             ))}
-
-             {streamingText && (
-                <div className="flex justify-start">
-                   <div className="max-w-[85%] p-4 rounded-2xl bg-white/5 border border-white/10 text-white/90 rounded-bl-sm font-light">
-                      <div className="flex items-center gap-2 mb-2 text-emerald-400 animate-pulse">
-                         <Sparkles size={12} />
-                         <span className="text-[8px] font-black uppercase tracking-widest">Generating Locally...</span>
-                      </div>
-                      <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                         {streamingText}<span className="inline-block w-1.5 h-3 ml-1 bg-emerald-400 animate-pulse" />
-                      </div>
-                   </div>
-                </div>
-             )}
-
-             {error && (
-                <div className="flex justify-center my-4">
-                   <div className="px-4 py-2 bg-red-500/10 border border-red-500/20 text-red-400 rounded-full text-xs font-bold flex items-center gap-2">
-                      <AlertCircle size={14} /> {error}
-                   </div>
-                </div>
-             )}
-             
-             <div ref={chatEndRef} />
+              </div>
+            )}
+            {error && <div className="flex items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs text-red-300"><AlertCircle size={14} />{error}</div>}
+            <div ref={chatEndRef} />
           </div>
 
-          {/* Input Box */}
-          <div className="p-4 bg-white/[0.01] border-t border-white/5 shrink-0">
-             <div className="relative flex items-end gap-2 bg-black/40 border border-white/10 rounded-xl px-4 py-3 focus-within:border-emerald-500/40 focus-within:ring-1 focus-within:ring-emerald-500/20 transition-all">
-               <textarea 
-                 value={prompt}
-                 onChange={(e) => setPrompt(e.target.value)}
-                 onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                       e.preventDefault();
-                       handleSend();
-                    }
-                 }}
-                 placeholder="Communicate directly with the local DAARION edge runtime..."
-                 className="w-full bg-transparent text-sm focus:outline-none min-h-[40px] max-h-[160px] resize-none placeholder:text-white/20 text-white leading-relaxed"
-               />
-               <button 
-                 onClick={handleSend}
-                 disabled={isLoading || !prompt.trim() || !selectedModel}
-                 className={`p-2 rounded-lg transition-all shrink-0 ${
-                   isLoading || !prompt.trim() || !selectedModel
-                   ? 'bg-white/5 text-white/20' 
-                   : 'bg-emerald-500 text-black hover:bg-emerald-400 shadow-lg shadow-emerald-900/20'
-                 }`}
-               >
-                 {isLoading ? <Loader2 size={18} className="animate-spin text-emerald-500" /> : <Send size={18} />}
-               </button>
-             </div>
-             <p className="text-center mt-2 text-[9px] font-bold text-white/20 uppercase tracking-widest hidden md:block">
-                Shift + Enter for new line • Local execution ensures complete data sovereignty
-             </p>
+          <div className="shrink-0 border-t border-white/5 bg-white/[0.01] p-4">
+            {providerStatus?.available && selected && !selected.installed && (
+              <button onClick={() => void handlePrepare()} disabled={busy} className="mb-3 w-full rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs font-bold text-amber-300 disabled:opacity-40">
+                Install {selected.canonical_model_id} through local Ollama
+              </button>
+            )}
+            <div className="flex items-end gap-2 rounded-xl border border-white/10 bg-black/40 px-4 py-3 focus-within:border-emerald-500/40">
+              <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} disabled={!selected?.installed || busy} placeholder={selected?.installed ? "Ask the local model…" : "Select and install a local model first"} className="max-h-[160px] min-h-[40px] w-full resize-none bg-transparent text-sm text-white outline-none placeholder:text-white/20 disabled:opacity-40" />
+              {isPreparing ? (
+                <button disabled className="shrink-0 rounded-lg bg-amber-500/10 p-2 text-amber-300" aria-label="Preparing local model">
+                  <Loader2 size={18} className="animate-spin" />
+                </button>
+              ) : busy ? (
+                <button onClick={() => void handleCancel()} disabled={runtimeState === "cancelling"} className="shrink-0 rounded-lg bg-red-500/20 p-2 text-red-300 disabled:opacity-40" aria-label="Cancel local inference">
+                  {runtimeState === "cancelling" ? <Loader2 size={18} className="animate-spin" /> : <Square size={18} />}
+                </button>
+              ) : (
+                <button onClick={() => void handleSend()} disabled={!prompt.trim() || !selected?.installed} className="shrink-0 rounded-lg bg-emerald-500 p-2 text-black disabled:bg-white/5 disabled:text-white/20" aria-label="Run local inference"><Send size={18} /></button>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Right: Telemetry (4 cols) */}
-        <div className="lg:col-span-4 space-y-4 overflow-y-auto">
-          <div className="glass p-5 border-white/5 rounded-2xl">
-             <h3 className="text-[10px] text-white/20 font-black uppercase tracking-widest mb-5">Inference Telemetry</h3>
-             
-             <div className="space-y-5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold text-white/40 uppercase">State</span>
-                  <div className="flex items-center gap-2">
-                    {sessionState !== "Idle" && <div className={`w-1.5 h-1.5 rounded-full ${sessionState === 'Done' ? 'bg-emerald-500' : 'bg-emerald-400 animate-pulse'}`} />}
-                    <span className={`text-[9px] font-black uppercase tracking-widest ${sessionState === 'Done' ? 'text-emerald-400' : sessionState === 'Idle' ? 'text-white/20' : 'text-emerald-300'}`}>{sessionState}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                   <div className="flex justify-between text-[9px] font-bold text-white/40 uppercase mb-1 tracking-widest">
-                      <span>Pipeline Progress</span>
-                      <span className="text-white/20">
-                         {sessionState === "Idle" ? "0%" : sessionState === "Queued" ? "10%" : (sessionState === "LoadingModel") ? "40%" : sessionState === "Running" ? "80%" : "100%"}
-                      </span>
-                   </div>
-                   <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-                      <div className={`h-full bg-emerald-500 transition-all duration-700 ${
-                        sessionState === "Idle" ? "w-0" : 
-                        sessionState === "Queued" ? "w-[10%]" : 
-                        (sessionState === "LoadingModel") ? "w-[40%]" : 
-                        sessionState === "Running" ? "w-[80%]" : "w-full"
-                      }`} />
-                   </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 pt-4 border-t border-white/5">
-                   <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-center">
-                      <div className="flex items-center gap-1 mb-1">
-                         <Clock size={10} className="text-white/30" />
-                         <span className="text-[8px] text-white/30 uppercase font-black tracking-widest">Latency</span>
-                      </div>
-                      <span className="text-xs font-mono font-bold text-white/70">{response?.latency_ms || '---'} <span className="text-[9px] text-white/30">ms</span></span>
-                   </div>
-                   <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-center">
-                      <div className="flex items-center gap-1 mb-1">
-                         <Cpu size={10} className="text-white/30" />
-                         <span className="text-[8px] text-white/30 uppercase font-black tracking-widest">Runtime</span>
-                      </div>
-                      <span className="text-[10px] font-mono font-bold text-white/70 line-clamp-1">{response?.runtime || '---'}</span>
-                   </div>
-                </div>
-             </div>
+        <aside className="space-y-4 overflow-y-auto lg:col-span-4">
+          <div className="glass rounded-2xl border-white/5 p-5">
+            <h3 className="mb-5 text-[10px] font-black uppercase tracking-widest text-white/25">Verified runtime state</h3>
+            <div className="space-y-4 text-xs">
+              <div className="flex items-center justify-between gap-3"><span className="text-white/40">State</span><span className="text-right font-bold text-emerald-300">{stateLabels[runtimeState]}</span></div>
+              <div className="flex items-center justify-between gap-3"><span className="text-white/40">Provider</span><span className="font-mono text-white/70">{providerStatus?.provider_id ?? "—"}</span></div>
+              <div className="flex items-center justify-between gap-3"><span className="text-white/40">Policy</span><span className="font-mono text-white/70">local_only</span></div>
+              <div className="border-t border-white/5 pt-4">
+                <select value={selectedModel} onChange={(event) => { setSelectedModel(event.target.value); const next = models.find((model) => model.canonical_model_id === event.target.value); if (providerStatus?.available) transition(next?.installed ? "ready" : "model_missing"); }} disabled={busy || models.length === 0} className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[10px] text-white/70">
+                  {models.map((model) => <option key={model.canonical_model_id} value={model.canonical_model_id}>{model.canonical_model_id}{model.installed ? " · installed" : " · missing"}</option>)}
+                </select>
+              </div>
+              {response && <div className="grid grid-cols-2 gap-2 border-t border-white/5 pt-4"><div className="rounded-xl border border-white/5 p-3"><Clock size={11} className="mb-1 text-white/30" /><span className="font-mono text-white/70">{response.latency_ms} ms</span></div><div className="rounded-xl border border-white/5 p-3"><Cpu size={11} className="mb-1 text-white/30" /><span className="font-mono text-white/70">{response.provider_id}</span></div></div>}
+            </div>
           </div>
-
-          <div className="p-5 bg-emerald-500/[0.03] border border-emerald-500/10 rounded-2xl flex flex-col gap-3">
-             <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
-                   <MessageSquare size={16} />
-                </div>
-                <h4 className="text-[10px] font-black uppercase text-emerald-400 tracking-widest">Privacy Guarantee</h4>
-             </div>
-             <p className="text-[11px] text-white/40 leading-relaxed font-medium">
-               Active interaction is executed 100% locally through the Host APU/GPU. Zero network transmission. Native context window trimming limits absolute history to recent turns.
-             </p>
+          <div className="rounded-2xl border border-emerald-500/10 bg-emerald-500/[0.03] p-5">
+            <div className="mb-3 flex items-center gap-3 text-emerald-400"><MessageSquare size={16} /><h4 className="text-[10px] font-black uppercase tracking-widest">Local-only boundary</h4></div>
+            <p className="text-[11px] leading-relaxed text-white/45">Inference traffic is restricted to an HTTP loopback origin. Redirects, system proxies, remote endpoints, and silent fallback are disabled.</p>
+            {runtimeState === "completed_locally" && <div className="mt-3 flex items-center gap-2 text-[10px] text-emerald-300"><CheckCircle size={13} />Completed by the local provider</div>}
           </div>
-        </div>
+        </aside>
       </div>
     </div>
   );

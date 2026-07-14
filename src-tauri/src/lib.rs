@@ -22,6 +22,7 @@ mod metacognition;
 mod genesis;
 mod provisioning;
 mod reset;
+mod inference;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -103,23 +104,29 @@ pub fn run() {
     
     boot_log("Initializing Tauri builder...");
     
+    let inference_state = match inference::commands::InferenceRuntimeState::new_default() {
+        Ok(state) => state,
+        Err(error) => {
+            show_fatal_error(&format!("Local inference runtime initialization failed: {error}"));
+            return;
+        }
+    };
+
     let builder = tauri::Builder::default();
     boot_log("  Tauri builder created");
     
     let builder = builder.plugin(tauri_plugin_opener::init());
     boot_log("  Plugin: opener initialized");
     
-    let builder = builder.plugin(tauri_plugin_shell::init());
-    boot_log("  Plugin: shell initialized");
-    
-    boot_log("  Managing state: HeartbeatManager, BackendHealthManager, MessagingState, WorkerModeState");
+    boot_log("  Managing state: HeartbeatManager, BackendHealthManager, MessagingState, WorkerModeState, InferenceRuntimeState");
     let builder = builder
         .manage(HeartbeatManager {
             status: Arc::new(Mutex::new(HeartbeatStatus::default())),
         })
         .manage(BackendHealthManager::default())
         .manage(Arc::new(MessagingState::new()))
-        .manage(Mutex::new(crate::worker::WorkerModeState::default()));
+        .manage(Mutex::new(crate::worker::WorkerModeState::default()))
+        .manage(inference_state);
     
     boot_log("  Registering invoke handlers...");
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -144,16 +151,13 @@ pub fn run() {
             messaging::get_node_messages,
             messaging::reconnect_messaging,
             models::sync_registry,
-            models::detect_ollama,
-            models::get_ollama_status,
-            models::list_local_models,
-            models::pull_model,
-            models::run_smoke_inference,
-            models::download_model,
-            models::load_model,
-            models::unload_model,
             models::get_residency_score,
-            models::run_local_inference,
+            inference::commands::get_local_inference_status,
+            inference::commands::list_inference_models,
+            inference::commands::prepare_local_model,
+            inference::commands::run_local_inference,
+            inference::commands::cancel_local_inference,
+            inference::commands::run_local_inference_smoke,
             genesis::generate_wallet_keys,
             genesis::record_voice_imprint,
             provisioning::check_beta_slots,
@@ -183,19 +187,19 @@ pub fn run() {
                     match TrayIconBuilder::new()
                         .icon(icon)
                         .tooltip("DAARION Edge")
-                        .on_tray_icon_event(|tray, event| match event {
-                            TrayIconEvent::Click {
+                        .on_tray_icon_event(|tray, event| {
+                            if let TrayIconEvent::Click {
                                 button: MouseButton::Left,
                                 button_state: MouseButtonState::Up,
                                 ..
-                            } => {
+                            } = event
+                            {
                                 let app = tray.app_handle();
                                 if let Some(window) = app.get_webview_window("main") {
                                     let _ = window.show();
                                     let _ = window.set_focus();
                                 }
                             }
-                            _ => {}
                         })
                         .build(app)
                     {

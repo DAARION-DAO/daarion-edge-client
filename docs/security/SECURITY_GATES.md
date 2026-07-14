@@ -6,7 +6,7 @@ No gate is satisfied by documentation or module names alone. “Open” means im
 
 | Gate | Current state | Required evidence to close | Owner/phase |
 | --- | --- | --- | --- |
-| Local-only inference | OPEN | Only enabled policy is `LocalOnly`; remote branch unreachable; provider abstraction; timeout/cancel; no-egress and fake-provider tests; truthful UI | Edge / 1A |
+| Local-only inference | IMPLEMENTED — REVIEW PENDING | Phase 1A candidate has only `LocalOnly`, validated loopback Ollama composition, redirect/proxy denial, canonical IDs, bounded streaming, timeout/cancel, terminal-event suppression, typed UI contract and no main-webview shell authority. Rust unit/loopback fixtures and deterministic frontend contract pass; a real Ollama/model was not called. Human diff/security acceptance and the phase release gate are still pending. | Edge / 1A |
 | Durable runtime state | OPEN | SQLite migrations, transactions, restart recovery, deletion/export, permissions and corruption/migration tests | Edge / 1B |
 | Inert Supervisor | OPEN | Deterministic IDs, explicit bounded state machine, idempotency, cancellation and crash recovery; no tools/network/scheduling | Edge / 1C |
 | Production pairing | OPEN | Signed purpose-bound invitation, trusted issuer, membership/device binding, expiry, nonce/replay, single use, revocation and downgrade tests | Both / ADR 0004 |
@@ -55,3 +55,17 @@ No unbounded autonomous loop may pass a release gate.
 - `FAIL`: a required check failed, required evidence is absent, scope escaped, sensitive data leaked, or a scoped Critical/High blocker remains.
 
 A skipped required check cannot produce `PASS`.
+
+## Phase 1A local-only evidence
+
+The candidate implementation is intentionally narrower than production readiness:
+
+- production construction accepts only an HTTP loopback origin and disables redirects and system proxies;
+- a remote-scoped provider is rejected before any provider method can run;
+- prompts, tokens, completed output, raw provider bodies and environment/proxy values are not logged by the inference module;
+- provider errors cross IPC as controlled messages rather than raw response bodies;
+- cancellation, timeout or failure closes the event gate, suppressing late tokens and completion;
+- model preparation and inference accept canonical IDs only; upstream Ollama tags remain adapter-private;
+- main-window shell permissions and shell plugin initialization were removed.
+
+This evidence does not close the model-download trust gate, packaging/mobile gate or production-release gate. The exact commands and known baseline limitations are recorded in the Phase 1A completion report.

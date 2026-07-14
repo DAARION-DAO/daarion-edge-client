@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 use reqwest::Client;
 
@@ -64,7 +63,7 @@ impl ModelRegistry {
     }
 
     /// Read bundled fallback_registry.json
-    fn read_bundled_fallback() -> Result<RegistryPayload, String> {
+    pub fn read_bundled_for_inference() -> Result<RegistryPayload, String> {
         // Fallback payload backed directly into binary
         let fallback_str = include_str!("../../../public/fallback_registry.json");
         serde_json::from_str(fallback_str).map_err(|e| e.to_string())
@@ -100,6 +99,6 @@ impl ModelRegistry {
 
         // 3. Bundled Fallback
         println!("[RegistrySync] Loaded from Bundled Asset (public/fallback_registry.json)");
-        Self::read_bundled_fallback()
+        Self::read_bundled_for_inference()
     }
 }
