@@ -1,6 +1,6 @@
 # Sovereign Agent Capability Status Matrix
 
-Status: **PHASE 1A MERGED SNAPSHOT — 2026-07-15 / PHASE 1B PLANNING**
+Status: **PHASE 1A MERGED SNAPSHOT — 2026-07-15 / PHASE 1B HUMAN DECISIONS RECORDED / REVIEW PENDING**
 
 The status describes executable evidence in the audited snapshots, not target architecture, live deployment, or product aspiration.
 
@@ -33,7 +33,7 @@ The status describes executable evidence in the audited snapshots, not target ar
 | Structured model output | Edge | `MISSING` | No validated structured decision schema found | Later Supervisor phase |
 | Edge embeddings | Edge | `MISSING` | No local embedding provider/store found | Later memory phase |
 | Web cloud chat/embeddings | Web cloud boundary | `IMPLEMENTED_BUT_UNVERIFIED` | `ai-agent-chat` calls cloud gateway after auth checks; live provider not called | Separate cloud feature verification |
-| Durable runtime state | Edge | `MISSING` | No SQLite dependency, runtime store, schema, or migration runner exists at main `62a1d514…`; the Phase 1B plan is `CONDITIONAL_GO`, but implementation remains `NO_GO` | Human review of plan, risk decisions, then separately authorized slice 1B.1 |
+| Durable runtime state | Edge | `MISSING` | No SQLite dependency, runtime store, schema, or migration runner exists at main `62a1d514…`; HD-01 through HD-09 approve the docs-only Phase 1B plan, but its fresh exact-head review is pending and implementation remains `NO_GO` | Final docs review/merge gate, then a separate explicit authorization for slice 1B.1 |
 | Six-level memory | Edge | `MISSING` | No working/conversation/episodic/semantic/procedural/graph implementation | Phase 2 after foundation |
 | Agent Supervisor | Edge | `MISSING` | Agent-shaped modules do not form a traced deterministic Supervisor | Phase 1C |
 | Bounded Loop Runtime | Edge | `MISSING` | No versioned definition, durable run/checkpoint model, limits or resume | Phase 3 |

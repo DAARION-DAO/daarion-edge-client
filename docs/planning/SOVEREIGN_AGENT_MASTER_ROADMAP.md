@@ -76,6 +76,16 @@ The first SQLite schema contains only:
 
 It must not be described as complete memory. Memory types, embeddings, entities/relations and external vector systems are deferred.
 
+Human decisions HD-01 through HD-09 approve the Phase 1B plan: SQLite is the
+authoritative local transactional store; `rusqlite` with `bundled`, `limits`,
+and `backup` is owned by a Rust blocking actor; standard plaintext SQLite is
+accepted for the foundation with full-disk encryption required on supported
+production devices; retention, limits, pragmas, export, and desktop platform
+gates are fixed in the phase plan. Semantic and graph stores remain rebuildable
+projections, large bytes belong outside SQLite by default, and remote sync is
+optional and non-authoritative. This approval does not authorize implementation
+or slice 1B.1.
+
 ## Future Storage Evolution
 
 The following sequence is a storage-evolution architecture stream, not a
@@ -129,7 +139,7 @@ Loop Runtime follows local inference, durable state and an inert Supervisor. The
 - semantic retrieval engine, provenance and full-index rebuild;
 - graph projection engine, reconciliation and rebuild;
 - artifact byte storage, integrity and lifecycle metadata;
-- SQLCipher/key lifecycle if standard-SQLite residual risk is rejected;
+- pre-production SQLCipher/key-lifecycle decision for database-file encryption;
 - optional remote projection, encrypted-backup or replication boundary.
 
 Numbers are reservations for planning, not accepted decisions.
@@ -153,10 +163,11 @@ Numbers are reservations for planning, not accepted decisions.
   PR #24 was reviewed at `9e8c5d9c8adb4c02bfa9b11e970e33a0bbfd640f`
   and merged as `62a1d514b93925e8b7098c6db19f8751a70a7bf8`;
   fresh-main verification passed. No live Ollama smoke is claimed.
-- Phase 1B planning: `CONDITIONAL_GO`; the docs-only plan requires explicit
-  human decisions on at-rest risk, dependency/version, resource/retention,
-  export, WAL defaults and platform gates.
-- Phase 1B implementation: `NO_GO PENDING EXPLICIT HUMAN REVIEW`.
+- Phase 1B planning: `APPROVED / HUMAN_DECISIONS_RECORDED`; the docs-only
+  finalization awaits a fresh exact-head review and merge gate.
+- Phase 1B implementation: `NO_GO`.
+- Phase 1B.1: `NOT_AUTHORIZED_BY_THIS_TASK`; every slice remains separately
+  authorized.
 - Phase 1C and later: `NO_GO`.
 - Production readiness: `NO_GO`.
 
@@ -165,8 +176,11 @@ PHASE_1A =
 MERGED / FRESH-MAIN VERIFIED / PASS
 
 PHASE_1B_PLANNING =
-CONDITIONAL_GO
+APPROVED / HUMAN_DECISIONS_RECORDED / FRESH_REVIEW_PENDING
 
 PHASE_1B_IMPLEMENTATION =
-NO_GO PENDING EXPLICIT HUMAN REVIEW
+NO_GO
+
+PHASE_1B_1 =
+NOT_AUTHORIZED_BY_THIS_TASK
 ```

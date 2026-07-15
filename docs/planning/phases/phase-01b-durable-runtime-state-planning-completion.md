@@ -77,7 +77,7 @@ Canonical planning/security evidence:
 - Existing ADR 0002 already selects SQLite and the five-table foundation; no new
   ADR was required by this docs-only task.
 
-## Decisions proposed
+## Decisions accepted
 
 - Use one direct `rusqlite` dependency with `bundled`, `limits`, and `backup`,
   owned behind a project-specific dedicated blocking actor. Do not expose
@@ -94,21 +94,18 @@ Canonical planning/security evidence:
   Phase 1C.
 - Make export deterministic, versioned, plaintext, bounded, and secret/path-free;
   leave import out of scope.
-- Recommend standard SQLite only with explicit acceptance of residual stolen-
-  disk risk and an OS full-disk-encryption deployment requirement.
+- Accept standard SQLite for the foundation with explicit residual stolen-disk
+  risk acceptance and an OS full-disk-encryption requirement on supported
+  production devices. The database, backups, and JSON exports remain plaintext
+  at the application layer and must never be described as encrypted.
 
-## Unresolved decisions
+## Planning decisions resolved
 
-Human review must decide:
-
-1. Standard SQLite residual risk versus an amended SQLCipher plan.
-2. `rusqlite` integration and exact version-selection policy.
-3. WAL/deadline/concurrency defaults.
-4. Plaintext export destination and consent UX.
-5. Conversation/audit retention.
-6. Database, export, message, and queue limits.
-7. Whether Android packaging is a merge gate for Phase 1B.
-8. Whether to authorize only slice 1B.1 after fresh-main readback.
+Human decisions HD-01 through HD-09 resolve the plan's storage authority,
+SQLite integration, foundation encryption posture, retention, resource limits,
+operational pragmas, export contract, and platform boundary. They approve the
+plan only. Phase 1B implementation remains `NO_GO`, and Phase 1B.1 is not
+authorized by this task.
 
 ## Documents created and updated
 
@@ -164,10 +161,112 @@ SQLCipher, remote replication, and cloud backends remain deferred to future
 ADRs. The master execution phase map was not renumbered; the roadmap labels the
 requested storage sequence as non-authorizing stream-local placeholders.
 
+## Human decision finalization
+
+The clean Codex review of exact head
+`15abe536a98c824c8a19bb5858ed544af2f8e4b2` cleared the docs-only refinement
+with zero unresolved substantive threads and no P1/P2 finding. The following
+human decisions were then recorded without changing application code:
+
+```text
+POLYGLOT_STORAGE_ARCHITECTURE = ACCEPTED
+SQLITE_ROLE = AUTHORITATIVE_LOCAL_TRANSACTIONAL_STATE
+SEMANTIC_STORE = REPLACEABLE_REBUILDABLE_PROJECTION
+GRAPH_STORE = REPLACEABLE_REBUILDABLE_PROJECTION
+ARTIFACT_STORE = FILESYSTEM_OR_OBJECT_STORE_FOR_LARGE_BYTES
+REMOTE_SYNC = OPTIONAL_NON_AUTHORITATIVE_PROJECTIONS
+
+SQLITE_LIBRARY = rusqlite
+FEATURES = bundled, limits, backup
+OWNERSHIP = Rust-owned dedicated blocking actor
+FRONTEND_SQL_AUTHORITY = FORBIDDEN
+
+PHASE_1B_FOUNDATION_ENCRYPTION = STANDARD_SQLITE_WITH_EXPLICIT_RISK_ACCEPTANCE
+CONVERSATIONS_MESSAGES = RETAIN_UNTIL_EXPLICIT_USER_DELETION
+INERT_TASKS = RETAIN_UNTIL_EXPLICIT_USER_DELETION
+AUDIT_EVENTS = RETAIN_WHILE_RELATED_RUNTIME_STATE_EXISTS
+LLM_CONTROLLED_DELETION = FORBIDDEN
+VERIFIED_LOCAL_BACKUPS = MAXIMUM_3
+
+CONVERSATION_TITLE_MAX = 512 bytes
+MESSAGE_CONTENT_MAX = 256 KiB
+AUDIT_METADATA_MAX = 8 KiB
+STORAGE_QUEUE_CAPACITY = 128
+ORDINARY_OPERATION_DEADLINE = 10 seconds
+BUSY_TIMEOUT = 5 seconds
+MIGRATION_DEADLINE = 120 seconds
+EXPORT_DEADLINE = 120 seconds
+DATABASE_WARNING_THRESHOLD = 2 GiB
+DATABASE_HARD_LIMIT = 4 GiB
+SINGLE_EXPORT_HARD_LIMIT = 4 GiB
+VERIFIED_BACKUP_LIMIT = 3
+
+foreign_keys = ON
+journal_mode = WAL
+synchronous = FULL
+secure_delete = ON
+trusted_schema = OFF
+temp_store = MEMORY
+busy_timeout = 5 seconds
+shutdown_checkpoint = TRUNCATE
+backup_method = SQLite backup API
+
+EXPORT_TRIGGER = EXPLICIT_USER_ACTION
+FORMAT = DETERMINISTIC_VERSIONED_JSON
+ENCRYPTION = PLAINTEXT_WITH_DISCLOSURE
+AUTOMATIC_UPLOAD = FORBIDDEN
+REMOTE_SYNC = FORBIDDEN_IN_PHASE_1B
+IMPORT = OUT_OF_SCOPE
+
+PHASE_1B_PRIMARY_TARGETS = macOS / Windows / Linux
+ANDROID = SEPARATELY_AUTHORIZED_VALIDATION_GATE
+IOS = UNSUPPORTED / UNCLAIMED
+
+PHASE_1B_PLAN = APPROVED
+PHASE_1B_IMPLEMENTATION = NO_GO
+PHASE_1B_1 = NOT_AUTHORIZED_BY_THIS_TASK
+```
+
+- HD-01 accepts the polyglot architecture: SQLite is authoritative for local
+  transactional state; semantic and graph stores are replaceable rebuildable
+  projections; large bytes belong in a filesystem or object store; remote sync
+  is optional and non-authoritative.
+- HD-02 selects `rusqlite` with `bundled`, `limits`, and `backup`, owned by a
+  Rust dedicated blocking actor; frontend SQL authority is forbidden.
+- HD-03 accepts standard plaintext SQLite for the foundation with mandatory
+  full-disk encryption on supported production devices, no secrets in the
+  database, and a separate pre-production SQLCipher decision.
+- HD-04 retains conversations, messages, and inert tasks until explicit user
+  deletion; retains audit events while related runtime state exists; forbids
+  LLM-controlled deletion; and limits verified local backups to three.
+- HD-05 accepts 512-byte titles, 262,144-byte messages, 8,192-byte audit
+  metadata, queue 128, 10-second ordinary operations, five-second busy timeout,
+  120-second migration/export deadlines, 2 GiB warning, 4 GiB database/export
+  hard limits, and three verified local backups.
+- HD-06 accepts the exact verified pragma, shutdown checkpoint, SQLite backup
+  API, no-live-copy, and fail-platform-on-incompatibility policies.
+- HD-07 requires explicit user-triggered deterministic versioned plaintext JSON
+  export, restrictive permissions, bounded temporary files, cleanup, no
+  secrets/paths, no automatic upload/remote sync, and no import in Phase 1B.
+- HD-08 limits the shared gate to desktop macOS, Windows, and Linux. Android
+  needs separate authorization and validation; iOS is unsupported/unclaimed.
+- HD-09 sets `PHASE_1B_PLAN = APPROVED`,
+  `PHASE_1B_IMPLEMENTATION = NO_GO`, and
+  `PHASE_1B_1 = NOT_AUTHORIZED_BY_THIS_TASK`; all five slices remain separately
+  authorized.
+
+No additional ADR is required for this recording because ADR 0002 already
+accepts the SQLite/five-table foundation. Concrete future storage engines,
+SQLCipher, remote projection, or any material authority change still require a
+future ADR.
+
 ## Validation results
 
 Validation of the final documentation diff:
 
+- starting exact-head/clean-review readback: `PASS` — PR #25 was open, draft,
+  clean/mergeable, unmerged at `15abe536a98c824c8a19bb5858ed544af2f8e4b2`,
+  with zero unresolved substantive threads and no P1/P2 finding
 - cumulative PR changed-path allowlist: `PASS` — exactly five authorized
   documentation paths
 - schema-correction commit scope: `PASS` — only the Phase 1B plan and planning
@@ -175,6 +274,8 @@ Validation of the final documentation diff:
 - ADR-path correction scope: `PASS` — only the planning completion report changed
 - polyglot-refinement scope: `PASS` — only the Phase 1B plan, master roadmap,
   and planning completion report changed
+- human-decision-finalization scope: `PASS` — exactly the same five allowlisted
+  documentation paths changed
 - `git diff --check`: `PASS`
 - Markdown link/path validation: `PASS` — all six external references resolved;
   no unresolved local Markdown target was introduced
@@ -183,6 +284,16 @@ Validation of the final documentation diff:
   classified `MISSING`, and all implementation status is `NO_GO`
 - canonical-doc consistency review: `PASS` — roadmap, capability matrix,
   security gates, plan, and completion report agree
+- canonical human-decision consistency: `PASS` — HD-01 through HD-09 values
+  match between the plan and completion report; roadmap, capability, and
+  security summaries preserve the same authority and authorization boundaries
+- storage-invariant review: `PASS` — SQLite owns transactional truth only;
+  semantic/graph stores remain rebuildable, artifact bytes remain external by
+  default, remote sync remains optional/non-authoritative, and no engine beyond
+  SQLite/`rusqlite` was selected
+- phase/slice authorization review: `PASS` — six-level memory remains outside
+  Phase 1B, implementation is `NO_GO`, and 1B.1 is
+  `NOT_AUTHORIZED_BY_THIS_TASK`
 - exact-five-table review: `PASS` — the proposed schema has five application
   tables, uses no `AUTOINCREMENT` or custom sequence table, and the test contract
   explicitly rejects `sqlite_sequence` and any unexpected table
@@ -194,8 +305,8 @@ Validation of the final documentation diff:
   semantic/graph stores are rebuildable, artifact metadata remains in SQLite,
   remote systems are projections only, and no future engine is selected
 - clean-worktree verification: required immediately after the final commit and
-  push; the current pre-commit diff contains only the three allowlisted
-  documentation files, while the cumulative PR contains five allowlisted paths
+  push; the current pre-commit diff must contain only allowlisted documentation
+  files, while the cumulative PR remains limited to the same five paths
 - Rust/frontend builds: `NOT RUN / NOT REQUIRED FOR DOCS-ONLY PLANNING`
 - production writes/deployments: `0`
 
@@ -206,28 +317,28 @@ PHASE_1A =
 MERGED / FRESH-MAIN VERIFIED / PASS
 
 PHASE_1B_PLAN =
-CONDITIONAL_GO
+APPROVED / HUMAN_DECISIONS_RECORDED
 
 PHASE_1B_IMPLEMENTATION =
-NO_GO PENDING EXPLICIT HUMAN REVIEW
+NO_GO
 
 PLANNING_ARTIFACT_GATE =
 CONDITIONAL_PASS PENDING FRESH EXACT-HEAD REVIEW
 
 FRESH_CODEX_REVIEW =
-PENDING AFTER POLYGLOT STORAGE REFINEMENT
+PENDING AFTER HUMAN DECISION FINALIZATION
 
 POLYGLOT_STORAGE =
-DOCUMENTED
+ACCEPTED
 
 SQLITE_ROLE =
-AUTHORITATIVE_TRANSACTIONAL_STATE
+AUTHORITATIVE_LOCAL_TRANSACTIONAL_STATE
 
 FUTURE_STORES =
 DOCUMENTED_ONLY
 
 PHASE_1B_1 =
-NOT AUTHORIZED
+NOT_AUTHORIZED_BY_THIS_TASK
 
 PRODUCTION_WRITES =
 0

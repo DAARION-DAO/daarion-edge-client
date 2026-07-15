@@ -1,12 +1,12 @@
 # Phase 1B — Durable Runtime State Plan
 
-Status: **CONDITIONAL_GO / PLANNING ONLY**
+Status: **APPROVED PLAN / PLANNING ONLY / IMPLEMENTATION NO_GO**
 
 Starting `main`: `62a1d514b93925e8b7098c6db19f8751a70a7bf8`
 
-This document proposes a bounded implementation. It does not add SQLite, a
-migration, a runtime API, or application behavior. Each implementation slice
-requires separate human authorization.
+This document records the approved design for a bounded implementation. It does
+not add SQLite, a migration, a runtime API, or application behavior. Each
+implementation slice requires separate human authorization.
 
 ## 1. Objective
 
@@ -192,6 +192,164 @@ rebuild/reconciliation, privacy, encryption, resource limits, packaging,
 failure behavior, migration, rollback, deletion, and export. Documentation of a
 future role is not implementation evidence or authorization.
 
+## Accepted Phase 1B human decisions
+
+These decisions are binding for the Phase 1B plan. They approve the plan but do
+not authorize implementation or any implementation slice.
+
+### HD-01 — Polyglot storage authority
+
+```text
+POLYGLOT_STORAGE_ARCHITECTURE = ACCEPTED
+SQLITE_ROLE = AUTHORITATIVE_LOCAL_TRANSACTIONAL_STATE
+SEMANTIC_STORE = REPLACEABLE_REBUILDABLE_PROJECTION
+GRAPH_STORE = REPLACEABLE_REBUILDABLE_PROJECTION
+ARTIFACT_STORE = FILESYSTEM_OR_OBJECT_STORE_FOR_LARGE_BYTES
+REMOTE_SYNC = OPTIONAL_NON_AUTHORITATIVE_PROJECTIONS
+```
+
+SQLite owns lifecycle, ownership, provenance, canonical identifiers, and local
+transactional integrity. Semantic and graph stores are non-authoritative and
+must be rebuildable. Large artifacts are not stored as SQLite BLOBs by default;
+their bytes belong in a filesystem or object store under a future contract.
+Remote systems never become authoritative writers. Cross-store consistency uses
+reconciliation, not a distributed transaction. Every concrete future engine
+still requires its own ADR and authorization.
+
+### HD-02 — SQLite integration
+
+```text
+SQLITE_LIBRARY = rusqlite
+FEATURES = bundled, limits, backup
+OWNERSHIP = Rust-owned dedicated blocking actor
+FRONTEND_SQL_AUTHORITY = FORBIDDEN
+```
+
+The exact compatible dependency version is verified in an authorized 1B.1
+slice. This planning decision adds no dependency.
+
+### HD-03 — Foundation encryption posture
+
+```text
+PHASE_1B_FOUNDATION_ENCRYPTION =
+STANDARD_SQLITE_WITH_EXPLICIT_RISK_ACCEPTANCE
+```
+
+The database, service-created backups, and JSON exports are plaintext at the
+application layer and must never be described as encrypted. Supported
+production devices must use full-disk encryption. The database must not contain
+private keys, wallet seeds, access tokens, credentials, or model secrets.
+SQLCipher remains a separate pre-production decision and future ADR; production
+readiness stays blocked until that decision is closed.
+
+### HD-04 — Retention and backup ownership
+
+```text
+CONVERSATIONS_MESSAGES = RETAIN_UNTIL_EXPLICIT_USER_DELETION
+INERT_TASKS = RETAIN_UNTIL_EXPLICIT_USER_DELETION
+AUDIT_EVENTS = RETAIN_WHILE_RELATED_RUNTIME_STATE_EXISTS
+LLM_CONTROLLED_DELETION = FORBIDDEN
+VERIFIED_LOCAL_BACKUPS = MAXIMUM_3
+```
+
+Temporary failed exports are cleaned by the service. Successful exports are
+user-managed. Phase 1B performs no automatic cloud retention or upload.
+
+### HD-05 — Runtime-owned limits
+
+```text
+CONVERSATION_TITLE_MAX = 512 bytes
+MESSAGE_CONTENT_MAX = 256 KiB
+AUDIT_METADATA_MAX = 8 KiB
+STORAGE_QUEUE_CAPACITY = 128
+ORDINARY_OPERATION_DEADLINE = 10 seconds
+BUSY_TIMEOUT = 5 seconds
+MIGRATION_DEADLINE = 120 seconds
+EXPORT_DEADLINE = 120 seconds
+DATABASE_WARNING_THRESHOLD = 2 GiB
+DATABASE_HARD_LIMIT = 4 GiB
+SINGLE_EXPORT_HARD_LIMIT = 4 GiB
+VERIFIED_BACKUP_LIMIT = 3
+```
+
+- conversation title: 512 UTF-8 bytes;
+- message content: 256 KiB (262,144 UTF-8 bytes);
+- encoded audit metadata: 8 KiB (8,192 bytes);
+- queued operations: 128;
+- ordinary operation deadline: 10 seconds;
+- busy timeout: 5 seconds;
+- migration deadline: 120 seconds;
+- export deadline: 120 seconds;
+- database warning threshold: 2 GiB;
+- database hard write gate: 4 GiB;
+- single export hard limit: 4 GiB;
+- verified local backup limit: 3.
+
+Tests may lower these values. Increasing them requires explicit review. The
+frontend, LLM, and future agent runtime cannot control them.
+
+### HD-06 — SQLite operational policy
+
+```text
+foreign_keys = ON
+journal_mode = WAL
+synchronous = FULL
+secure_delete = ON
+trusted_schema = OFF
+temp_store = MEMORY
+busy_timeout = 5 seconds
+shutdown_checkpoint = TRUNCATE
+backup_method = SQLite backup API
+```
+
+Every open verifies `foreign_keys=ON`, `journal_mode=WAL`,
+`synchronous=FULL`, `secure_delete=ON`, `trusted_schema=OFF`, and
+`temp_store=MEMORY`, with a five-second busy timeout. Clean shutdown performs
+`wal_checkpoint(TRUNCATE)`. Backups use the SQLite backup API; raw copies of a
+live database are forbidden. Any platform incompatibility fails that platform's
+gate instead of silently weakening these controls.
+
+### HD-07 — Export boundary
+
+```text
+EXPORT_TRIGGER = EXPLICIT_USER_ACTION
+FORMAT = DETERMINISTIC_VERSIONED_JSON
+ENCRYPTION = PLAINTEXT_WITH_DISCLOSURE
+AUTOMATIC_UPLOAD = FORBIDDEN
+REMOTE_SYNC = FORBIDDEN_IN_PHASE_1B
+IMPORT = OUT_OF_SCOPE
+```
+
+Export requires an explicit user action and produces deterministic, versioned
+JSON. It is plaintext and requires a clear disclosure. Automatic upload and
+remote synchronization are forbidden in Phase 1B, and import is out of scope.
+The export contract requires stable ordering, an explicit version, restrictive
+permissions, no secrets or platform-specific paths, bounded temporary files,
+cleanup after failed exports, and clear user-visible disclosure. Successful
+exports become user-managed files.
+
+### HD-08 — Platform gate
+
+```text
+PHASE_1B_PRIMARY_TARGETS = macOS / Windows / Linux
+ANDROID = SEPARATELY_AUTHORIZED_VALIDATION_GATE
+IOS = UNSUPPORTED / UNCLAIMED
+```
+
+Phase 1B claims desktop macOS, Windows, and Linux only after their required
+validation passes. Android is a separately authorized validation gate and
+cannot inherit a desktop pass. iOS is unsupported and unclaimed.
+
+### HD-09 — Authorization state
+
+```text
+PHASE_1B_PLAN = APPROVED
+PHASE_1B_IMPLEMENTATION = NO_GO
+PHASE_1B_1 = NOT_AUTHORIZED_BY_THIS_TASK
+```
+
+Slices 1B.1 through 1B.5 each require separate authorization.
+
 ## 3. Current repository inventory
 
 The inventory is based on executable source at the starting commit.
@@ -269,9 +427,9 @@ alternatives, not installed components.
 
 ## 5. At-rest encryption decision
 
-Decision proposal:
+Accepted decision:
 
-`RECOMMEND_STANDARD_SQLITE_WITH_EXPLICIT_RISK_ACCEPTANCE`
+`STANDARD_SQLITE_WITH_EXPLICIT_RISK_ACCEPTANCE`
 
 ### Threat model and trade-off
 
@@ -290,17 +448,19 @@ existing device-identity key must never be reused as a database key. SQLCipher
 community licensing and platform packaging must be reviewed from its official
 [`license`](https://www.zetetic.net/sqlcipher/license/) before adoption.
 
-For the bounded foundation, standard SQLite is recommended only if a named
-human explicitly accepts the residual stolen-disk risk and confirms that the
-deployment profile requires OS full-disk encryption. If that risk is rejected,
-or database-level encryption is a requirement, implementation must stop and
-this plan must be amended to `RECOMMEND_SQLCIPHER` with a separate key/recovery
-design. No documentation or UI may call the standard database encrypted.
+For the bounded foundation, the residual stolen-disk risk is explicitly
+accepted and supported production devices must use OS full-disk encryption.
+The database remains plaintext at the application layer and must not contain
+private keys, wallet seeds, access tokens, credentials, or model secrets. No
+documentation or UI may call the standard database encrypted.
 
 Backups/exports must inherit restrictive permissions, disclose their plaintext
 status, and never include cryptographic secrets. Key loss is not applicable to
-the standard-SQLite choice; SQLCipher adoption would make key loss and recovery
-a blocking product decision.
+the standard-SQLite choice. SQLCipher remains a separately reviewed
+pre-production decision with a future ADR; production readiness remains blocked
+until that decision is closed. Any future adoption must define a new
+domain-separated database key, key lifecycle, recovery, backup/export behavior,
+and platform packaging.
 
 ## 6. Database location and permissions
 
@@ -327,14 +487,15 @@ a blocking product decision.
 - Never raw-copy a live database. Use SQLite's consistent
   [backup API](https://www.sqlite.org/backup.html) after a bounded checkpoint.
 
-Mobile path and permission behavior must be verified on Android before that
-target can pass this phase. iOS remains unclaimed.
+Desktop macOS, Windows, and Linux must each pass their path, permissions, build,
+and packaging checks. Android is a separately authorized validation gate and
+cannot inherit a desktop pass. iOS is unsupported and unclaimed.
 
 ## 7. Connection and concurrency model
 
 `RuntimeStore` owns one `rusqlite::Connection` on a dedicated named blocking
 thread/actor. Tokio callers submit typed operations through a bounded channel
-(proposed capacity: 128) and await a one-shot result. The Tauri async runtime,
+(capacity: 128) and await a one-shot result. The Tauri async runtime,
 UI thread, and command handlers never execute synchronous SQLite work.
 
 Initial behavior is one serialized writer and serialized reads on the same
@@ -350,8 +511,8 @@ connection. No pool is needed. Configure and verify on every open:
 - conservative SQLite runtime limits through the selected feature.
 
 Use parameterized statements only. Ordinary operations have a ten-second
-service deadline; migrations and streamed exports have separate bounded
-deadlines proposed at 120 seconds. Timeout values remain runtime-owned, not
+service deadline; migrations and streamed exports each have a 120-second
+deadline. Timeout values remain runtime-owned, not
 model-controlled.
 
 Startup order is: resolve/validate path and permissions; open with no-follow
@@ -435,7 +596,7 @@ conversation cascades to its messages and linked tasks.
 | `conversation_id` | `TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE` |
 | `sequence_no` | positive `INTEGER NOT NULL` allocated from the conversation row |
 | `role` | `TEXT NOT NULL`, allowlist `system`, `user`, `assistant` |
-| `content` | non-empty `TEXT NOT NULL`, maximum 65,536 UTF-8 bytes |
+| `content` | non-empty `TEXT NOT NULL`, maximum 262,144 UTF-8 bytes |
 | `created_at_ms` | UTC `INTEGER NOT NULL` |
 
 Unique `(conversation_id, sequence_no)` and index
@@ -481,10 +642,12 @@ no public audit-deletion operation.
 
 Audit events are append-only through the public service layer. With
 `INTEGER PRIMARY KEY`, a deleted historical rowid could theoretically be reused
-after deletion; the initial contract exposes no public audit-deletion operation,
-and any future internal retention process must preserve ordering semantics and
-receive separate review. `AUTOINCREMENT` is deliberately not used, so migration
-1 must not create SQLite's `sqlite_sequence` table or a custom sequence table.
+after deletion; the initial contract exposes no public audit-deletion operation.
+Service-owned retention may remove an event only after its related runtime state
+no longer exists, in accordance with HD-04, while preserving the ordering of all
+retained rows. Expanding that policy requires separate review. `AUTOINCREMENT`
+is deliberately not used, so migration 1 must not create SQLite's
+`sqlite_sequence` table or a custom sequence table.
 
 No other table is permitted in migration 1.
 
@@ -590,9 +753,9 @@ the export is returned as incomplete and reconciled explicitly.
 - Single-conversation deletion is explicit and transactional; messages and
   linked tasks cascade, row counts are verified, and a privacy-safe event is
   retained.
-- Delete-all removes conversations/messages/tasks, retains only audit metadata
-  allowed by the reviewed retention policy, and verifies no user-content rows
-  remain.
+- Delete-all is an explicit user action that removes
+  conversations/messages/tasks, retains only audit metadata still related to
+  retained runtime state, and verifies no user-content rows remain.
 - Task deletion is physical in Phase 1B with an audit tombstone; Phase 1C may
   propose state-based retention separately.
 - Enable `secure_delete = ON`. An explicit post-delete `VACUUM` may be offered
@@ -609,9 +772,11 @@ cloud backup, or copied exports. The UI/documentation must say so. See SQLite's
 [`secure_delete`](https://www.sqlite.org/pragma.html#pragma_secure_delete) and
 [`VACUUM`](https://www.sqlite.org/lang_vacuum.html) limits.
 
-Retention proposal requiring human approval: conversations remain until user
-deletion; audit metadata is bounded to 100,000 rows and 180 days, except records
-explicitly required for an unresolved local recovery event. No silent content
+Conversations, messages, and inert tasks remain until explicit user deletion.
+Audit events remain while their related runtime state exists. The LLM cannot
+authorize or invoke deletion. The service retains at most three verified local
+backups, cleans failed temporary exports, and never applies automatic cloud
+retention or upload. Successful exports are user-managed. No silent content
 summarization or memory extraction is permitted.
 
 ## 17. Export contract
@@ -634,7 +799,10 @@ identical state and supplied timestamp produce identical bytes.
 Exports exclude secrets, keyring values, paths, raw errors/SQL, provider bodies,
 environment data, caches, localStorage, identity keys, wallet material, and all
 out-of-scope JSON files. Export is plaintext under the standard-SQLite decision
-and requires explicit user disclosure/approval. Import is out of scope.
+and requires explicit user action plus clear disclosure. Output permissions are
+restrictive; temporary files are bounded and failed attempts are cleaned. A
+successful export becomes user-managed. Automatic upload and remote sync are
+forbidden in Phase 1B. Import is out of scope.
 
 ## 18. Corruption and integrity policy
 
@@ -655,23 +823,24 @@ future, separately authorized restore/import design.
 
 ## 19. Resource limits
 
-Proposed bounded defaults, subject to human review:
+Accepted bounded defaults:
 
-- message content: 65,536 UTF-8 bytes;
+- message content: 262,144 UTF-8 bytes (256 KiB);
 - conversation title: 512 bytes;
 - task kind: 64 bytes; idempotency key: 128 bytes;
-- audit string fields: per-field limits above and at most 2 KiB total encoded
+- audit string fields: per-field limits above and at most 8,192 bytes (8 KiB) total encoded
   audit row data;
-- database soft warning: 512 MiB; hard write gate: 1 GiB, while read, export,
+- database soft warning: 2 GiB; hard write gate: 4 GiB, while read, export,
   and delete remain available;
-- export hard limit: 1 GiB, checked during streaming;
+- export hard limit: 4 GiB, checked during streaming;
+- verified local backups: maximum 3;
 - queued operations: 128; one active database operation;
-- normal transaction deadline: 10 seconds; migration/export: 120 seconds;
-- audit retention proposal: 100,000 rows and 180 days.
+- normal transaction deadline: 10 seconds; busy timeout: 5 seconds;
+  migration deadline: 120 seconds; export deadline: 120 seconds.
 
 Limits are enforced before allocation/binding and rechecked within the service.
-The LLM, frontend, and future agent cannot raise them. Human decisions remain
-open for the database cap, audit retention, and mobile-specific storage budget.
+Tests may lower them. Increasing them requires explicit review. The LLM,
+frontend, and future agent cannot control or raise them.
 
 ## 20. Security model
 
@@ -684,7 +853,7 @@ open for the database cap, audit retention, and mobile-specific storage budget.
 | Database replacement | File-type/owner/permission checks where supported, migration checksum and integrity validation, fail closed |
 | Migration tampering/downgrade | Embedded immutable manifest, SHA-256, sequential IDs, unknown-newer and mismatch refusal |
 | Sensitive logging | Stable codes only; never content, paths, SQL, secrets, provider bodies, or environment values |
-| Denial of service | Size, queue, time, busy, database, export, and audit-retention limits |
+| Denial of service | Size, queue, time, busy, database, export, and backup-count limits |
 | Oversized content | Validate UTF-8 byte length before allocation/bind plus database constraints |
 | Backup leakage | Protected directory/modes, plaintext disclosure, no raw live copy, no automatic cloud location |
 | Hostile imports | Import remains absent; future import treats every file as untrusted and needs a separate parser/security gate |
@@ -752,7 +921,9 @@ does not authorize all slices.
   `src-tauri/src/runtime_store/**`, one embedded initial SQL resource, and a
   composition-only edit to `src-tauri/src/lib.rs`.
 - Tests: matrix 1–10, 21–26, 28–30 where applicable, plus target compile checks.
-- Entry gate: human accepts dependency/version and encryption residual risk.
+- Entry gate: this approved plan is merged and fresh-main verified, then slice
+  1B.1 receives separate explicit human authorization. The exact compatible
+  dependency version and platform matrix are verified inside that slice.
 - Stop: packaging failure, path/permission ambiguity, migration mismatch,
   unresolved Critical/High finding, or unrelated scope change.
 - Rollback: remove the unopened feature/module/dependency; never downgrade an
@@ -765,7 +936,7 @@ does not authorize all slices.
 - Expected files: runtime-store models plus conversation/message repositories
   and tests; no generic IPC.
 - Tests: matrix 9–13, 16, 17, 23, 26–28.
-- Entry gate: 1B.1 fresh-main verified; content/retention limits accepted.
+- Entry gate: 1B.1 fresh-main verified and slice 1B.2 separately authorized.
 - Stop: orphan/ordering/privacy failure or any need to call a model/tool/network.
 - Rollback: disable consumers and revert code only while preserving the schema;
   use a forward migration for any shipped schema correction.
@@ -789,7 +960,8 @@ does not authorize all slices.
   `src-tauri/src/reset.rs` integration, purpose-specific command only if a
   reviewed UI flow requires it, and tests/docs.
 - Tests: matrix 8, 17–26, 28–29 plus partial-export and SSD-limit disclosure.
-- Entry gate: human accepts deletion/retention/export semantics and destinations.
+- Entry gate: 1B.3 fresh-main verified and slice 1B.4 separately authorized;
+  the accepted deletion, retention, and export contracts remain unchanged.
 - Stop: raw live copy, silent overwrite/recreate, path disclosure, or unbounded export.
 - Rollback: disable export/delete UI entrypoints, preserve the database, retain
   verified backups; do not undo a committed schema by downgrade.
@@ -895,7 +1067,9 @@ Completed Phase 1B can pass only when:
   platform gate have explicit human decisions;
 - all 30 required tests plus negative security cases pass;
 - all existing 67 inference tests and the full Rust suite pass unchanged;
-- macOS, Windows, Linux, and any still-claimed Android build/package checks pass;
+- desktop macOS, Windows, and Linux build/package/path/permission checks pass;
+- Android passes only through a separately authorized validation gate and never
+  inherits a desktop result; iOS remains unsupported and unclaimed;
 - dependency/license/advisory/secret reviews pass with no unaccepted
   Critical/High finding;
 - canonical documentation describes only verified behavior;
@@ -922,38 +1096,25 @@ an unverified backup, or deletes user content.
 
 ## 27. Final decision
 
-`CONDITIONAL_GO`
+`GO / APPROVED PLAN`
 
 This classification applies to the Phase 1B **plan**, not implementation.
-Implementation remains `NO_GO` until explicit human review closes every blocking
-decision below and authorizes only slice 1B.1.
-
-Unresolved human decisions:
-
-1. Accept standard SQLite's residual stolen-disk exposure and require OS
-   full-disk encryption, or amend the plan to SQLCipher.
-2. Accept `rusqlite` as the sole integration and the exact dependency/version
-   selection process.
-3. Accept WAL + `synchronous=FULL`, the five-second busy timeout, ten-second
-   operation deadline, and 120-second migration/export deadline.
-4. Accept plaintext export behavior and decide the approved user-visible save
-   destination/consent flow.
-5. Accept conversation retention until deletion and the proposed 180-day /
-   100,000-row audit retention.
-6. Accept the 512 MiB warning, 1 GiB database/export hard gates, and message/
-   queue limits.
-7. Decide whether Android packaging is a mandatory Phase 1B merge gate or a
-   separately documented blocked target; iOS remains unclaimed.
-8. Approve the exact 1B.1 slice after a fresh-main readback; no later slice is
-   implicitly authorized.
+HD-01 through HD-09 close the planning decisions on storage authority,
+integration, encryption risk, retention, limits, SQLite operations, export, and
+platform scope. Implementation remains `NO_GO`; this task does not authorize
+slice 1B.1 or any later slice. Each of 1B.1 through 1B.5 requires a separate
+human authorization after the preceding gate is verified.
 
 ```text
 PHASE_1A =
 MERGED / FRESH-MAIN VERIFIED / PASS
 
 PHASE_1B_PLAN =
-CONDITIONAL_GO
+APPROVED
 
 PHASE_1B_IMPLEMENTATION =
-NO_GO PENDING EXPLICIT HUMAN REVIEW
+NO_GO
+
+PHASE_1B_1 =
+NOT_AUTHORIZED_BY_THIS_TASK
 ```

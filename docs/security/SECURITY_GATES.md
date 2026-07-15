@@ -7,7 +7,7 @@ No gate is satisfied by documentation or module names alone. “Open” means im
 | Gate | Current state | Required evidence to close | Owner/phase |
 | --- | --- | --- | --- |
 | Local-only inference | REPOSITORY PASS — MERGED / FRESH-MAIN VERIFIED | Phase 1A has only `LocalOnly`; loopback/redirect/proxy controls; mandatory `/api/status` cloud-disabled proof; exact stable `/api/tags` → `/api/show` → `/api/tags` local-model evidence; immediate pre-chat revalidation; post-preparation verification; service-owned probe/chat/preparation deadlines and cancellation; bounded streaming; zero-chat sentinel tests; truthful UI; and no main-webview shell authority. Reviewed head `9e8c5d9…` was merged as `62a1d514…` and verified from fresh main. No real Ollama/model smoke or cryptographic daemon/artifact attestation is claimed. | Edge / 1A |
-| Durable runtime state | OPEN — PLAN `CONDITIONAL_GO` / IMPLEMENTATION `NO_GO` | Human acceptance of at-rest residual risk, SQLite integration/version, retention/resource/export/WAL/platform decisions; then SQLite migrations, transactions, restart recovery, deletion/export, permissions and corruption/migration tests in separately authorized slices | Edge / 1B |
+| Durable runtime state | OPEN — PLAN `HUMAN_DECISIONS_RECORDED` / FINAL REVIEW PENDING / IMPLEMENTATION `NO_GO` | HD-01 through HD-09 accept standard plaintext SQLite risk, Rust-owned `rusqlite`, retention/limits/export/pragma/desktop-platform rules; closure still requires separately authorized migrations, transactions, restart recovery, deletion/export, permissions, corruption/migration tests, and the pre-production SQLCipher decision | Edge / 1B |
 | Inert Supervisor | OPEN | Deterministic IDs, explicit bounded state machine, idempotency, cancellation and crash recovery; no tools/network/scheduling | Edge / 1C |
 | Production pairing | OPEN | Signed purpose-bound invitation, trusted issuer, membership/device binding, expiry, nonce/replay, single use, revocation and downgrade tests | Both / ADR 0004 |
 | Readiness projection | OPEN | Separate signed schema, minimal allowlist, producer identity, expiry/freshness, replay/revocation, cross-repo fixtures and privacy tests | Both / ADR 0005 + Phase 5 |
@@ -100,9 +100,24 @@ formatting amendment and known baseline limitations are recorded in the Phase
 
 ## Phase 1B planning status
 
-The docs-only Phase 1B plan recommends a Rust-owned `rusqlite` service and
-standard SQLite only with explicit human acceptance of residual stolen-disk
-risk and an OS full-disk-encryption requirement. It does not add a dependency,
-schema, migration, IPC command, or runtime behavior. The durable-state gate
-remains open until the reviewed slices and all required migration, restart,
-deletion/export, permission, corruption, privacy, and platform tests pass.
+The docs-only Phase 1B plan now records human acceptance of a Rust-owned
+`rusqlite` service (`bundled`, `limits`, `backup`) and standard plaintext SQLite
+for the foundation. Supported production devices require full-disk encryption;
+the database must not contain private keys, wallet seeds, access tokens,
+credentials, or model secrets. Backups and JSON exports are also plaintext
+unless separately encrypted and may never be described as encrypted.
+
+Accepted operations are `foreign_keys=ON`, WAL, `synchronous=FULL`,
+`secure_delete=ON`, `trusted_schema=OFF`, `temp_store=MEMORY`, five-second busy
+timeout, `wal_checkpoint(TRUNCATE)` at clean shutdown, and SQLite backup API
+only—raw live-database copy is forbidden. Retention, bounded size/deadline/
+queue/backup limits, explicit plaintext export, and desktop macOS/Windows/Linux
+validation are fixed in the plan. Android remains a separately authorized gate;
+iOS is unsupported and unclaimed.
+
+This recording adds no dependency, schema, migration, IPC command, or runtime
+behavior. SQLCipher is a separate pre-production decision; production readiness
+remains blocked until it is closed. The durable-state gate stays open until the
+plan receives a fresh exact-head review and merge, each slice is separately
+authorized, and all required migration, restart, deletion/export, permission,
+corruption, privacy, and platform tests pass.
