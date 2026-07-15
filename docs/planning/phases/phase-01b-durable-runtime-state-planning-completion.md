@@ -26,9 +26,9 @@ Architecture and dependency evidence:
 - `src-tauri/Cargo.lock`
 - `src-tauri/src/lib.rs`
 - `.github/workflows/release.yml`
-- `docs/adr/0001-local-first-inference.md`
-- `docs/adr/0002-agent-memory-storage.md`
-- `docs/adr/0003-reticulum-integration-boundary.md`
+- `docs/adr/0001-local-first-inference-and-remote-consent.md`
+- `docs/adr/0002-local-runtime-state-and-sqlite-foundation.md`
+- `docs/adr/0003-reticulum-lxmf-integration-boundary.md`
 
 Persistence, state, identity, and privacy evidence:
 
@@ -142,13 +142,21 @@ issues:
 
 The correction remains documentation-only and does not authorize Phase 1B.1.
 
+A subsequent focused review of exact head
+`6c7bda635eaefa2878b6acb0e63970c700caafb6` found that the original audited-file
+list used shortened, nonexistent ADR filenames. The evidence list now uses the
+three exact repository paths. Their ADR numbers and titles match the files, and
+ADR 0002 remains the accepted SQLite/five-table foundation.
+
 ## Validation results
 
 Validation of the final documentation diff:
 
-- changed-path allowlist: `PASS` — exactly five authorized documentation paths
-- correction-commit scope: `PASS` — only the Phase 1B plan and planning
+- cumulative PR changed-path allowlist: `PASS` — exactly five authorized
+  documentation paths
+- schema-correction commit scope: `PASS` — only the Phase 1B plan and planning
   completion report changed
+- ADR-path correction scope: `PASS` — only the planning completion report changed
 - `git diff --check`: `PASS`
 - Markdown link/path validation: `PASS` — all six external references resolved;
   no unresolved local Markdown target was introduced
@@ -162,8 +170,11 @@ Validation of the final documentation diff:
   explicitly rejects `sqlite_sequence` and any unexpected table
 - lockfile-path verification: `PASS` — `src-tauri/Cargo.lock` exists and
   repository-root `Cargo.lock` does not
+- ADR evidence-path verification: `PASS` — all three exact files exist on the
+  PR base and current branch; no duplicate or invented Phase 1B ADR path remains
 - clean-worktree verification: required immediately after the final commit and
-  push; only the five allowlisted documentation paths are staged at this gate
+  push; the current pre-commit diff contains only the one allowlisted completion
+  report, while the cumulative PR contains five allowlisted documentation paths
 - Rust/frontend builds: `NOT RUN / NOT REQUIRED FOR DOCS-ONLY PLANNING`
 - production writes/deployments: `0`
 
@@ -183,7 +194,7 @@ PLANNING_ARTIFACT_GATE =
 PASS
 
 FRESH_CODEX_REVIEW =
-PENDING AFTER CORRECTION
+PENDING AFTER ADR PATH CORRECTION
 
 PRODUCTION_WRITES =
 0
