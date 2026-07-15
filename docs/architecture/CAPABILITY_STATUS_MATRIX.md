@@ -1,6 +1,6 @@
 # Sovereign Agent Capability Status Matrix
 
-Status: **PHASE 1A CANDIDATE SNAPSHOT — 2026-07-15 / FRESH REVIEW PENDING**
+Status: **PHASE 1A MERGED SNAPSHOT — 2026-07-15 / PHASE 1B PLANNING**
 
 The status describes executable evidence in the audited snapshots, not target architecture, live deployment, or product aspiration.
 
@@ -25,7 +25,7 @@ The status describes executable evidence in the audited snapshots, not target ar
 | Model download | Edge | `PARTIALLY_IMPLEMENTED` | Request-scoped pull retains deadline/cancellation/bounded progress and now requires daemon plus complete local-model postflight before success; real pull, daemon-side stop and cryptographic artifact trust remain unverified | Verified manifest/artifact gate |
 | Model verification | Edge | `PARTIALLY_IMPLEMENTED` | Official Ollama metadata proof rejects remote markers, aliases, duplicates, invalid size/digest/details and unstable evidence before chat/preparation success; it does not hash the file, verify a signature, or attest a malicious daemon | Artifact security phase |
 | Model loading/unloading | Edge | `MOCK_OR_PLACEHOLDER` | Legacy simulated loader remains in source for unrelated dormant modules but is no longer registered or used by the approved inference surface | Later truthful provider lifecycle phase |
-| Local-only execution policy | Edge | `IMPLEMENTED_AND_VERIFIED` | `InferencePolicy::LocalOnly`, loopback/redirect/proxy controls, fail-closed daemon cloud-disabled proof, stable per-model evidence, immediate pre-chat revalidation and zero-chat sentinel tests pass in repository fixtures; fresh review pending | Phase 1A exact-head review |
+| Local-only execution policy | Edge | `IMPLEMENTED_AND_VERIFIED` | `InferencePolicy::LocalOnly`, loopback/redirect/proxy controls, fail-closed daemon cloud-disabled proof, stable per-model evidence, immediate pre-chat revalidation and zero-chat sentinel tests pass in repository fixtures; reviewed head `9e8c5d9…` is merged and fresh-main verified | Controlled real-Ollama smoke |
 | Local inference | Edge | `IMPLEMENTED_BUT_UNVERIFIED` | Provider-neutral service and loopback Ollama adapter exist with fake/fixture tests; no real installed Ollama/model was called | Controlled real-Ollama smoke |
 | Token streaming | Edge | `IMPLEMENTED_AND_VERIFIED` | Bounded byte-buffered NDJSON decoder and terminal event gate cover split UTF-8, multiple/final/malformed/oversized records and late-event suppression | Phase 1A review |
 | Timeout | Edge | `IMPLEMENTED_AND_VERIFIED` | Service-owned probe, chat and preparation deadlines cover their queue/provider boundaries; cleanup and mutually exclusive terminal behavior are tested | Phase 1A review |
@@ -33,7 +33,7 @@ The status describes executable evidence in the audited snapshots, not target ar
 | Structured model output | Edge | `MISSING` | No validated structured decision schema found | Later Supervisor phase |
 | Edge embeddings | Edge | `MISSING` | No local embedding provider/store found | Later memory phase |
 | Web cloud chat/embeddings | Web cloud boundary | `IMPLEMENTED_BUT_UNVERIFIED` | `ai-agent-chat` calls cloud gateway after auth checks; live provider not called | Separate cloud feature verification |
-| Durable runtime state | Edge | `MISSING` | No SQLite foundation/schema found | Phase 1B |
+| Durable runtime state | Edge | `MISSING` | No SQLite dependency, runtime store, schema, or migration runner exists at main `62a1d514…`; the Phase 1B plan is `CONDITIONAL_GO`, but implementation remains `NO_GO` | Human review of plan, risk decisions, then separately authorized slice 1B.1 |
 | Six-level memory | Edge | `MISSING` | No working/conversation/episodic/semantic/procedural/graph implementation | Phase 2 after foundation |
 | Agent Supervisor | Edge | `MISSING` | Agent-shaped modules do not form a traced deterministic Supervisor | Phase 1C |
 | Bounded Loop Runtime | Edge | `MISSING` | No versioned definition, durable run/checkpoint model, limits or resume | Phase 3 |
@@ -52,6 +52,6 @@ The status describes executable evidence in the audited snapshots, not target ar
 ## Interpretation rules
 
 - A module name, README statement, enum, UI state, or test fixture alone cannot raise a capability status.
-- `IMPLEMENTED_AND_VERIFIED` is limited to the cited Phase 1A repository checks. It does not imply a live Ollama run, packaging proof, deployment truth or production readiness.
+- `IMPLEMENTED_AND_VERIFIED` is limited to the cited Phase 1A repository checks and fresh-main readback. It does not imply a live Ollama run, packaging proof, deployment truth or production readiness.
 - A live/deployed result must be recorded separately from repository evidence.
 - Status changes require evidence, date, command/result or deployed proof, and documentation update.

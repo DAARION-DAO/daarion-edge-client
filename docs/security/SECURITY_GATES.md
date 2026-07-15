@@ -6,8 +6,8 @@ No gate is satisfied by documentation or module names alone. “Open” means im
 
 | Gate | Current state | Required evidence to close | Owner/phase |
 | --- | --- | --- | --- |
-| Local-only inference | REPOSITORY PASS — FRESH REVIEW / MERGE PENDING | Phase 1A has only `LocalOnly`; loopback/redirect/proxy controls; mandatory `/api/status` cloud-disabled proof; exact stable `/api/tags` → `/api/show` → `/api/tags` local-model evidence; immediate pre-chat revalidation; post-preparation verification; service-owned probe/chat/preparation deadlines and cancellation; bounded streaming; zero-chat sentinel tests; truthful UI; and no main-webview shell authority. All repository checks pass under the documented changed-scope formatting amendment. No real Ollama/model smoke or cryptographic daemon/artifact attestation is claimed. | Edge / 1A |
-| Durable runtime state | OPEN | SQLite migrations, transactions, restart recovery, deletion/export, permissions and corruption/migration tests | Edge / 1B |
+| Local-only inference | REPOSITORY PASS — MERGED / FRESH-MAIN VERIFIED | Phase 1A has only `LocalOnly`; loopback/redirect/proxy controls; mandatory `/api/status` cloud-disabled proof; exact stable `/api/tags` → `/api/show` → `/api/tags` local-model evidence; immediate pre-chat revalidation; post-preparation verification; service-owned probe/chat/preparation deadlines and cancellation; bounded streaming; zero-chat sentinel tests; truthful UI; and no main-webview shell authority. Reviewed head `9e8c5d9…` was merged as `62a1d514…` and verified from fresh main. No real Ollama/model smoke or cryptographic daemon/artifact attestation is claimed. | Edge / 1A |
+| Durable runtime state | OPEN — PLAN `CONDITIONAL_GO` / IMPLEMENTATION `NO_GO` | Human acceptance of at-rest residual risk, SQLite integration/version, retention/resource/export/WAL/platform decisions; then SQLite migrations, transactions, restart recovery, deletion/export, permissions and corruption/migration tests in separately authorized slices | Edge / 1B |
 | Inert Supervisor | OPEN | Deterministic IDs, explicit bounded state machine, idempotency, cancellation and crash recovery; no tools/network/scheduling | Edge / 1C |
 | Production pairing | OPEN | Signed purpose-bound invitation, trusted issuer, membership/device binding, expiry, nonce/replay, single use, revocation and downgrade tests | Both / ADR 0004 |
 | Readiness projection | OPEN | Separate signed schema, minimal allowlist, producer identity, expiry/freshness, replay/revocation, cross-repo fixtures and privacy tests | Both / ADR 0005 + Phase 5 |
@@ -93,6 +93,16 @@ The candidate implementation is intentionally narrower than production readiness
 This evidence does not close the model-download trust gate, malicious-daemon
 attestation, packaging/mobile gate or production-release gate. Official Ollama
 metadata is treated as evidence, not cryptographic truth about the daemon or
-artifact. It does not authorize merge or Phase 1B. The exact commands,
+artifact. Phase 1A was merged from its exact reviewed head, but that does not
+authorize production operations or Phase 1B implementation. The exact commands,
 formatting amendment and known baseline limitations are recorded in the Phase
 1A completion report.
+
+## Phase 1B planning status
+
+The docs-only Phase 1B plan recommends a Rust-owned `rusqlite` service and
+standard SQLite only with explicit human acceptance of residual stolen-disk
+risk and an OS full-disk-encryption requirement. It does not add a dependency,
+schema, migration, IPC command, or runtime behavior. The durable-state gate
+remains open until the reviewed slices and all required migration, restart,
+deletion/export, permission, corruption, privacy, and platform tests pass.

@@ -29,7 +29,7 @@ Only one phase is authorized at a time. A `GO` or `CONDITIONAL_GO` plan does not
 | 8 | Wallet and economic loops | Edge signer boundary | Separate identities, proposal flow, isolated signing, explicit approval; worker only as separately gated subphase | Derivation/recovery, transaction display, approval, replay and signer-isolation tests | Financial action always approved outside LLM | XL |
 | 9 | Hardening and production gates | Both + release components | Threat closure, platform packaging, update/supply-chain, recovery drills, observability | Release matrices, platform evidence, incident/recovery drills, dependency/license review | No unresolved Critical/High finding | XL |
 
-## Phase 1A: the only eligible next runtime milestone
+## Phase 1A: completed repository milestone
 
 Required scope:
 
@@ -100,7 +100,7 @@ Numbers are reservations for planning, not accepted decisions.
 ## Current gate
 
 - Baseline documentation: adopted with the limitations recorded in the Phase 00 completion report.
-- Phase 1A: repository-level `PASS` after focused diff/security review plus
+- Phase 1A: `MERGED / FRESH-MAIN VERIFIED / PASS` after focused diff/security review plus
   probe-deadline, request-scoped model-preparation cancellation, and P1 local
   model verification corrections. The service now requires explicit daemon
   cloud-disabled proof and stable tags/show/tags evidence for readiness,
@@ -113,7 +113,23 @@ Numbers are reservations for planning, not accepted decisions.
   formatting debt is pre-existing, reduced from 101 baseline files to 94 and
   tracked separately. Live Ollama/model behavior, malicious-daemon attestation,
   cryptographic artifact trust and daemon-side cancellation remain unverified.
-  Fresh exact-head review and merge are pending; PR readiness does not authorize
-  merge.
-- Phase 1B and later: `NO_GO` until Phase 1A is merged and verified from fresh `main`.
+  PR #24 was reviewed at `9e8c5d9c8adb4c02bfa9b11e970e33a0bbfd640f`
+  and merged as `62a1d514b93925e8b7098c6db19f8751a70a7bf8`;
+  fresh-main verification passed. No live Ollama smoke is claimed.
+- Phase 1B planning: `CONDITIONAL_GO`; the docs-only plan requires explicit
+  human decisions on at-rest risk, dependency/version, resource/retention,
+  export, WAL defaults and platform gates.
+- Phase 1B implementation: `NO_GO PENDING EXPLICIT HUMAN REVIEW`.
+- Phase 1C and later: `NO_GO`.
 - Production readiness: `NO_GO`.
+
+```text
+PHASE_1A =
+MERGED / FRESH-MAIN VERIFIED / PASS
+
+PHASE_1B_PLANNING =
+CONDITIONAL_GO
+
+PHASE_1B_IMPLEMENTATION =
+NO_GO PENDING EXPLICIT HUMAN REVIEW
+```
