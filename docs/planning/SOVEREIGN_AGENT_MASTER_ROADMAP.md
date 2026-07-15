@@ -29,7 +29,7 @@ Only one phase is authorized at a time. A `GO` or `CONDITIONAL_GO` plan does not
 | 8 | Wallet and economic loops | Edge signer boundary | Separate identities, proposal flow, isolated signing, explicit approval; worker only as separately gated subphase | Derivation/recovery, transaction display, approval, replay and signer-isolation tests | Financial action always approved outside LLM | XL |
 | 9 | Hardening and production gates | Both + release components | Threat closure, platform packaging, update/supply-chain, recovery drills, observability | Release matrices, platform evidence, incident/recovery drills, dependency/license review | No unresolved Critical/High finding | XL |
 
-## Phase 1A: the only eligible next runtime milestone
+## Phase 1A: completed repository milestone
 
 Required scope:
 
@@ -76,6 +76,48 @@ The first SQLite schema contains only:
 
 It must not be described as complete memory. Memory types, embeddings, entities/relations and external vector systems are deferred.
 
+Human decisions HD-01 through HD-09 approve the Phase 1B plan: SQLite is the
+authoritative local transactional store; `rusqlite` with `bundled`, `limits`,
+and `backup` is owned by a Rust blocking actor; standard plaintext SQLite is
+accepted for the foundation with full-disk encryption required on supported
+production devices; retention, limits, pragmas, export, and desktop platform
+gates are fixed in the phase plan. Semantic and graph stores remain rebuildable
+projections, large bytes belong outside SQLite by default, and remote sync is
+optional and non-authoritative. This approval does not authorize implementation
+or slice 1B.1.
+
+## Future Storage Evolution
+
+The following sequence is a storage-evolution architecture stream, not a
+renumbering of the accepted execution phase map above:
+
+```text
+Phase 1B — SQLite foundation
+    ↓
+Phase 2 — semantic index
+    ↓
+Phase 3 — graph memory
+    ↓
+Phase 4 — artifact storage
+    ↓
+Phase 5 — optional remote projections
+```
+
+These are architectural placeholders only. Phase 1B owns only authoritative
+SQLite transactional state. Phase 2 semantic indexing may be proposed within
+the accepted six-level memory phase. The storage-stream labels Phase 3–5 do not
+replace or alter the current top-level Phase 3 Loop Runtime, Phase 4 Tool
+Runtime, or Phase 5 readiness-projection scopes. Scheduling any graph, artifact,
+or remote-storage implementation requires a separately reviewed roadmap change,
+future ADR, bounded plan, tests, security gate, and explicit human authorization.
+
+Future semantic and graph stores are rebuildable projections. Artifact bytes
+may live outside SQLite, but artifact lifecycle metadata remains authoritative
+in SQLite. Remote systems may receive projections, signed summaries, or optional
+encrypted backups and never become the canonical runtime writer. No Qdrant,
+LanceDB, graph database, object-store product, SQLCipher integration, replication
+engine, or cloud backend is selected by this placeholder sequence.
+
 ## Phase 1C boundary
 
 The first Supervisor is inert. It can create, transition, cancel, persist and recover tasks, but it cannot call tools, open network connections, schedule itself, sign data, mutate user files or recursively delegate.
@@ -94,13 +136,18 @@ Loop Runtime follows local inference, durable state and an inert Supervisor. The
 - wallet signer isolation;
 - model manifest/artifact trust;
 - Android transport/background execution.
+- semantic retrieval engine, provenance and full-index rebuild;
+- graph projection engine, reconciliation and rebuild;
+- artifact byte storage, integrity and lifecycle metadata;
+- pre-production SQLCipher/key-lifecycle decision for database-file encryption;
+- optional remote projection, encrypted-backup or replication boundary.
 
 Numbers are reservations for planning, not accepted decisions.
 
 ## Current gate
 
 - Baseline documentation: adopted with the limitations recorded in the Phase 00 completion report.
-- Phase 1A: repository-level `PASS` after focused diff/security review plus
+- Phase 1A: `MERGED / FRESH-MAIN VERIFIED / PASS` after focused diff/security review plus
   probe-deadline, request-scoped model-preparation cancellation, and P1 local
   model verification corrections. The service now requires explicit daemon
   cloud-disabled proof and stable tags/show/tags evidence for readiness,
@@ -113,7 +160,27 @@ Numbers are reservations for planning, not accepted decisions.
   formatting debt is pre-existing, reduced from 101 baseline files to 94 and
   tracked separately. Live Ollama/model behavior, malicious-daemon attestation,
   cryptographic artifact trust and daemon-side cancellation remain unverified.
-  Fresh exact-head review and merge are pending; PR readiness does not authorize
-  merge.
-- Phase 1B and later: `NO_GO` until Phase 1A is merged and verified from fresh `main`.
+  PR #24 was reviewed at `9e8c5d9c8adb4c02bfa9b11e970e33a0bbfd640f`
+  and merged as `62a1d514b93925e8b7098c6db19f8751a70a7bf8`;
+  fresh-main verification passed. No live Ollama smoke is claimed.
+- Phase 1B planning: `APPROVED / HUMAN_DECISIONS_RECORDED`; the docs-only
+  finalization awaits a fresh exact-head review and merge gate.
+- Phase 1B implementation: `NO_GO`.
+- Phase 1B.1: `NOT_AUTHORIZED_BY_THIS_TASK`; every slice remains separately
+  authorized.
+- Phase 1C and later: `NO_GO`.
 - Production readiness: `NO_GO`.
+
+```text
+PHASE_1A =
+MERGED / FRESH-MAIN VERIFIED / PASS
+
+PHASE_1B_PLANNING =
+APPROVED / HUMAN_DECISIONS_RECORDED / FRESH_REVIEW_PENDING
+
+PHASE_1B_IMPLEMENTATION =
+NO_GO
+
+PHASE_1B_1 =
+NOT_AUTHORIZED_BY_THIS_TASK
+```
