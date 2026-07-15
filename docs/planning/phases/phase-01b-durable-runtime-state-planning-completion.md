@@ -23,7 +23,7 @@ Architecture and dependency evidence:
 - `AGENTS.md`
 - `README.md`
 - `src-tauri/Cargo.toml`
-- `Cargo.lock`
+- `src-tauri/Cargo.lock`
 - `src-tauri/src/lib.rs`
 - `.github/workflows/release.yml`
 - `docs/adr/0001-local-first-inference.md`
@@ -126,11 +126,29 @@ Updated:
 No ADR, Rust/TypeScript source, manifest, lockfile, migration, capability,
 configuration, CI, or deployment file was created or changed.
 
+## Focused review correction
+
+The focused Codex review of commit
+`65dc740a9780c1fdfad056cb62cc75226d012538` found two substantive documentation
+issues:
+
+- P2: `AUTOINCREMENT` would create `sqlite_sequence` and contradict the exact
+  five-table boundary. The proposal now uses `INTEGER PRIMARY KEY`, documents
+  rowid reuse limits, prohibits public audit deletion, and requires the initial
+  migration test to prove exactly five tables with no `sqlite_sequence` or
+  other unexpected internal table.
+- P3: Rust lockfile evidence now consistently names
+  `src-tauri/Cargo.lock`; repository-root `Cargo.lock` is confirmed absent.
+
+The correction remains documentation-only and does not authorize Phase 1B.1.
+
 ## Validation results
 
 Validation of the final documentation diff:
 
 - changed-path allowlist: `PASS` — exactly five authorized documentation paths
+- correction-commit scope: `PASS` — only the Phase 1B plan and planning
+  completion report changed
 - `git diff --check`: `PASS`
 - Markdown link/path validation: `PASS` — all six external references resolved;
   no unresolved local Markdown target was introduced
@@ -139,6 +157,11 @@ Validation of the final documentation diff:
   classified `MISSING`, and all implementation status is `NO_GO`
 - canonical-doc consistency review: `PASS` — roadmap, capability matrix,
   security gates, plan, and completion report agree
+- exact-five-table review: `PASS` — the proposed schema has five application
+  tables, uses no `AUTOINCREMENT` or custom sequence table, and the test contract
+  explicitly rejects `sqlite_sequence` and any unexpected table
+- lockfile-path verification: `PASS` — `src-tauri/Cargo.lock` exists and
+  repository-root `Cargo.lock` does not
 - clean-worktree verification: required immediately after the final commit and
   push; only the five allowlisted documentation paths are staged at this gate
 - Rust/frontend builds: `NOT RUN / NOT REQUIRED FOR DOCS-ONLY PLANNING`
@@ -158,6 +181,9 @@ NO_GO PENDING EXPLICIT HUMAN REVIEW
 
 PLANNING_ARTIFACT_GATE =
 PASS
+
+FRESH_CODEX_REVIEW =
+PENDING AFTER CORRECTION
 
 PRODUCTION_WRITES =
 0

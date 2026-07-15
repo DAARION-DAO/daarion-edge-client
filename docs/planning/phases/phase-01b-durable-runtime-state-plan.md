@@ -48,7 +48,7 @@ The inventory is based on executable source at the starting commit.
 | Component | Classification | Evidence and boundary |
 | --- | --- | --- |
 | Rust/Tauri composition | `IMPLEMENTED` | `src-tauri/src/lib.rs` declares services and registers commands; it is already a composition hotspot and must not acquire SQL logic. |
-| SQLite dependency/schema | `ABSENT` | `src-tauri/Cargo.toml`, `Cargo.lock`, and source contain no runtime SQLite driver, database bootstrap, schema, or migration runner. |
+| SQLite dependency/schema | `ABSENT` | `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and source contain no runtime SQLite driver, database bootstrap, schema, or migration runner. There is no repository-root `Cargo.lock`. |
 | Device identity metadata | `PARTIAL` | `src-tauri/src/identity.rs` stores `identity.json` under the Tauri app-data directory and keeps the Ed25519 secret in the OS keyring. Rotation/recovery remain outside this phase. |
 | Enrollment state | `PARTIAL` | `src-tauri/src/enrollment.rs` stores `enrollment.json`; node-token material uses keyring. Some JSON read failures fall back to a default state. |
 | Pairing state | `PARTIAL` | `src-tauri/src/pairing.rs` validates then writes `pairing.json` directly. Production trust, atomic replacement, revocation, and replay are separate gates. |
@@ -311,7 +311,7 @@ model, endpoint, wallet, or remote identity column.
 
 | Field | Contract |
 | --- | --- |
-| `sequence_no` | `INTEGER PRIMARY KEY AUTOINCREMENT`, local total ordering |
+| `sequence_no` | `INTEGER PRIMARY KEY`; SQLite rowid allocation provides monotonic ordering while the retained rows exist |
 | `event_id` | UUID `TEXT NOT NULL UNIQUE` |
 | `event_type` | allowlisted `TEXT NOT NULL`, maximum 64 bytes |
 | `actor_type` | allowlisted `TEXT NOT NULL`, maximum 32 bytes |
@@ -325,7 +325,15 @@ model, endpoint, wallet, or remote identity column.
 Indexes `(created_at_ms, sequence_no)`, `(event_type, created_at_ms)`, and
 `(subject_type, subject_id, sequence_no)`. Privacy: privacy-safe operational
 metadata, still local-sensitive. Public-service deletion is forbidden except
-through the approved retention process.
+through a future, separately reviewed contract; the initial contract exposes
+no public audit-deletion operation.
+
+Audit events are append-only through the public service layer. With
+`INTEGER PRIMARY KEY`, a deleted historical rowid could theoretically be reused
+after deletion; the initial contract exposes no public audit-deletion operation,
+and any future internal retention process must preserve ordering semantics and
+receive separate review. `AUTOINCREMENT` is deliberately not used, so migration
+1 must not create SQLite's `sqlite_sequence` table or a custom sequence table.
 
 No other table is permitted in migration 1.
 
@@ -539,7 +547,10 @@ or deletion/export flow block the relevant slice.
 
 The implementation must provide deterministic tests for all of the following:
 
-1. Fresh database bootstrap creates exactly the five approved tables and indexes.
+1. Fresh database bootstrap queries `sqlite_schema` and proves the table set is
+   exactly `schema_migrations`, `conversations`, `messages`, `tasks`, and
+   `audit_events`; no unexpected application or SQLite internal table exists,
+   and specifically no `sqlite_sequence` table is created.
 2. Sequential embedded migration execution records name, checksum, and timestamp.
 3. Migration replay executes every migration exactly once.
 4. Migration checksum or name mismatch fails closed without mutation.
@@ -553,7 +564,8 @@ The implementation must provide deterministic tests for all of the following:
 12. Message ordering remains stable across restart.
 13. Foreign keys and service APIs prevent orphan messages.
 14. Inert task records persist across restart without acquiring behavior.
-15. Audit `sequence_no` ordering is total and stable.
+15. Audit `sequence_no` ordering is total and stable for retained append-only
+    rows; no public audit-deletion operation exists.
 16. State plus required audit write is atomic in success and failure cases.
 17. Single-conversation deletion cascades only its owned rows and verifies counts.
 18. Delete-all removes approved user content and applies reviewed audit retention.
@@ -585,7 +597,7 @@ does not authorize all slices.
 
 - Goal: add the selected dependency, private storage actor, path/permission
   policy, connection pragmas, migration manifest, and empty fresh schema.
-- Expected files: `src-tauri/Cargo.toml`, `Cargo.lock`, new
+- Expected files: `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, new
   `src-tauri/src/runtime_store/**`, one embedded initial SQL resource, and a
   composition-only edit to `src-tauri/src/lib.rs`.
 - Tests: matrix 1–10, 21–26, 28–30 where applicable, plus target compile checks.
@@ -701,7 +713,7 @@ Only slice 1B.1 proposes manifest/lock changes:
 | --- | --- | --- | --- | --- |
 | `rusqlite` | Rust-owned SQLite connection, transactions, backup and limits | Exact reviewed compatible release, initially `0.40.1`; `default-features = false`; `bundled`, `limits`, `backup` only | MIT; bundled SQLite is public-domain upstream; native C compile/package and security-version review required on every target | Remove before persisted use; after a database is opened, preserve data and remove only after compatibility/readback plan |
 
-`Cargo.lock` would change transitively, including the selected SQLite FFI
+`src-tauri/Cargo.lock` would change transitively, including the selected SQLite FFI
 package. The implementation PR must inventory every added/changed transitive,
 license, advisory, duplicate native library, and mobile packaging effect. It
 must not add SQLx, `tokio-rusqlite`, Tauri SQL, SQLCipher, loadable extensions,
@@ -716,7 +728,8 @@ use, schema/data compatibility controls rollback.
 
 Completed Phase 1B can pass only when:
 
-- exactly the five approved tables and specified indexes/constraints exist;
+- exactly the five approved application tables and specified indexes/constraints
+  exist, with no unexpected internal table such as `sqlite_sequence`;
 - migration history is immutable, checksummed, transactional, exact-once, and
   fails closed for mismatch/newer schema/interruption;
 - Rust exclusively owns the database path, SQL, connection, transactions, and
