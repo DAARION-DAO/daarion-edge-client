@@ -1,6 +1,6 @@
 # Phase 1B Durable Runtime State — Planning Completion
 
-Status: **PLANNING ARTIFACT PASS / IMPLEMENTATION NO_GO**
+Status: **PLANNING ARTIFACT CONDITIONAL_PASS / FRESH REVIEW PENDING / IMPLEMENTATION NO_GO**
 
 ## Starting state
 
@@ -148,6 +148,22 @@ list used shortened, nonexistent ADR filenames. The evidence list now uses the
 three exact repository paths. Their ADR numbers and titles match the files, and
 ADR 0002 remains the accepted SQLite/five-table foundation.
 
+## Polyglot storage refinement
+
+The final architecture-only refinement from exact head
+`74ed00fde00c3c9962bbadec2049ebfbe06c1cab` defines SQLite as the authoritative
+local transactional state layer and records semantic, graph, artifact, and
+remote storage as future non-authoritative roles. The semantic and graph stores
+are rebuildable projections; SQLite remains authoritative for artifact metadata;
+and remote systems receive projections, signed summaries, or optional encrypted
+backups only.
+
+No engine, dependency, schema, migration, runtime, synchronization loop, or
+deployment was added. Qdrant, LanceDB, a graph database, object storage,
+SQLCipher, remote replication, and cloud backends remain deferred to future
+ADRs. The master execution phase map was not renumbered; the roadmap labels the
+requested storage sequence as non-authorizing stream-local placeholders.
+
 ## Validation results
 
 Validation of the final documentation diff:
@@ -157,6 +173,8 @@ Validation of the final documentation diff:
 - schema-correction commit scope: `PASS` — only the Phase 1B plan and planning
   completion report changed
 - ADR-path correction scope: `PASS` — only the planning completion report changed
+- polyglot-refinement scope: `PASS` — only the Phase 1B plan, master roadmap,
+  and planning completion report changed
 - `git diff --check`: `PASS`
 - Markdown link/path validation: `PASS` — all six external references resolved;
   no unresolved local Markdown target was introduced
@@ -172,9 +190,12 @@ Validation of the final documentation diff:
   repository-root `Cargo.lock` does not
 - ADR evidence-path verification: `PASS` — all three exact files exist on the
   PR base and current branch; no duplicate or invented Phase 1B ADR path remains
+- polyglot-storage consistency: `PASS` — SQLite alone is authoritative;
+  semantic/graph stores are rebuildable, artifact metadata remains in SQLite,
+  remote systems are projections only, and no future engine is selected
 - clean-worktree verification: required immediately after the final commit and
-  push; the current pre-commit diff contains only the one allowlisted completion
-  report, while the cumulative PR contains five allowlisted documentation paths
+  push; the current pre-commit diff contains only the three allowlisted
+  documentation files, while the cumulative PR contains five allowlisted paths
 - Rust/frontend builds: `NOT RUN / NOT REQUIRED FOR DOCS-ONLY PLANNING`
 - production writes/deployments: `0`
 
@@ -191,10 +212,22 @@ PHASE_1B_IMPLEMENTATION =
 NO_GO PENDING EXPLICIT HUMAN REVIEW
 
 PLANNING_ARTIFACT_GATE =
-PASS
+CONDITIONAL_PASS PENDING FRESH EXACT-HEAD REVIEW
 
 FRESH_CODEX_REVIEW =
-PENDING AFTER ADR PATH CORRECTION
+PENDING AFTER POLYGLOT STORAGE REFINEMENT
+
+POLYGLOT_STORAGE =
+DOCUMENTED
+
+SQLITE_ROLE =
+AUTHORITATIVE_TRANSACTIONAL_STATE
+
+FUTURE_STORES =
+DOCUMENTED_ONLY
+
+PHASE_1B_1 =
+NOT AUTHORIZED
 
 PRODUCTION_WRITES =
 0

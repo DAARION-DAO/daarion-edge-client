@@ -76,6 +76,38 @@ The first SQLite schema contains only:
 
 It must not be described as complete memory. Memory types, embeddings, entities/relations and external vector systems are deferred.
 
+## Future Storage Evolution
+
+The following sequence is a storage-evolution architecture stream, not a
+renumbering of the accepted execution phase map above:
+
+```text
+Phase 1B — SQLite foundation
+    ↓
+Phase 2 — semantic index
+    ↓
+Phase 3 — graph memory
+    ↓
+Phase 4 — artifact storage
+    ↓
+Phase 5 — optional remote projections
+```
+
+These are architectural placeholders only. Phase 1B owns only authoritative
+SQLite transactional state. Phase 2 semantic indexing may be proposed within
+the accepted six-level memory phase. The storage-stream labels Phase 3–5 do not
+replace or alter the current top-level Phase 3 Loop Runtime, Phase 4 Tool
+Runtime, or Phase 5 readiness-projection scopes. Scheduling any graph, artifact,
+or remote-storage implementation requires a separately reviewed roadmap change,
+future ADR, bounded plan, tests, security gate, and explicit human authorization.
+
+Future semantic and graph stores are rebuildable projections. Artifact bytes
+may live outside SQLite, but artifact lifecycle metadata remains authoritative
+in SQLite. Remote systems may receive projections, signed summaries, or optional
+encrypted backups and never become the canonical runtime writer. No Qdrant,
+LanceDB, graph database, object-store product, SQLCipher integration, replication
+engine, or cloud backend is selected by this placeholder sequence.
+
 ## Phase 1C boundary
 
 The first Supervisor is inert. It can create, transition, cancel, persist and recover tasks, but it cannot call tools, open network connections, schedule itself, sign data, mutate user files or recursively delegate.
@@ -94,6 +126,11 @@ Loop Runtime follows local inference, durable state and an inert Supervisor. The
 - wallet signer isolation;
 - model manifest/artifact trust;
 - Android transport/background execution.
+- semantic retrieval engine, provenance and full-index rebuild;
+- graph projection engine, reconciliation and rebuild;
+- artifact byte storage, integrity and lifecycle metadata;
+- SQLCipher/key lifecycle if standard-SQLite residual risk is rejected;
+- optional remote projection, encrypted-backup or replication boundary.
 
 Numbers are reservations for planning, not accepted decisions.
 

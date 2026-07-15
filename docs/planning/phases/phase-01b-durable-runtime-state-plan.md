@@ -41,6 +41,157 @@ It explicitly excludes:
 Conversation history in this phase is runtime state, not semantic or long-term
 memory.
 
+# Polyglot Storage Evolution Contract
+
+Status: **DOCUMENTED ARCHITECTURE / FUTURE STORES OUT OF SCOPE**
+
+This contract defines ownership across future storage classes without widening
+Phase 1B. Only the SQLite transactional foundation is eligible for a future
+Phase 1B implementation authorization. Semantic, graph, artifact, and remote
+stores remain architectural placeholders with no selected engine, dependency,
+schema, runtime, migration, or deployment.
+
+## SQLite — Authoritative Local Transactional State
+
+Role: **Authoritative Local Transactional State**
+
+SQLite owns:
+
+- conversations;
+- messages;
+- tasks;
+- audit events;
+- schema migrations;
+- lifecycle state;
+- ownership;
+- provenance;
+- transactional integrity.
+
+SQLite is the canonical source of truth for local runtime state. Future stores
+may accelerate retrieval, traversal, artifact access, synchronization, or
+recovery, but they cannot silently override SQLite lifecycle, ownership,
+provenance, or transactional decisions.
+
+## Semantic Store — Semantic Retrieval Index
+
+Role: **Semantic Retrieval Index**
+
+Its future purpose is limited to:
+
+- embeddings;
+- semantic search;
+- retrieval.
+
+The semantic store is **not authoritative**. Its entire index must be
+rebuildable from canonical SQLite records and provenance. Missing, stale, or
+corrupt semantic entries degrade retrieval but do not change canonical state.
+Phase 1B selects neither Qdrant nor LanceDB nor any other semantic engine. A
+future ADR must select the backend, embedding provenance, rebuild contract,
+privacy boundary, resource limits, and failure behavior before implementation.
+
+## Graph Store — Relationship Traversal
+
+Role: **Relationship Traversal**
+
+Its future purpose is limited to:
+
+- entities;
+- relations;
+- memory graph traversal.
+
+A graph database is a rebuildable projection, not a source of lifecycle truth.
+Lifecycle, ownership, provenance, and canonical identifiers remain in SQLite.
+No graph engine, schema, synchronization mechanism, or deployment model is
+selected in Phase 1B. Those choices require a future ADR and separate phase
+authorization.
+
+## Filesystem / Object Store — Large Binary Artifacts
+
+Role: **Large Binary Artifacts**
+
+Future artifact storage may carry:
+
+- PDF files;
+- images;
+- audio;
+- video;
+- model files;
+- archives.
+
+A future separately authorized SQLite schema stores only authoritative artifact
+metadata:
+
+- artifact ID;
+- content hash;
+- size;
+- MIME type;
+- storage backend identifier;
+- object key;
+- timestamps;
+- provenance.
+
+Artifact metadata is not added to the five-table Phase 1B schema. Large blobs
+are not the default SQLite storage model. A filesystem or object
+store carries bytes, while SQLite owns their lifecycle and identity metadata.
+Object bytes must be checked against the canonical hash; discovering an object
+does not create or restore ownership without a matching SQLite record. No local
+filesystem layout, object-storage product, cloud bucket, or upload protocol is
+selected here.
+
+## Remote Synchronization — Non-Authoritative Projection
+
+Future remote systems may receive only:
+
+- approved projections;
+- signed summaries;
+- optional encrypted backups.
+
+Remote systems never become authoritative runtime writers. Local SQLite remains
+the source of truth. A remote projection may be stale, unavailable, revoked, or
+rebuilt without changing canonical local state. An encrypted backup is a
+recovery artifact, not a live replica or authorization source. Any future
+remote path requires explicit consent, minimization, encryption/key-management,
+signature, freshness, revocation, reconciliation, and failure-policy decisions
+in a separate ADR.
+
+## Storage Invariants
+
+- domain layer never depends on SQLite directly
+- repositories hide storage implementation
+- no raw SQL outside storage layer
+- no SQLite types inside domain models
+- frontend never receives SQL authority
+- stable canonical IDs across all stores
+- vector indexes rebuildable
+- graph projections rebuildable
+- artifact metadata authoritative in SQLite
+- remote sync is projection only
+- no distributed transaction required
+- cross-store synchronization uses reconciliation
+- storage engines remain replaceable
+
+Cross-store reconciliation always starts from canonical SQLite identifiers,
+state, and provenance. This contract does not add an outbox, projection table,
+distributed transaction, worker, or synchronization loop to the five-table
+Phase 1B schema.
+
+## Deferred engine decisions
+
+This PR does not select or implement:
+
+- Qdrant;
+- LanceDB;
+- a graph database;
+- an object-storage implementation;
+- SQLCipher;
+- a remote replication engine;
+- a cloud backend.
+
+Every engine choice requires a future ADR covering authority, data ownership,
+rebuild/reconciliation, privacy, encryption, resource limits, packaging,
+failure behavior, migration, rollback, deletion, and export. Documentation of a
+future role is not implementation evidence or authorization.
+
 ## 3. Current repository inventory
 
 The inventory is based on executable source at the starting commit.
