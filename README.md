@@ -25,7 +25,7 @@ The Edge Client operates across three distinct functional layers:
 ### 🤖 L2 — Personal Agent & Local Runtime
 * **Sovereign Agent Onboarding**: Provides an interactive workspace (via the Genesis Wizard) for personal agent creation, wallet management, and localized prompt directives.
 * **Local Compute Integration**: Automatically detects and catalogs local compute capacity, identifying available hardware resources (CPU cores, RAM total, and GPU acceleration APIs like Apple Metal or CUDA).
-* **Model Inference Shell**: Downloads, manages, and executes approved local LLMs (Gemma, Qwen) in GGUF format natively on the user's device.
+* **Local Inference Foundation**: Uses a provider-neutral, local-only inference boundary with Ollama as the first desktop provider. Canonical model IDs are resolved through the bundled registry, requests are bounded and cancellable, and no remote fallback is enabled. Ollama-managed model artifacts are not an embedded GGUF or `llama.cpp` runtime, and cross-platform live execution remains subject to verification.
 
 ### ⚙️ L3 — Worker Node (Gated)
 * **Compute Contribution**: Enables the option to lease local compute resources to the network for processing deterministic edge tasks (`ping_math` and `text_hash`).
@@ -64,7 +64,7 @@ Ensure you have Rust stable and Node.js v20+ installed.
 
 ### 1. Install Dependencies
 ```bash
-npm install
+npm ci
 ```
 
 ### 2. Run in Development Mode (Vite + Tauri)

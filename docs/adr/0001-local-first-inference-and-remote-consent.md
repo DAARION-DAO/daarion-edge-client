@@ -1,6 +1,6 @@
 # ADR 0001: Local-First Inference and Remote Consent
 
-- Status: Accepted for baseline; implementation pending Phase 1A
+- Status: Accepted and repository-verified in Phase 1A; fresh correction review, merge and live-provider verification pending
 - Date: 2026-07-04
 - Scope: `daarion-edge-client` inference policy and its product disclosure boundary
 
@@ -18,6 +18,12 @@ Edge source contains a real loopback Ollama chat path and a simulated remote-off
 6. Provider/runtime/model identifiers shown in logs/UI are truthful.
 7. Remote Edge inference is a future feature requiring a new ADR, separately enabled policy, explicit user consent, egress disclosure, cancellation and audit.
 8. Web cloud-assisted AI remains a separate trust domain and must be clearly labeled. It cannot be represented as Edge local inference or access Edge private state by default.
+9. Loopback transport is necessary but is not proof of local execution. Ollama
+   eligibility requires explicit daemon evidence that cloud is disabled.
+10. A model is eligible only after stable provider-local artifact metadata is
+    verified from tags/show/tags immediately before a prompt-bearing request.
+11. Unsupported or incomplete security metadata fails closed; no legacy
+    compatibility fallback may silently weaken `LocalOnly`.
 
 ## Consequences
 
@@ -26,6 +32,9 @@ Edge source contains a real loopback Ollama chat path and a simulated remote-off
 - No “automatic best provider” or silent fallback is allowed.
 - Tests require a fake provider and proof that LocalOnly never invokes a remote provider.
 - Loopback/redirect/proxy behavior must be included in the network policy analysis.
+- Official daemon/model metadata is a bounded Phase 1A control, not
+  cryptographic attestation against a malicious local daemon or model supply
+  chain.
 
 ## Alternatives rejected
 
@@ -35,4 +44,34 @@ Edge source contains a real loopback Ollama chat path and a simulated remote-off
 
 ## Verification gate
 
-See [Local-only inference gate](../security/SECURITY_GATES.md). This ADR does not itself prove the gate closed.
+The Phase 1A candidate routes status, discovery, preparation, smoke and chat
+through one bounded `InferenceService`; production composition constructs only
+the validated loopback Ollama provider and revalidates the reported endpoint at
+each service boundary. The service also requires explicit
+`/api/status cloud.disabled=true` daemon evidence plus one exact stable
+`/api/tags` → `/api/show` → `/api/tags` local-model evidence chain. Chat repeats
+the daemon, canonical mapping and model proof before constructing a
+prompt-bearing request. Preparation checks daemon policy before pull and repeats
+the complete proof before success. Unsupported, remote, duplicate, malformed,
+missing, contradictory or changed evidence fails closed.
+
+The service owns a separate five-second probe deadline for health and model
+inventory, a bounded chat deadline, and a one-hour model-preparation deadline.
+Chat and preparation use one kind-aware request registry with dedicated cancel
+commands. Preparation streams bounded pull records and the mounted UI exposes a
+truthful Cancel action; cancellation guarantees local future/stream teardown
+but does not claim undocumented daemon-side termination. Unit and scripted
+loopback tests cover cloud-policy states, remote/copy aliases, stable artifact
+evidence, zero prompt egress on rejection, stalled probes/preparation,
+endpoint/mapping rejection, bounded stream framing, queue/stream deadline and
+cancellation races, cross-kind isolation, duplicate IDs and sole-terminal
+chat-event enforcement. The mounted UI uses one typed command/event adapter and
+main-window shell authority was removed.
+
+See [Local-only inference gate](../security/SECURITY_GATES.md), the [Phase 1A
+completion report](../planning/phases/phase-01a-local-only-inference-completion.md),
+and the [local-model verification correction](../planning/phases/phase-01a-local-model-verification-correction-completion.md).
+These repository checks do not prove an approved mapped model running through a
+real Ollama installation, a truthful non-malicious daemon, artifact contents or
+signatures, packaging, mobile execution or production readiness. Merge remains
+a separate human action.

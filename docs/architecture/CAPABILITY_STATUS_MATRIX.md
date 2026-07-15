@@ -1,6 +1,6 @@
 # Sovereign Agent Capability Status Matrix
 
-Status: **BASELINE SNAPSHOT — 2026-07-04**
+Status: **PHASE 1A CANDIDATE SNAPSHOT — 2026-07-15 / FRESH REVIEW PENDING**
 
 The status describes executable evidence in the audited snapshots, not target architecture, live deployment, or product aspiration.
 
@@ -20,15 +20,16 @@ The status describes executable evidence in the audited snapshots, not target ar
 | Pairing consumption | Edge | `PARTIALLY_IMPLEMENTED` | `pairing.rs` parses/persists; does not verify signature/expiry/replay/revocation | Signed-envelope gate |
 | Backend health | Edge + backend | `BLOCKED_BY_EXTERNAL_DEPENDENCY` | Edge client code and contract states exist; service not called | Controlled live contract test |
 | Genesis/provisioning | Edge + backend | `PARTIALLY_IMPLEMENTED` | Provisioning/UI paths exist; wallet material unsafe/partial and E2E unverified | Separate provisioning/wallet gates |
-| Local model discovery | Edge | `IMPLEMENTED_BUT_UNVERIFIED` | `ollama.rs::list_local_models` uses loopback `/api/tags` | Provider integration tests |
-| Ollama detection | Edge | `PARTIALLY_IMPLEMENTED` | Loopback and shell checks exist; command exposure/platform behavior need review | Phase 1A |
-| Model download | Edge | `PARTIALLY_IMPLEMENTED` | Ollama pull exists; generic managed download unimplemented; artifact store simulates | Verified manifest/artifact gate |
-| Model verification | Edge | `MOCK_OR_PLACEHOLDER` | `verifier.rs` does not compare a hash | Artifact security phase |
-| Model loading/unloading | Edge | `MOCK_OR_PLACEHOLDER` | `runtime_loader.rs` emits simulated state | Provider lifecycle implementation |
-| Local inference | Edge | `PARTIALLY_IMPLEMENTED` | Real loopback Ollama chat stream; no LocalOnly invariant or full provider boundary | Phase 1A |
-| Token streaming | Edge | `PARTIALLY_IMPLEMENTED` | Response chunks emit Tauri events; framing/cancel/error/backpressure not proven | Phase 1A tests |
-| Timeout | Edge | `PARTIALLY_IMPLEMENTED` | Some Ollama calls set timeouts; local chat path uses default client | Phase 1A uniform deadline |
-| Cancellation | Edge | `MISSING` | No request cancellation contract found | Phase 1A |
+| Local model discovery | Edge | `IMPLEMENTED_BUT_UNVERIFIED` | Canonical summaries are marked installed only after daemon cloud-disabled proof and one exact stable `/api/tags` → `/api/show` → `/api/tags` local-evidence chain; deterministic fixtures pass, but no real installation was called | Controlled real-Ollama smoke |
+| Ollama detection | Edge | `IMPLEMENTED_BUT_UNVERIFIED` | Loopback health plus required `/api/status` `cloud.disabled=true` policy proof exist; unsupported/malformed states fail closed; desktop live/platform behavior is unverified | Controlled real-Ollama/platform smoke |
+| Model download | Edge | `PARTIALLY_IMPLEMENTED` | Request-scoped pull retains deadline/cancellation/bounded progress and now requires daemon plus complete local-model postflight before success; real pull, daemon-side stop and cryptographic artifact trust remain unverified | Verified manifest/artifact gate |
+| Model verification | Edge | `PARTIALLY_IMPLEMENTED` | Official Ollama metadata proof rejects remote markers, aliases, duplicates, invalid size/digest/details and unstable evidence before chat/preparation success; it does not hash the file, verify a signature, or attest a malicious daemon | Artifact security phase |
+| Model loading/unloading | Edge | `MOCK_OR_PLACEHOLDER` | Legacy simulated loader remains in source for unrelated dormant modules but is no longer registered or used by the approved inference surface | Later truthful provider lifecycle phase |
+| Local-only execution policy | Edge | `IMPLEMENTED_AND_VERIFIED` | `InferencePolicy::LocalOnly`, loopback/redirect/proxy controls, fail-closed daemon cloud-disabled proof, stable per-model evidence, immediate pre-chat revalidation and zero-chat sentinel tests pass in repository fixtures; fresh review pending | Phase 1A exact-head review |
+| Local inference | Edge | `IMPLEMENTED_BUT_UNVERIFIED` | Provider-neutral service and loopback Ollama adapter exist with fake/fixture tests; no real installed Ollama/model was called | Controlled real-Ollama smoke |
+| Token streaming | Edge | `IMPLEMENTED_AND_VERIFIED` | Bounded byte-buffered NDJSON decoder and terminal event gate cover split UTF-8, multiple/final/malformed/oversized records and late-event suppression | Phase 1A review |
+| Timeout | Edge | `IMPLEMENTED_AND_VERIFIED` | Service-owned probe, chat and preparation deadlines cover their queue/provider boundaries; cleanup and mutually exclusive terminal behavior are tested | Phase 1A review |
+| Cancellation | Edge | `IMPLEMENTED_AND_VERIFIED` | One kind-aware registry owns chat/preparation UUIDs; dedicated cancellation, duplicate rejection, cleanup, isolation, stalled-socket teardown and no-late-success behavior are tested | Phase 1A review |
 | Structured model output | Edge | `MISSING` | No validated structured decision schema found | Later Supervisor phase |
 | Edge embeddings | Edge | `MISSING` | No local embedding provider/store found | Later memory phase |
 | Web cloud chat/embeddings | Web cloud boundary | `IMPLEMENTED_BUT_UNVERIFIED` | `ai-agent-chat` calls cloud gateway after auth checks; live provider not called | Separate cloud feature verification |
@@ -51,6 +52,6 @@ The status describes executable evidence in the audited snapshots, not target ar
 ## Interpretation rules
 
 - A module name, README statement, enum, UI state, or test fixture alone cannot raise a capability status.
-- `IMPLEMENTED_AND_VERIFIED` requires relevant executable checks in the current evidence set; none of the system-level capabilities above meet that bar in this read-only baseline.
+- `IMPLEMENTED_AND_VERIFIED` is limited to the cited Phase 1A repository checks. It does not imply a live Ollama run, packaging proof, deployment truth or production readiness.
 - A live/deployed result must be recorded separately from repository evidence.
 - Status changes require evidence, date, command/result or deployed proof, and documentation update.

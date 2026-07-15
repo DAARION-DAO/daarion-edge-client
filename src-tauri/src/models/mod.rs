@@ -1,85 +1,45 @@
-pub mod registry;
-pub mod ollama;
-pub mod artifact_store;
-pub mod verifier;
-pub mod runtime_loader;
-pub mod residency_score;
-pub mod residency_policy;
-pub mod eviction_policy;
-pub mod inference_session;
-pub mod inference_limits;
-pub mod local_inference;
-pub mod inference_arbitrator;
-pub mod trust_topology;
-pub mod heartbeat_topology;
-pub mod model_gravity;
-pub mod gravity_score;
-pub mod placement_policy;
-pub mod token_stream;
-pub mod inference_stream;
-pub mod session_routing;
-pub mod session_shard;
-pub mod placement_activation;
-pub mod placement_recommendation;
-pub mod placement_intent;
-pub mod collector_signal;
-pub mod gravity_collector_sync;
 pub mod artifact_holder;
+pub mod artifact_store;
 pub mod co_download;
 pub mod co_download_intent;
+pub mod collector_signal;
+pub mod eviction_policy;
+pub mod gravity_collector_sync;
+pub mod gravity_score;
+pub mod heartbeat_topology;
+pub mod inference_stream;
+pub mod model_gravity;
+pub mod placement_activation;
+pub mod placement_intent;
+pub mod placement_policy;
+pub mod placement_recommendation;
+pub mod registry;
+pub mod residency_policy;
+pub mod residency_score;
+pub mod runtime_loader;
+pub mod session_routing;
+pub mod session_shard;
+pub mod token_stream;
+pub mod trust_topology;
+pub mod verifier;
 
-use tauri::{AppHandle, command, State};
-use crate::models::registry::{ModelRegistry, CandidateModel, RegistryPayload};
-use crate::models::artifact_store::ArtifactStore;
-use crate::models::residency_score::{ModelResidencyStats, ScoringEngine};
 use crate::models::eviction_policy::EvictionPolicy;
-use crate::models::inference_session::{LocalInferenceRequest, LocalInferenceResponse};
-use crate::models::local_inference::LocalInference;
-use crate::models::model_gravity::{ModelGravity, ModelPlacementRecommendation};
-use crate::models::gravity_score::ModelGravitySignal;
+use crate::models::registry::{ModelRegistry, RegistryPayload};
+use crate::models::residency_score::{ModelResidencyStats, ScoringEngine};
+use tauri::{command, AppHandle};
 
 #[command]
 pub async fn sync_registry(app: AppHandle) -> Result<RegistryPayload, String> {
     ModelRegistry::fetch_registry(app).await
 }
 
-pub use crate::models::ollama::*;
-
-
-
-#[command]
-pub async fn download_model(app: AppHandle, entry: CandidateModel) -> Result<(), String> {
-    // ArtifactStore::download_model(app, entry).await
-    Err("Not implemented yet".to_string())
-}
-
-#[command]
-pub async fn load_model(app: AppHandle, model_id: String) -> Result<(), String> {
-    runtime_loader::RuntimeLoader::load_model(app, model_id).await
-}
-
-#[command]
-pub async fn unload_model(app: AppHandle, model_id: String) -> Result<(), String> {
-    runtime_loader::RuntimeLoader::unload_model(app, model_id).await
-}
-
 #[command]
 pub fn get_residency_score(
-    stats: ModelResidencyStats, 
-    ram_gb: f32, 
-    is_specialized: bool
+    stats: ModelResidencyStats,
+    ram_gb: f32,
+    is_specialized: bool,
 ) -> Result<f32, String> {
     let pressure = EvictionPolicy::get_system_memory_pressure();
     let score = ScoringEngine::calculate_score(&stats, ram_gb, is_specialized, pressure);
     Ok(score.total_score)
-}
-
-#[command]
-pub async fn run_local_inference(app: AppHandle, request: LocalInferenceRequest) -> Result<LocalInferenceResponse, String> {
-    LocalInference::run_chat(app, request).await
-}
-
-#[command]
-pub fn get_placement_recommendation(model_id: String, signal: ModelGravitySignal) -> Result<ModelPlacementRecommendation, String> {
-    Ok(ModelGravity::get_recommendation(model_id, signal))
 }
