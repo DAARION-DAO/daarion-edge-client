@@ -78,6 +78,13 @@ impl ModelResolver {
             .collect()
     }
 
+    pub fn resolved_models(&self) -> Result<Vec<ResolvedModel>, InferenceError> {
+        self.models
+            .iter()
+            .map(|model| self.resolve(&model.id))
+            .collect()
+    }
+
     fn is_valid_ollama_tag(candidate: &str) -> bool {
         if candidate.is_empty()
             || candidate.len() > MAX_PROVIDER_MODEL_ID_BYTES
@@ -133,6 +140,16 @@ mod tests {
             resolver.resolve("unknown:remote-tag"),
             Err(InferenceError::UnknownModel(_))
         ));
+    }
+
+    #[test]
+    fn enumerates_only_uniquely_resolved_canonical_models() {
+        let resolver = ModelResolver::from_bundled_registry().unwrap();
+        let models = resolver.resolved_models().unwrap();
+        assert!(!models.is_empty());
+        assert!(models
+            .iter()
+            .any(|model| model.canonical_model_id == "qwen35-2b-stable"));
     }
 
     #[test]

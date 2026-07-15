@@ -38,6 +38,7 @@ pub struct InferenceStatus {
     pub provider_id: String,
     pub endpoint: String,
     pub available: bool,
+    pub local_only_verified: bool,
     pub detail: String,
 }
 
@@ -110,6 +111,10 @@ pub enum InferenceError {
     PolicyViolation(String),
     UnknownModel(String),
     ProviderUnavailable,
+    LocalOnlyNotEnforced,
+    ProviderCapabilityUnsupported,
+    ModelNotLocal,
+    LocalModelUnverified,
     ProviderProtocol(String),
     Cancelled,
     TimedOut,
@@ -125,6 +130,10 @@ impl InferenceError {
             Self::PolicyViolation(_) => "policy_violation",
             Self::UnknownModel(_) => "unknown_model",
             Self::ProviderUnavailable => "provider_unavailable",
+            Self::LocalOnlyNotEnforced => "local_only_not_enforced",
+            Self::ProviderCapabilityUnsupported => "provider_capability_unsupported",
+            Self::ModelNotLocal => "model_not_local",
+            Self::LocalModelUnverified => "local_model_unverified",
             Self::ProviderProtocol(_) => "provider_protocol",
             Self::Cancelled => "cancelled",
             Self::TimedOut => "timed_out",
@@ -142,6 +151,19 @@ impl InferenceError {
             | Self::ProviderProtocol(message)
             | Self::Internal(message) => message.clone(),
             Self::ProviderUnavailable => "Local inference provider is unavailable".to_string(),
+            Self::LocalOnlyNotEnforced => {
+                "Ollama cloud must be disabled before LocalOnly inference is eligible".to_string()
+            }
+            Self::ProviderCapabilityUnsupported => {
+                "Ollama cannot prove the required LocalOnly policy; upgrade or configure Ollama"
+                    .to_string()
+            }
+            Self::ModelNotLocal => {
+                "The selected model is not verified as a local Ollama artifact".to_string()
+            }
+            Self::LocalModelUnverified => {
+                "The selected local model could not be verified safely".to_string()
+            }
             Self::Cancelled => "Inference request was cancelled".to_string(),
             Self::TimedOut => "Inference request timed out".to_string(),
             Self::DuplicateRequest => {
@@ -193,5 +215,26 @@ mod tests {
             unavailable.message,
             "Local inference provider is unavailable"
         );
+
+        for (error, code) in [
+            (
+                InferenceError::LocalOnlyNotEnforced,
+                "local_only_not_enforced",
+            ),
+            (
+                InferenceError::ProviderCapabilityUnsupported,
+                "provider_capability_unsupported",
+            ),
+            (InferenceError::ModelNotLocal, "model_not_local"),
+            (
+                InferenceError::LocalModelUnverified,
+                "local_model_unverified",
+            ),
+        ] {
+            let public = InferencePublicError::from(error);
+            assert_eq!(public.code, code);
+            assert!(!public.message.contains("http"));
+            assert!(!public.message.contains("remote_host"));
+        }
     }
 }

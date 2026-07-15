@@ -1,6 +1,6 @@
 # Sovereign Agent Capability Status Matrix
 
-Status: **PHASE 1A CANDIDATE SNAPSHOT — 2026-07-14 / HUMAN ACCEPTANCE PENDING**
+Status: **PHASE 1A CANDIDATE SNAPSHOT — 2026-07-15 / FRESH REVIEW PENDING**
 
 The status describes executable evidence in the audited snapshots, not target architecture, live deployment, or product aspiration.
 
@@ -20,12 +20,12 @@ The status describes executable evidence in the audited snapshots, not target ar
 | Pairing consumption | Edge | `PARTIALLY_IMPLEMENTED` | `pairing.rs` parses/persists; does not verify signature/expiry/replay/revocation | Signed-envelope gate |
 | Backend health | Edge + backend | `BLOCKED_BY_EXTERNAL_DEPENDENCY` | Edge client code and contract states exist; service not called | Controlled live contract test |
 | Genesis/provisioning | Edge + backend | `PARTIALLY_IMPLEMENTED` | Provisioning/UI paths exist; wallet material unsafe/partial and E2E unverified | Separate provisioning/wallet gates |
-| Local model discovery | Edge | `IMPLEMENTED_BUT_UNVERIFIED` | Canonical bundled-registry summaries are matched to loopback Ollama `/api/tags`; unavailable provider behavior is tested, but no real installation was called | Controlled real-Ollama smoke |
-| Ollama detection | Edge | `IMPLEMENTED_BUT_UNVERIFIED` | HTTP-only loopback health exists; CLI probing and webview shell authority were removed; desktop live/platform behavior is unverified | Controlled real-Ollama/platform smoke |
-| Model download | Edge | `PARTIALLY_IMPLEMENTED` | Request-scoped preparation accepts a UUID plus canonical ID, maps only to local Ollama pull, enforces deadline/cancellation and validates bounded streamed progress; real pull, daemon-side stop, artifact digest/signature verification were not verified | Verified manifest/artifact gate |
-| Model verification | Edge | `MOCK_OR_PLACEHOLDER` | `verifier.rs` does not compare a hash | Artifact security phase |
+| Local model discovery | Edge | `IMPLEMENTED_BUT_UNVERIFIED` | Canonical summaries are marked installed only after daemon cloud-disabled proof and one exact stable `/api/tags` → `/api/show` → `/api/tags` local-evidence chain; deterministic fixtures pass, but no real installation was called | Controlled real-Ollama smoke |
+| Ollama detection | Edge | `IMPLEMENTED_BUT_UNVERIFIED` | Loopback health plus required `/api/status` `cloud.disabled=true` policy proof exist; unsupported/malformed states fail closed; desktop live/platform behavior is unverified | Controlled real-Ollama/platform smoke |
+| Model download | Edge | `PARTIALLY_IMPLEMENTED` | Request-scoped pull retains deadline/cancellation/bounded progress and now requires daemon plus complete local-model postflight before success; real pull, daemon-side stop and cryptographic artifact trust remain unverified | Verified manifest/artifact gate |
+| Model verification | Edge | `PARTIALLY_IMPLEMENTED` | Official Ollama metadata proof rejects remote markers, aliases, duplicates, invalid size/digest/details and unstable evidence before chat/preparation success; it does not hash the file, verify a signature, or attest a malicious daemon | Artifact security phase |
 | Model loading/unloading | Edge | `MOCK_OR_PLACEHOLDER` | Legacy simulated loader remains in source for unrelated dormant modules but is no longer registered or used by the approved inference surface | Later truthful provider lifecycle phase |
-| Local-only execution policy | Edge | `IMPLEMENTED_AND_VERIFIED` | `InferencePolicy::LocalOnly`, loopback endpoint validation, production-only Ollama composition and remote-provider rejection tests; human acceptance pending | Phase 1A review |
+| Local-only execution policy | Edge | `IMPLEMENTED_AND_VERIFIED` | `InferencePolicy::LocalOnly`, loopback/redirect/proxy controls, fail-closed daemon cloud-disabled proof, stable per-model evidence, immediate pre-chat revalidation and zero-chat sentinel tests pass in repository fixtures; fresh review pending | Phase 1A exact-head review |
 | Local inference | Edge | `IMPLEMENTED_BUT_UNVERIFIED` | Provider-neutral service and loopback Ollama adapter exist with fake/fixture tests; no real installed Ollama/model was called | Controlled real-Ollama smoke |
 | Token streaming | Edge | `IMPLEMENTED_AND_VERIFIED` | Bounded byte-buffered NDJSON decoder and terminal event gate cover split UTF-8, multiple/final/malformed/oversized records and late-event suppression | Phase 1A review |
 | Timeout | Edge | `IMPLEMENTED_AND_VERIFIED` | Service-owned probe, chat and preparation deadlines cover their queue/provider boundaries; cleanup and mutually exclusive terminal behavior are tested | Phase 1A review |

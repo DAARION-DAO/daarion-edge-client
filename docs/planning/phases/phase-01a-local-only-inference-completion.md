@@ -2,7 +2,11 @@
 
 Final repository release result: **PASS**
 
-Merge action: **NOT PERFORMED**. The focused diff/security review is complete and the PR may be marked ready for human merge review, but this task does not authorize or perform merge. Phase 1B and every later runtime phase remain **NO_GO** until Phase 1A is merged and verified from fresh `main`.
+Merge action: **NOT PERFORMED**. The focused diff/security review is complete,
+but a fresh Codex review of the exact correction head remains required before a
+controlled human merge gate. This task does not authorize or perform merge.
+Phase 1B and every later runtime phase remain **NO_GO** until Phase 1A is merged
+and verified from fresh `main`.
 
 The first controlled-finalize attempt correctly stopped with `FAIL` on an
 unresolved review finding: status and installed-model probes had no overall
@@ -13,8 +17,15 @@ review correctly identified that model preparation remained outside the
 request-scoped cancellation registry. The follow-up correction adds a typed
 preparation UUID, kind-aware shared registry, dedicated cancel command, bounded
 streamed pull parsing, and mounted UI cancellation. See
-`phase-01a-model-preparation-cancellation-completion.md`. The final candidate
-has 55 inference tests and 104 full Rust tests; merge remains a separate action.
+`phase-01a-model-preparation-cancellation-completion.md`. A subsequent P1 review
+correctly showed that loopback Ollama transport did not prove local execution:
+standard cloud models use the same local API and the candidate reduced model
+inventory to names. The local-model-verification correction now requires
+explicit daemon cloud-disabled proof plus stable tags/show/tags local-artifact
+evidence immediately before prompt transmission and after preparation. See
+`phase-01a-local-model-verification-correction-completion.md`. The final
+candidate has 67 inference tests and 116 full Rust tests; merge remains a
+separate action.
 
 ## Baseline and scope
 
@@ -43,7 +54,15 @@ The candidate adds one cohesive `inference` module:
 - production composition constructs exactly one provider, Ollama;
 - provider construction, service admission and every provider-facing service boundary validate a plain HTTP loopback origin;
 - the fixed production endpoint is normalized to IPv4 loopback; redirects and system proxies are disabled;
+- daemon eligibility additionally requires bounded `/api/status` evidence that
+  Ollama cloud is explicitly disabled; unsupported or incomplete capability
+  fails closed;
 - canonical DAARION model IDs resolve only when the bundled registry contains exactly one canonical entry and one adapter-private Ollama mapping with a bounded valid tag;
+- installed/ready state requires exactly one matching model with empty remote
+  markers, positive size, valid digest syntax, coherent details, matching
+  `/api/show` evidence, and an identical second `/api/tags` read;
+- every chat revalidates daemon policy, canonical mapping and the complete model
+  evidence before constructing its prompt-bearing provider request;
 - one service owns request validation, server-side limits, concurrency, absolute deadlines, kind-aware chat/preparation request-ID cancellation, cleanup and terminal ordering;
 - a bounded incremental NDJSON decoder preserves split UTF-8 and final buffered records, rejects malformed/post-terminal/oversized/incomplete streams, and checks aggregate buffer growth before appending input;
 - stable public error codes and controlled messages cross Tauri IPC;
@@ -83,7 +102,11 @@ Terminal events are `completed`, `failed`, `cancelled` and `timed_out`. The Rust
 
 Tauri callers provide `canonical_model_id`; preparation additionally requires a UUID `request_id`. `ModelResolver` reads only the bundled registry during inference and requires exactly one matching canonical entry and exactly one Ollama mapping. Provider tags are bounded to 256 ASCII bytes and a conservative name/tag grammar. Tests prove `qwen35-2b-stable` maps to `qwen3.5:2b`; unknown, duplicate canonical, missing, duplicate-source, empty, whitespace, URL-shaped and otherwise malformed mappings fail before provider execution.
 
-No registry payload, model artifact, lockfile or remote registry contract changed. Ollama pull remains only a canonical-ID compatibility path; artifact signature/digest verification remains a separate open security gate.
+No registry payload, model artifact, lockfile or remote registry contract
+changed. Ollama pull remains only a canonical-ID compatibility path and cannot
+return success until daemon policy and complete model evidence pass again. The
+validated digest is metadata-stability evidence, not a file hash or signature;
+cryptographic artifact trust remains a separate open security gate.
 
 ## Verification evidence
 
@@ -92,8 +115,9 @@ No registry payload, model artifact, lockfile or remote registry contract change
 | changed-scope command shown below for every added/modified Rust file | PASS, 12/12 files |
 | probe-deadline correction fixtures | PASS, 6 tests using bounded loopback/fake-provider fixtures |
 | model-preparation cancellation correction | PASS, 13 focused tests; 6/6 correction Rust files pass scoped rustfmt |
-| `cargo test --manifest-path src-tauri/Cargo.toml inference:: --lib` | PASS, 55 tests |
-| `cargo test --manifest-path src-tauri/Cargo.toml` | PASS, 104 tests |
+| daemon/local-model verification correction | PASS, 12 new Rust tests covering the 30-case security matrix and no-prompt-egress fixture |
+| `cargo test --manifest-path src-tauri/Cargo.toml inference:: --lib` | PASS, 67 tests |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | PASS, 116 tests |
 | `cargo check --manifest-path src-tauri/Cargo.toml` | PASS |
 | `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets` | PASS command exit; 0 findings reference `src/inference/**` |
 | `npm ci` | PASS; lockfile unchanged |
@@ -151,9 +175,11 @@ classification is recorded below.
 | Cancellation/timeout race | Closed within phase: duplicate IDs, queue-wait cancellation/timeout, streaming cancellation/timeout, final-token-before-cancel, late provider error, cleanup, sole terminal outcome and late-event suppression are tested deterministically |
 | Non-cancellable model preparation | Closed for the DAARION boundary: preparation has a UUID, shared kind-aware registry, dedicated cancel command, absolute deadline, bounded streamed progress, stalled-header/body fixtures, cross-operation isolation and mounted UI Cancel action. Ollama daemon-side termination is not claimed |
 | Stalled local status/model probe | Closed within phase: `InferenceService` applies one 5-second production probe deadline; loopback fixtures prove stalled headers and model-list body return controlled `TimedOut` without false success or raw provider data |
-| Prompt/response leakage | No inference logging calls exist; sentinel test proves prompt text is absent from response metadata and emitted events; raw provider error bodies are not exposed |
+| Cloud-backed Ollama model or copied alias | Closed for the supported Ollama metadata contract: cloud must be explicitly disabled and tags/show/tags evidence must prove one stable local candidate before installed state, chat or preparation success |
+| Prompt/response leakage | No inference logging calls exist; sentinel fixtures prove failed daemon/model verification makes zero `/api/chat` calls and prompt text is absent from all prior requests, controlled errors and events; raw provider bodies are not exposed |
 | Main-webview shell escalation | Closed for this surface: shell capability and plugin initialization were removed; no general command executor was added |
-| Model artifact supply chain | OPEN and explicitly out of scope; Ollama-managed pull is not artifact verification |
+| Model artifact supply chain | OPEN and explicitly out of scope; digest syntax/stability and official remote metadata are checked, but no artifact file is hashed or signature/trust root verified |
+| Malicious or lying local daemon | OPEN and explicitly out of scope; Phase 1A verifies official API evidence and does not claim cryptographic daemon attestation |
 | Real platform/provider behavior | UNVERIFIED; automated tests use deterministic loopback fixtures and fakes, not a user-installed Ollama/model |
 
 No new Critical or High Phase 1A finding remains. Existing repository-wide warnings, dev-dependency audit findings, fixed-argument worker process commands and unrelated placeholder modules are recorded rather than represented as repaired. No Phase 1A inference path can invoke those worker commands.
@@ -162,11 +188,11 @@ No new Critical or High Phase 1A finding remains. Existing repository-wide warni
 
 | Review area | Result |
 | --- | --- |
-| A. Local-only enforcement | PASS — production constructs only `OllamaProvider`; fixed endpoint is plain HTTP loopback; provider/service boundaries revalidate it; redirects and system proxies are disabled; no remote inference/fallback path is registered |
+| A. Local-only enforcement | PASS — production constructs only `OllamaProvider`; loopback, redirect and proxy controls remain; daemon cloud-disabled and stable per-model evidence are mandatory and revalidated before prompt construction; no remote inference/fallback path is registered |
 | B. Provider/service boundary | PASS — mounted UI uses the typed adapter; every inference command reaches `InferenceService`; legacy direct commands are unregistered/deleted; frontend provides canonical IDs only |
 | C. Races | PASS — deterministic tests cover duplicates, queue wait, streaming, timeout/cancel ordering, late failures, cleanup and exactly one terminal event |
 | D. NDJSON bounds | PASS — record, aggregate buffer and output limits are enforced; malformed, incomplete, error and post-terminal records fail closed |
-| E. Model resolver | PASS — duplicate canonical entries and duplicate mappings fail; adapter tags are bounded/validated; bundled registry use is deterministic but not represented as cryptographic trust |
+| E. Model resolver/evidence | PASS — duplicate canonical entries/mappings and duplicate provider tags fail; adapter tags are bounded/private; remote, malformed, missing, contradictory or unstable Ollama evidence cannot authorize execution; bundled registry and digest metadata are not represented as cryptographic trust |
 | F. Tauri authority | PASS for Phase 1A — shell permission and plugin initialization are removed; no generic executor was added. Pre-existing fixed-argument worker/process commands remain separately security-gated |
 | G. Privacy | PASS for Phase 1A — no prompt/token/response logging; public errors are controlled; raw provider bodies and reqwest errors are not exposed; mounted inference frontend has no console logging |
 
@@ -193,6 +219,11 @@ No new Critical or High Phase 1A finding remains. Existing repository-wide warni
 | Server-owned limits, concurrency, deadline, cancellation and cleanup | PASS |
 | Model preparation is request-scoped, cancellable and kind-isolated | PASS for DAARION-side operation; upstream daemon-stop behavior remains unverified |
 | Status and model probes remain bounded after TCP connect | PASS |
+| Daemon cloud policy is explicit and unsupported versions fail closed | PASS |
+| Remote/copy aliases cannot be installed or executed from name alone | PASS |
+| Complete local-model evidence is revalidated before prompt construction | PASS |
+| Rejected verification results in zero chat calls and zero sentinel egress | PASS |
+| Preparation success requires complete postflight verification | PASS |
 | No late token/completion after a terminal event | PASS |
 | Truthful provider/policy/runtime/UI state | PASS |
 | Privacy-safe logs, errors and metadata | PASS |
@@ -210,6 +241,9 @@ No new Critical or High Phase 1A finding remains. Existing repository-wide warni
 - Ollama is installed on the review host, but no installed model exactly matches an approved bundled canonical mapping. No model was downloaded solely for review, so no real Ollama inference smoke, packaging, notarization or mobile execution proof is claimed.
 - There is no persistence or crash recovery for active requests.
 - Model preparation cancellation proves DAARION future/stream teardown and UI cleanup only. Official Ollama documentation does not provide a daemon-wide stop guarantee; resumable upstream progress may remain.
+- Local model verification relies on truthful official Ollama status/tags/show
+  metadata. It does not attest a malicious daemon, compromised local process,
+  post-verification tampering, model contents, provenance or signatures.
 - Repository-wide formatting remains open across 94 legacy files and is tracked as a separate cleanup. It is non-blocking only under the explicit Phase 1A amendment above.
 
 ## Rollback

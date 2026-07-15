@@ -6,7 +6,7 @@ No gate is satisfied by documentation or module names alone. “Open” means im
 
 | Gate | Current state | Required evidence to close | Owner/phase |
 | --- | --- | --- | --- |
-| Local-only inference | REPOSITORY PASS — MERGE PENDING | Phase 1A has only `LocalOnly`, validated/revalidated loopback Ollama composition, redirect/proxy denial, unique canonical mapping, service-owned probe/chat/preparation deadlines, one kind-aware chat/preparation cancellation registry, bounded chat and pull streaming, deterministic stalled-socket/race/isolation tests, truthful preparation Cancel UI, sole-terminal chat enforcement and no main-webview shell authority. All repository checks pass under the documented changed-scope formatting amendment. No approved mapped model was available for a real Ollama smoke, so live provider and daemon-side cancellation behavior remain unverified. | Edge / 1A |
+| Local-only inference | REPOSITORY PASS — FRESH REVIEW / MERGE PENDING | Phase 1A has only `LocalOnly`; loopback/redirect/proxy controls; mandatory `/api/status` cloud-disabled proof; exact stable `/api/tags` → `/api/show` → `/api/tags` local-model evidence; immediate pre-chat revalidation; post-preparation verification; service-owned probe/chat/preparation deadlines and cancellation; bounded streaming; zero-chat sentinel tests; truthful UI; and no main-webview shell authority. All repository checks pass under the documented changed-scope formatting amendment. No real Ollama/model smoke or cryptographic daemon/artifact attestation is claimed. | Edge / 1A |
 | Durable runtime state | OPEN | SQLite migrations, transactions, restart recovery, deletion/export, permissions and corruption/migration tests | Edge / 1B |
 | Inert Supervisor | OPEN | Deterministic IDs, explicit bounded state machine, idempotency, cancellation and crash recovery; no tools/network/scheduling | Edge / 1C |
 | Production pairing | OPEN | Signed purpose-bound invitation, trusted issuer, membership/device binding, expiry, nonce/replay, single use, revocation and downgrade tests | Both / ADR 0004 |
@@ -62,6 +62,16 @@ The candidate implementation is intentionally narrower than production readiness
 
 - production construction accepts only an HTTP loopback origin and disables redirects and system proxies;
 - a remote-scoped provider is rejected before any provider method can run;
+- the loopback daemon must explicitly report `cloud.disabled=true`; false,
+  missing, malformed, unsupported, timed-out or otherwise unverifiable policy
+  evidence fails closed;
+- an installed/ready model requires exactly one canonical private tag with empty
+  remote markers, positive size, valid digest syntax, coherent details,
+  matching show evidence, and an identical second tags read;
+- each chat repeats daemon policy, canonical mapping and model evidence checks
+  inside its request deadline before the prompt-bearing request is constructed;
+- deterministic rejected-path fixtures make zero `/api/chat` calls and observe
+  no sentinel prompt in status, tags or show requests;
 - prompts, tokens, completed output, raw provider bodies and environment/proxy values are not logged by the inference module;
 - provider errors cross IPC as controlled messages rather than raw response bodies;
 - cancellation, timeout or failure closes the event gate, suppressing late tokens and completion;
@@ -76,5 +86,13 @@ The candidate implementation is intentionally narrower than production readiness
 - streamed pull progress reuses bounded NDJSON framing and rejects malformed, oversized, error, incomplete and post-terminal records;
 - stalled-header/body fixtures prove cancellation drops the DAARION future/stream, cleans the registry and leaves chat/other preparation operations active;
 - mounted UI cancellation says only that the local request stopped; no claim is made that the Ollama daemon immediately stopped network or disk work.
+- a preparation result is successful only after the daemon and complete local
+  model evidence pass again; failed postflight cannot become
+  `completed_locally` in the mounted UI.
 
-This evidence does not close the model-download trust gate, packaging/mobile gate or production-release gate. It does not authorize merge or Phase 1B. The exact commands, formatting amendment and known baseline limitations are recorded in the Phase 1A completion report.
+This evidence does not close the model-download trust gate, malicious-daemon
+attestation, packaging/mobile gate or production-release gate. Official Ollama
+metadata is treated as evidence, not cryptographic truth about the daemon or
+artifact. It does not authorize merge or Phase 1B. The exact commands,
+formatting amendment and known baseline limitations are recorded in the Phase
+1A completion report.

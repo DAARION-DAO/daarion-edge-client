@@ -77,11 +77,39 @@ if (!adapter.includes("export interface PrepareLocalModelRequest")) {
 if (!adapter.includes('cancelPreparation: "cancel_local_model_preparation"')) {
   fail("typed adapter does not expose the dedicated preparation cancellation command");
 }
+if (!adapter.includes("local_only_verified: boolean")) {
+  fail("typed adapter does not expose explicit LocalOnly verification state");
+}
+if (!panel.includes('policy_unverified: "Ollama reachable · LocalOnly not verified"')) {
+  fail("mounted inference panel does not distinguish unverified LocalOnly policy");
+}
+if (!panel.includes("providerStatus.local_only_verified")) {
+  fail("mounted inference panel does not gate preparation on LocalOnly verification");
+}
+if (!panel.includes("!providerStatus?.local_only_verified")) {
+  fail("mounted inference panel does not gate Run on LocalOnly verification");
+}
+if (!panel.includes("DAARION did not change Ollama settings")) {
+  fail("mounted inference panel lacks truthful host-configuration remediation text");
+}
+if (panel.includes('" · installed"')) {
+  fail("mounted inference panel still labels unverified inventory as generically installed");
+}
 if (!panel.includes('aria-label="Cancel local model preparation"')) {
   fail("mounted inference panel does not expose model-preparation cancellation");
 }
 if (!panel.includes('transition("preparing")') || !panel.includes('transition("cancelled")')) {
   fail("mounted inference panel lacks truthful preparation terminal states");
+}
+const prepareCall = panel.indexOf("await prepareLocalModel({");
+const postPrepareRefresh = panel.indexOf("await refresh();", prepareCall);
+const postPrepareCompletion = panel.indexOf('transition("completed_locally")', postPrepareRefresh);
+if (
+  prepareCall < 0 ||
+  postPrepareRefresh < prepareCall ||
+  postPrepareCompletion < postPrepareRefresh
+) {
+  fail("mounted inference panel can report local preparation completion before postflight verification");
 }
 if (panel.includes('aria-label="Preparing local model"')) {
   fail("mounted inference panel still exposes a non-cancellable preparation spinner");

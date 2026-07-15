@@ -17,7 +17,7 @@ Only one phase is authorized at a time. A `GO` or `CONDITIONAL_GO` plan does not
 | Phase | Goal | Primary repository | Scope and non-goals | Acceptance evidence | Security gate | Complexity |
 | --- | --- | --- | --- | --- | --- | --- |
 | 0 | Baseline audit, instructions and skills | Both | Docs/instructions only; no runtime changes | Adopted audit, ownership, matrices, ADRs, roadmap, threat model, validation report | No sensitive data; no false implementation claims | M |
-| 1A | Local-only inference foundation | Edge | `InferenceProvider`, Ollama adapter, `LocalOnly`, model/command mapping, timeout, cancellation, truthful UI, fake-provider tests. No SQLite/Supervisor/tools/network fallback | Policy/provider unit tests, loopback-only integration tests, cancellation/deadline tests, UI truth tests, diff/security review | Remote branch unreachable; no silent egress | L |
+| 1A | Local-only inference foundation | Edge | `InferenceProvider`, Ollama adapter, `LocalOnly`, explicit daemon cloud-disabled proof, stable per-model local evidence, model/command mapping, timeout, cancellation, truthful UI, fake/scripted-provider tests. No SQLite/Supervisor/tools/network fallback | Policy/provider unit tests, loopback integration tests, remote-alias and zero-prompt-egress tests, cancellation/deadline tests, UI truth tests, diff/security review | Cloud-disabled plus local-model proof required before prompt; no silent egress | L |
 | 1B | Durable runtime state | Edge | SQLite bootstrap/migrations, conversations, messages, tasks, audit events, restart recovery, deletion. Not six-level memory | Migration/replay/transaction/restart/deletion/export tests | Local DB permissions, no secret logging, recovery integrity | L |
 | 1C | Inert Agent Supervisor | Edge | Deterministic task IDs, explicit state machine, bounded transitions, recovery integration. No tools/network/autonomous scheduling | State-machine, idempotency, cancellation and crash-recovery tests | Model cannot bypass state/policy; no execution capability | L |
 | 2 | Six-level memory evolution | Edge | Repository interfaces then working/conversation/episodic/semantic/procedural/graph memory; embeddings only after ADR | Migration, provenance, retention, deletion/export, poisoning/dedup tests | Extracted memory untrusted; raw memory local | XL |
@@ -37,6 +37,10 @@ Required scope:
 - implement an Ollama provider without coupling the domain API to Ollama;
 - make `InferencePolicy::LocalOnly` the only enabled MVP policy;
 - remove or make simulated remote fallback unreachable;
+- require explicit Ollama daemon cloud-disabled evidence and fail closed when
+  the capability is absent or incomplete;
+- require stable tags/show/tags local-model evidence and revalidate it before
+  every prompt-bearing request and after preparation;
 - align command names, registry model IDs and Ollama upstream tags;
 - enforce request timeout and cancellation;
 - make provider/runtime/status UI truthful;
@@ -96,6 +100,20 @@ Numbers are reservations for planning, not accepted decisions.
 ## Current gate
 
 - Baseline documentation: adopted with the limitations recorded in the Phase 00 completion report.
-- Phase 1A: repository-level `PASS` after focused diff/security review plus probe-deadline and request-scoped model-preparation cancellation corrections. Health/inventory probes and preparation are service-bounded; preparation has a UUID, kind-aware registry, dedicated cancel command, bounded streamed pull validation and mounted UI Cancel action. Stalled-header/body and isolation fixtures pass; 55 inference and 104 full Rust tests pass. Every changed Rust file, contract, build and scoped security check passes. Repository-wide formatting debt is pre-existing, reduced from 101 baseline files to 94 and tracked separately; live Ollama/model and daemon-side cancellation behavior remain `IMPLEMENTED_BUT_UNVERIFIED`. PR readiness does not authorize merge.
+- Phase 1A: repository-level `PASS` after focused diff/security review plus
+  probe-deadline, request-scoped model-preparation cancellation, and P1 local
+  model verification corrections. The service now requires explicit daemon
+  cloud-disabled proof and stable tags/show/tags evidence for readiness,
+  inventory, immediate pre-chat authorization and post-preparation success.
+  Remote/copy aliases, stale evidence and unsupported policy capability fail
+  closed; rejected-path fixtures prove zero chat calls and zero sentinel prompt
+  egress. Health/inventory probes, chat and preparation remain bounded and
+  cancellable. 67 inference and 116 full Rust tests pass. Every changed Rust
+  file, contract, build and scoped security check passes. Repository-wide
+  formatting debt is pre-existing, reduced from 101 baseline files to 94 and
+  tracked separately. Live Ollama/model behavior, malicious-daemon attestation,
+  cryptographic artifact trust and daemon-side cancellation remain unverified.
+  Fresh exact-head review and merge are pending; PR readiness does not authorize
+  merge.
 - Phase 1B and later: `NO_GO` until Phase 1A is merged and verified from fresh `main`.
 - Production readiness: `NO_GO`.

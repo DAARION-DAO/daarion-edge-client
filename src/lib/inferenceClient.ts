@@ -38,6 +38,7 @@ export interface InferenceStatus {
   provider_id: string;
   endpoint: string;
   available: boolean;
+  local_only_verified: boolean;
   detail: string;
 }
 

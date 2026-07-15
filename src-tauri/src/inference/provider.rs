@@ -10,8 +10,9 @@ pub struct ProviderHealth {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InstalledProviderModel {
+pub struct VerifiedLocalModel {
     pub provider_model_id: String,
+    pub digest: String,
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +112,10 @@ impl RequestControl {
         self.operation.ensure_active()
     }
 
+    pub(crate) fn operation_control(&self) -> OperationControl {
+        self.operation.clone()
+    }
+
     pub fn emit_token(&self, content: String) -> Result<(), InferenceError> {
         self.ensure_active()?;
         self.gate.emit(InferenceEvent::Token {
@@ -126,7 +131,19 @@ pub trait InferenceProvider: Send + Sync {
     fn endpoint(&self) -> String;
 
     async fn health(&self) -> Result<ProviderHealth, InferenceError>;
-    async fn list_installed_models(&self) -> Result<Vec<InstalledProviderModel>, InferenceError>;
+    async fn verify_local_execution(
+        &self,
+        _control: OperationControl,
+    ) -> Result<(), InferenceError> {
+        Err(InferenceError::ProviderCapabilityUnsupported)
+    }
+    async fn verify_local_model(
+        &self,
+        _provider_model_id: &str,
+        _control: OperationControl,
+    ) -> Result<Option<VerifiedLocalModel>, InferenceError> {
+        Err(InferenceError::ProviderCapabilityUnsupported)
+    }
     async fn prepare_model(
         &self,
         provider_model_id: &str,

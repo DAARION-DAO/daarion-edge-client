@@ -31,6 +31,8 @@ import {
 type RuntimeState =
   | "checking"
   | "unavailable"
+  | "policy_unverified"
+  | "model_rejected"
   | "model_missing"
   | "ready"
   | "preparing"
@@ -44,7 +46,9 @@ type RuntimeState =
 const stateLabels: Record<RuntimeState, string> = {
   checking: "Checking local provider",
   unavailable: "Local provider unavailable",
-  model_missing: "Model not installed",
+  policy_unverified: "Ollama reachable · LocalOnly not verified",
+  model_rejected: "Model rejected by local verification",
+  model_missing: "Local model unavailable",
   ready: "Ready for local inference",
   preparing: "Preparing local model",
   running: "Running locally",
@@ -97,14 +101,41 @@ export function LocalInferencePanel() {
       );
       if (!status.available) {
         transition("unavailable");
+      } else if (!status.local_only_verified) {
+        transition("policy_unverified");
       } else if (!registryModels.some((model) => model.installed)) {
         transition("model_missing");
       } else {
         transition("ready");
       }
     } catch (reason) {
-      setError(String(reason));
-      transition("failed");
+      setProviderStatus(null);
+      setModels([]);
+      setSelectedModel("");
+      if (reason instanceof InferenceClientError) {
+        if (reason.code === "provider_unavailable") {
+          setError(reason.message);
+          transition("unavailable");
+        } else if (
+          reason.code === "local_only_not_enforced" ||
+          reason.code === "provider_capability_unsupported"
+        ) {
+          setError(`${reason.message}. DAARION did not change Ollama settings.`);
+          transition("policy_unverified");
+        } else if (
+          reason.code === "model_not_local" ||
+          reason.code === "local_model_unverified"
+        ) {
+          setError(reason.message);
+          transition("model_rejected");
+        } else {
+          setError(reason.message);
+          transition("failed");
+        }
+      } else {
+        setError("Local inference verification failed.");
+        transition("failed");
+      }
     }
   }
 
@@ -155,7 +186,7 @@ export function LocalInferencePanel() {
   const busy = isPreparing || runtimeState === "running" || runtimeState === "cancelling";
 
   async function handlePrepare() {
-    if (!selectedModel || !providerStatus?.available) return;
+    if (!selectedModel || !providerStatus?.available || !providerStatus.local_only_verified) return;
     const requestId = crypto.randomUUID();
     activePreparationRequestId.current = requestId;
     setIsPreparing(true);
@@ -194,7 +225,7 @@ export function LocalInferencePanel() {
   }
 
   async function handleSend() {
-    if (!prompt.trim() || !selected?.installed || busy) return;
+    if (!prompt.trim() || !selected?.installed || !providerStatus?.local_only_verified || busy) return;
     const userMessage: ChatMessage = { role: "user", content: prompt.trim() };
     const history = [...messages, userMessage];
     const requestId = crypto.randomUUID();
@@ -319,7 +350,7 @@ export function LocalInferencePanel() {
           </div>
 
           <div className="shrink-0 border-t border-white/5 bg-white/[0.01] p-4">
-            {providerStatus?.available && selected && !selected.installed && (
+            {providerStatus?.available && providerStatus.local_only_verified && selected && !selected.installed && (
               <button onClick={() => void handlePrepare()} disabled={busy} className="mb-3 w-full rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs font-bold text-amber-300 disabled:opacity-40">
                 Install {selected.canonical_model_id} through local Ollama
               </button>
@@ -335,7 +366,7 @@ export function LocalInferencePanel() {
                   {runtimeState === "cancelling" ? <Loader2 size={18} className="animate-spin" /> : <Square size={18} />}
                 </button>
               ) : (
-                <button onClick={() => void handleSend()} disabled={!prompt.trim() || !selected?.installed} className="shrink-0 rounded-lg bg-emerald-500 p-2 text-black disabled:bg-white/5 disabled:text-white/20" aria-label="Run local inference"><Send size={18} /></button>
+                <button onClick={() => void handleSend()} disabled={!prompt.trim() || !selected?.installed || !providerStatus?.local_only_verified} className="shrink-0 rounded-lg bg-emerald-500 p-2 text-black disabled:bg-white/5 disabled:text-white/20" aria-label="Run local inference"><Send size={18} /></button>
               )}
             </div>
           </div>
@@ -348,9 +379,10 @@ export function LocalInferencePanel() {
               <div className="flex items-center justify-between gap-3"><span className="text-white/40">State</span><span className="text-right font-bold text-emerald-300">{stateLabels[runtimeState]}</span></div>
               <div className="flex items-center justify-between gap-3"><span className="text-white/40">Provider</span><span className="font-mono text-white/70">{providerStatus?.provider_id ?? "—"}</span></div>
               <div className="flex items-center justify-between gap-3"><span className="text-white/40">Policy</span><span className="font-mono text-white/70">local_only</span></div>
+              <div className="flex items-center justify-between gap-3"><span className="text-white/40">Cloud disabled</span><span className="font-mono text-white/70">{providerStatus?.local_only_verified ? "verified" : "not verified"}</span></div>
               <div className="border-t border-white/5 pt-4">
-                <select value={selectedModel} onChange={(event) => { setSelectedModel(event.target.value); const next = models.find((model) => model.canonical_model_id === event.target.value); if (providerStatus?.available) transition(next?.installed ? "ready" : "model_missing"); }} disabled={busy || models.length === 0} className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[10px] text-white/70">
-                  {models.map((model) => <option key={model.canonical_model_id} value={model.canonical_model_id}>{model.canonical_model_id}{model.installed ? " · installed" : " · missing"}</option>)}
+                <select value={selectedModel} onChange={(event) => { setSelectedModel(event.target.value); const next = models.find((model) => model.canonical_model_id === event.target.value); if (providerStatus?.local_only_verified) transition(next?.installed ? "ready" : "model_missing"); }} disabled={busy || models.length === 0} className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-[10px] text-white/70">
+                  {models.map((model) => <option key={model.canonical_model_id} value={model.canonical_model_id}>{model.canonical_model_id}{model.installed ? " · locally verified" : " · unavailable"}</option>)}
                 </select>
               </div>
               {response && <div className="grid grid-cols-2 gap-2 border-t border-white/5 pt-4"><div className="rounded-xl border border-white/5 p-3"><Clock size={11} className="mb-1 text-white/30" /><span className="font-mono text-white/70">{response.latency_ms} ms</span></div><div className="rounded-xl border border-white/5 p-3"><Cpu size={11} className="mb-1 text-white/30" /><span className="font-mono text-white/70">{response.provider_id}</span></div></div>}
@@ -358,7 +390,7 @@ export function LocalInferencePanel() {
           </div>
           <div className="rounded-2xl border border-emerald-500/10 bg-emerald-500/[0.03] p-5">
             <div className="mb-3 flex items-center gap-3 text-emerald-400"><MessageSquare size={16} /><h4 className="text-[10px] font-black uppercase tracking-widest">Local-only boundary</h4></div>
-            <p className="text-[11px] leading-relaxed text-white/45">Inference traffic is restricted to an HTTP loopback origin. Redirects, system proxies, remote endpoints, and silent fallback are disabled.</p>
+            <p className="text-[11px] leading-relaxed text-white/45">Eligibility requires a loopback origin, Ollama cloud explicitly disabled, and stable local artifact evidence from tags and model details. Redirects, system proxies, remote endpoints, and silent fallback remain disabled.</p>
             {runtimeState === "completed_locally" && <div className="mt-3 flex items-center gap-2 text-[10px] text-emerald-300"><CheckCircle size={13} />Completed by the local provider</div>}
           </div>
         </aside>

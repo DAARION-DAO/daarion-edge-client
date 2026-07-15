@@ -2,6 +2,7 @@ use crate::inference::model_resolver::ModelResolver;
 use crate::inference::policy::LocalEndpoint;
 use crate::inference::provider::{
     EventGate, EventSink, InferenceProvider, OperationControl, ProviderChatRequest, RequestControl,
+    VerifiedLocalModel,
 };
 use crate::inference::types::{
     InferenceError, InferenceEvent, InferenceModelSummary, InferencePolicy, InferenceRequest,
@@ -95,26 +96,57 @@ impl InferenceService {
 
     pub async fn status(&self) -> Result<InferenceStatus, InferenceError> {
         self.ensure_local_provider()?;
-        let health = self.run_probe(self.provider.health()).await?;
+        let (_cancel_sender, cancel_receiver) = watch::channel(false);
+        let control = OperationControl::new(cancel_receiver);
+        let health = self
+            .run_probe(async {
+                let health = self.provider.health().await?;
+                if health.available {
+                    self.ensure_local_provider()?;
+                    self.provider.verify_local_execution(control).await?;
+                }
+                Ok(health)
+            })
+            .await?;
         Ok(InferenceStatus {
             execution_policy: InferencePolicy::LocalOnly,
             provider_id: self.provider.provider_id().to_string(),
             endpoint: self.provider.endpoint(),
             available: health.available,
-            detail: health.detail,
+            local_only_verified: health.available,
+            detail: if health.available {
+                "Local provider is reachable and LocalOnly policy is verified".to_string()
+            } else {
+                health.detail
+            },
         })
     }
 
     pub async fn models(&self) -> Result<Vec<InferenceModelSummary>, InferenceError> {
         self.ensure_local_provider()?;
-        let installed = match self.run_probe(self.provider.list_installed_models()).await {
-            Ok(models) => models
-                .into_iter()
-                .map(|model| model.provider_model_id)
-                .collect::<HashSet<_>>(),
-            Err(InferenceError::ProviderUnavailable) => HashSet::new(),
-            Err(error) => return Err(error),
-        };
+        let models = self.resolver.resolved_models()?;
+        let (_cancel_sender, cancel_receiver) = watch::channel(false);
+        let control = OperationControl::new(cancel_receiver);
+        let installed = self
+            .run_probe(async {
+                self.provider
+                    .verify_local_execution(control.clone())
+                    .await?;
+                let mut installed = HashSet::new();
+                for model in &models {
+                    self.ensure_local_provider()?;
+                    if let Some(verified) = self
+                        .provider
+                        .verify_local_model(&model.provider_model_id, control.clone())
+                        .await?
+                    {
+                        Self::validate_verified_model(model.provider_model_id.as_str(), &verified)?;
+                        installed.insert(verified.provider_model_id);
+                    }
+                }
+                Ok(installed)
+            })
+            .await?;
         Ok(self.resolver.summaries(&installed))
     }
 
@@ -139,11 +171,29 @@ impl InferenceService {
         };
 
         let control = OperationControl::new(cancel_receiver.clone());
+        let canonical_model_id = request.canonical_model_id.clone();
+        let provider_model_id = model.provider_model_id.clone();
         let provider_result = tokio::select! {
             biased;
             _ = cancel_receiver.changed() => Err(InferenceError::Cancelled),
             _ = sleep_until(deadline) => Err(InferenceError::TimedOut),
-            result = self.provider.prepare_model(&model.provider_model_id, control) => result,
+            result = async {
+                self.ensure_local_provider()?;
+                self.provider.verify_local_execution(control.clone()).await?;
+                self.provider.prepare_model(&provider_model_id, control.clone()).await?;
+                self.ensure_local_provider()?;
+                self.provider.verify_local_execution(control.clone()).await?;
+                let remapped = self.resolver.resolve(&canonical_model_id)?;
+                if remapped != model {
+                    return Err(InferenceError::LocalModelUnverified);
+                }
+                let verified = self
+                    .provider
+                    .verify_local_model(&provider_model_id, control)
+                    .await?
+                    .ok_or(InferenceError::LocalModelUnverified)?;
+                Self::validate_verified_model(&provider_model_id, &verified)
+            } => result,
         };
         drop(permit);
         provider_result?;
@@ -203,19 +253,37 @@ impl InferenceService {
             cancel_receiver.clone(),
             Arc::clone(&gate),
         );
-        let provider_request = ProviderChatRequest {
-            provider_model_id: resolved.provider_model_id,
-            messages: request.messages.clone(),
-            max_tokens: request.max_tokens,
-            temperature: request.temperature,
-        };
+        let operation_control = control.operation_control();
         let started = Instant::now();
 
         let provider_result = tokio::select! {
             biased;
             _ = cancel_receiver.changed() => Err(InferenceError::Cancelled),
             _ = sleep_until(deadline) => Err(InferenceError::TimedOut),
-            result = self.provider.chat(provider_request, control) => result,
+            result = async {
+                self.ensure_local_provider()?;
+                self.provider
+                    .verify_local_execution(operation_control.clone())
+                    .await?;
+                let remapped = self.resolver.resolve(&request.canonical_model_id)?;
+                if remapped != resolved {
+                    return Err(InferenceError::LocalModelUnverified);
+                }
+                let verified = self
+                    .provider
+                    .verify_local_model(&remapped.provider_model_id, operation_control)
+                    .await?
+                    .ok_or(InferenceError::LocalModelUnverified)?;
+                Self::validate_verified_model(&remapped.provider_model_id, &verified)?;
+
+                let provider_request = ProviderChatRequest {
+                    provider_model_id: remapped.provider_model_id,
+                    messages: request.messages.clone(),
+                    max_tokens: request.max_tokens,
+                    temperature: request.temperature,
+                };
+                self.provider.chat(provider_request, control).await
+            } => result,
         };
         drop(permit);
 
@@ -362,6 +430,16 @@ impl InferenceService {
         LocalEndpoint::parse(&self.provider.endpoint()).map(|_| ())
     }
 
+    fn validate_verified_model(
+        expected_provider_model_id: &str,
+        verified: &VerifiedLocalModel,
+    ) -> Result<(), InferenceError> {
+        if verified.provider_model_id != expected_provider_model_id || verified.digest.is_empty() {
+            return Err(InferenceError::LocalModelUnverified);
+        }
+        Ok(())
+    }
+
     async fn run_probe<T, F>(&self, probe: F) -> Result<T, InferenceError>
     where
         F: Future<Output = Result<T, InferenceError>>,
@@ -377,7 +455,7 @@ impl InferenceService {
 mod tests {
     use super::*;
     use crate::inference::ollama_provider::OllamaProvider;
-    use crate::inference::provider::{InstalledProviderModel, ProviderHealth, RequestControl};
+    use crate::inference::provider::{ProviderHealth, RequestControl, VerifiedLocalModel};
     use crate::inference::types::{ChatMessage, InferencePublicError};
     use async_trait::async_trait;
     use std::future::pending;
@@ -412,6 +490,13 @@ mod tests {
         preparation_called: Arc<AtomicBool>,
     }
 
+    fn verified_model(provider_model_id: &str) -> VerifiedLocalModel {
+        VerifiedLocalModel {
+            provider_model_id: provider_model_id.to_string(),
+            digest: format!("sha256:{}", "a".repeat(64)),
+        }
+    }
+
     #[async_trait]
     impl InferenceProvider for FakeProvider {
         fn provider_id(&self) -> &'static str {
@@ -426,12 +511,18 @@ mod tests {
                 detail: "available".to_string(),
             })
         }
-        async fn list_installed_models(
+        async fn verify_local_execution(
             &self,
-        ) -> Result<Vec<InstalledProviderModel>, InferenceError> {
-            Ok(vec![InstalledProviderModel {
-                provider_model_id: "qwen3.5:2b".to_string(),
-            }])
+            _control: OperationControl,
+        ) -> Result<(), InferenceError> {
+            Ok(())
+        }
+        async fn verify_local_model(
+            &self,
+            provider_model_id: &str,
+            _control: OperationControl,
+        ) -> Result<Option<VerifiedLocalModel>, InferenceError> {
+            Ok((provider_model_id == "qwen3.5:2b").then(|| verified_model(provider_model_id)))
         }
         async fn prepare_model(
             &self,
@@ -481,10 +572,19 @@ mod tests {
             unreachable!()
         }
 
-        async fn list_installed_models(
+        async fn verify_local_execution(
             &self,
-        ) -> Result<Vec<InstalledProviderModel>, InferenceError> {
-            unreachable!()
+            _control: OperationControl,
+        ) -> Result<(), InferenceError> {
+            Ok(())
+        }
+
+        async fn verify_local_model(
+            &self,
+            provider_model_id: &str,
+            _control: OperationControl,
+        ) -> Result<Option<VerifiedLocalModel>, InferenceError> {
+            Ok(Some(verified_model(provider_model_id)))
         }
 
         async fn prepare_model(
@@ -611,7 +711,6 @@ mod tests {
             body_prefix: &'static [u8],
             declared_length: usize,
         },
-        Respond(&'static [u8]),
     }
 
     async fn probe_fixture_service(
@@ -637,15 +736,6 @@ mod tests {
                     socket.write_all(response.as_bytes()).await.unwrap();
                     socket.write_all(body_prefix).await.unwrap();
                     pending::<()>().await;
-                }
-                ProbeFixture::Respond(body) => {
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                        body.len()
-                    );
-                    socket.write_all(response.as_bytes()).await.unwrap();
-                    socket.write_all(body).await.unwrap();
-                    let _ = socket.shutdown().await;
                 }
             }
         });
@@ -781,30 +871,24 @@ mod tests {
 
     #[tokio::test]
     async fn probe_fast_health_response_still_succeeds() {
-        let (service, task) =
-            probe_fixture_service(ProbeFixture::Respond(b""), Duration::from_millis(200)).await;
+        let service = service(FakeMode::Success, Duration::from_millis(500));
         let status = timeout(Duration::from_millis(500), service.status())
             .await
             .expect("outer test guard elapsed")
             .unwrap();
-        task.await.unwrap();
 
         assert!(status.available);
+        assert!(status.local_only_verified);
         assert_eq!(status.execution_policy, InferencePolicy::LocalOnly);
     }
 
     #[tokio::test]
     async fn probe_fast_model_inventory_still_succeeds() {
-        let (service, task) = probe_fixture_service(
-            ProbeFixture::Respond(b"{\"models\":[{\"name\":\"qwen3.5:2b\"}]}"),
-            Duration::from_millis(200),
-        )
-        .await;
+        let service = service(FakeMode::Success, Duration::from_millis(500));
         let models = timeout(Duration::from_millis(500), service.models())
             .await
             .expect("outer test guard elapsed")
             .unwrap();
-        task.await.unwrap();
 
         assert!(models
             .iter()
@@ -1353,10 +1437,19 @@ mod tests {
             unreachable!()
         }
 
-        async fn list_installed_models(
+        async fn verify_local_execution(
             &self,
-        ) -> Result<Vec<InstalledProviderModel>, InferenceError> {
-            unreachable!()
+            _control: OperationControl,
+        ) -> Result<(), InferenceError> {
+            Ok(())
+        }
+
+        async fn verify_local_model(
+            &self,
+            provider_model_id: &str,
+            _control: OperationControl,
+        ) -> Result<Option<VerifiedLocalModel>, InferenceError> {
+            Ok(Some(verified_model(provider_model_id)))
         }
 
         async fn prepare_model(&self, _: &str, _: OperationControl) -> Result<(), InferenceError> {
@@ -1432,10 +1525,19 @@ mod tests {
             unreachable!()
         }
 
-        async fn list_installed_models(
+        async fn verify_local_execution(
             &self,
-        ) -> Result<Vec<InstalledProviderModel>, InferenceError> {
-            unreachable!()
+            _control: OperationControl,
+        ) -> Result<(), InferenceError> {
+            Ok(())
+        }
+
+        async fn verify_local_model(
+            &self,
+            provider_model_id: &str,
+            _control: OperationControl,
+        ) -> Result<Option<VerifiedLocalModel>, InferenceError> {
+            Ok(Some(verified_model(provider_model_id)))
         }
 
         async fn prepare_model(&self, _: &str, _: OperationControl) -> Result<(), InferenceError> {
@@ -1540,11 +1642,6 @@ mod tests {
             async fn health(&self) -> Result<ProviderHealth, InferenceError> {
                 unreachable!()
             }
-            async fn list_installed_models(
-                &self,
-            ) -> Result<Vec<InstalledProviderModel>, InferenceError> {
-                unreachable!()
-            }
             async fn prepare_model(
                 &self,
                 _: &str,
@@ -1592,12 +1689,6 @@ mod tests {
             }
 
             async fn health(&self) -> Result<ProviderHealth, InferenceError> {
-                unreachable!()
-            }
-
-            async fn list_installed_models(
-                &self,
-            ) -> Result<Vec<InstalledProviderModel>, InferenceError> {
                 unreachable!()
             }
 
