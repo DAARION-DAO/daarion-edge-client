@@ -55,16 +55,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: >-
-            ${{
-              matrix.label == 'macos-arm64' && 'aarch64-apple-darwin,x86_64-apple-darwin' ||
-              matrix.label == 'macos-x86_64' && 'aarch64-apple-darwin,x86_64-apple-darwin' ||
-              matrix.label == 'android-arm64' && 'aarch64-linux-android' ||
-              ''
-            }}
+      - name: Install repository Rust toolchain
+        run: |
+          rustup show active-toolchain
+          rustc --version --verbose
+          cargo --version --verbose
+
+      - name: Install Rust target
+        if: matrix.rust_target != ''
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: rustup target add "$RUST_TARGET"
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -100,7 +101,6 @@ jobs:
       - name: Install Android target
         if: matrix.label == 'android-arm64'
         run: |
-          rustup target add aarch64-linux-android
           cargo install tauri-cli --version "^2" 2>/dev/null || true
           # Install Android NDK tools
           sdkmanager "ndk;27.0.12077973" "platforms;android-34" "build-tools;34.0.0" --sdk_root=$ANDROID_HOME
