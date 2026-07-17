@@ -164,10 +164,13 @@ Numbers are reservations for planning, not accepted decisions.
   and merged as `62a1d514b93925e8b7098c6db19f8751a70a7bf8`;
   fresh-main verification passed. No live Ollama smoke is claimed.
 - Phase 1B planning: `APPROVED / HUMAN_DECISIONS_RECORDED`; the docs-only
-  finalization awaits a fresh exact-head review and merge gate.
-- Phase 1B implementation: `NO_GO`.
-- Phase 1B.1: `NOT_AUTHORIZED_BY_THIS_TASK`; every slice remains separately
-  authorized.
+  plan and Rust 1.95.0 toolchain unblock are merged on main `eb0d7def…`.
+- Phase 1B implementation: `PARTIALLY_IMPLEMENTED`; only the separately
+  authorized Phase 1B.1 storage bootstrap/status vertical-slice candidate exists.
+- Phase 1B.1: `IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY / DRAFT REVIEW GATE`;
+  external exact-head review, merge, fresh-main verification, and desktop target
+  evidence remain pending.
+- Phase 1B.2: `NOT_AUTHORIZED`; no conversation/message/task/audit API exists.
 - Phase 1C and later: `NO_GO`.
 - Production readiness: `NO_GO`.
 
@@ -176,11 +179,14 @@ PHASE_1A =
 MERGED / FRESH-MAIN VERIFIED / PASS
 
 PHASE_1B_PLANNING =
-APPROVED / HUMAN_DECISIONS_RECORDED / FRESH_REVIEW_PENDING
+APPROVED / MERGED
 
 PHASE_1B_IMPLEMENTATION =
-NO_GO
+PARTIALLY_IMPLEMENTED
 
 PHASE_1B_1 =
-NOT_AUTHORIZED_BY_THIS_TASK
+IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY / DRAFT_REVIEW_GATE
+
+PHASE_1B_2 =
+NOT_AUTHORIZED
 ```

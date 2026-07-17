@@ -21,6 +21,7 @@ mod pairing;
 mod provisioning;
 mod registry_client;
 mod reset;
+mod runtime_store;
 mod trust;
 mod worker;
 
@@ -117,6 +118,7 @@ pub fn run() {
             return;
         }
     };
+    let storage_runtime = runtime_store::RuntimeStoreManager::new();
 
     let builder = tauri::Builder::default();
     boot_log("  Tauri builder created");
@@ -124,7 +126,7 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_opener::init());
     boot_log("  Plugin: opener initialized");
 
-    boot_log("  Managing state: HeartbeatManager, BackendHealthManager, MessagingState, WorkerModeState, InferenceRuntimeState");
+    boot_log("  Managing state: HeartbeatManager, BackendHealthManager, MessagingState, WorkerModeState, InferenceRuntimeState, RuntimeStoreManager");
     let builder = builder
         .manage(HeartbeatManager {
             status: Arc::new(Mutex::new(HeartbeatStatus::default())),
@@ -132,7 +134,8 @@ pub fn run() {
         .manage(BackendHealthManager::default())
         .manage(Arc::new(MessagingState::new()))
         .manage(Mutex::new(crate::worker::WorkerModeState::default()))
-        .manage(inference_state);
+        .manage(inference_state)
+        .manage(storage_runtime);
 
     boot_log("  Registering invoke handlers...");
     let builder = builder.invoke_handler(tauri::generate_handler![
@@ -165,6 +168,7 @@ pub fn run() {
         inference::commands::run_local_inference,
         inference::commands::cancel_local_inference,
         inference::commands::run_local_inference_smoke,
+        runtime_store::commands::get_storage_runtime_status,
         genesis::generate_wallet_keys,
         genesis::record_voice_imprint,
         provisioning::check_beta_slots,
@@ -185,6 +189,20 @@ pub fn run() {
     let builder = builder.setup(|app| {
             boot_log("  setup() entered");
             let handle = app.handle().clone();
+
+            let storage_runtime = app.state::<runtime_store::RuntimeStoreManager>();
+            match app.path().app_local_data_dir() {
+                Ok(app_local_data_root) => {
+                    storage_runtime.start_initialization(
+                        runtime_store::RuntimeStoreConfig::production(app_local_data_root),
+                    );
+                    boot_log("  Storage runtime initialization requested");
+                }
+                Err(_) => {
+                    storage_runtime.fail_path_resolution();
+                    boot_log("  Storage runtime app-data path unavailable");
+                }
+            }
 
             // Add System Tray Supervisor Path
             #[cfg(desktop)]

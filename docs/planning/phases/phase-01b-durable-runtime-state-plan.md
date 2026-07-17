@@ -1,12 +1,14 @@
 # Phase 1B — Durable Runtime State Plan
 
-Status: **APPROVED PLAN / PLANNING ONLY / IMPLEMENTATION NO_GO**
+Status: **APPROVED PLAN / PHASE 1B.1 CANDIDATE IMPLEMENTED / PHASE 1B.2 NOT AUTHORIZED**
 
 Starting `main`: `62a1d514b93925e8b7098c6db19f8751a70a7bf8`
 
-This document records the approved design for a bounded implementation. It does
-not add SQLite, a migration, a runtime API, or application behavior. Each
-implementation slice requires separate human authorization.
+This document records the approved design for bounded implementation slices.
+Phase 1B.1 received separate human authorization from main `eb0d7def…` and now
+has a repository candidate for bootstrap plus a read-only Dashboard projection.
+That candidate does not authorize Phase 1B.2, public content CRUD, or completion
+of the wider Phase 1B contract.
 
 ## 1. Objective
 
@@ -1098,12 +1100,13 @@ an unverified backup, or deletes user content.
 
 `GO / APPROVED PLAN`
 
-This classification applies to the Phase 1B **plan**, not implementation.
+This classification applies to the Phase 1B plan. Phase 1B.1 is a separately
+authorized implementation candidate; it does not complete Phase 1B.
 HD-01 through HD-09 close the planning decisions on storage authority,
 integration, encryption risk, retention, limits, SQLite operations, export, and
-platform scope. Implementation remains `NO_GO`; this task does not authorize
-slice 1B.1 or any later slice. Each of 1B.1 through 1B.5 requires a separate
-human authorization after the preceding gate is verified.
+platform scope. Phase 1B.1 received separate authorization and now has a bounded
+repository candidate. Phase 1B.2 and every later implementation slice remain
+`NO_GO` until separately authorized after the preceding gate is verified.
 
 ```text
 PHASE_1A =
@@ -1113,8 +1116,11 @@ PHASE_1B_PLAN =
 APPROVED
 
 PHASE_1B_IMPLEMENTATION =
-NO_GO
+PARTIALLY_IMPLEMENTED / PHASE_1B_1 CANDIDATE ONLY
 
 PHASE_1B_1 =
-NOT_AUTHORIZED_BY_THIS_TASK
+IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY / DRAFT_REVIEW_GATE
+
+PHASE_1B_2 =
+NOT_AUTHORIZED
 ```

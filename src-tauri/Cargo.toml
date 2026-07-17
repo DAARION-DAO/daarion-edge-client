@@ -40,6 +40,7 @@ hound = "3.5.1"
 bs58 = "0.5.1"
 hmac = "0.12"
 sha2 = "0.10"
+rusqlite = { version = "=0.40.1", default-features = false, features = ["bundled", "limits", "backup"] }
 sha1 = "0.10"
 urlencoding = "2.1"
 tauri-plugin-shell = "2.3.5"

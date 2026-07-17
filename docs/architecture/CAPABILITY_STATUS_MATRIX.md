@@ -1,6 +1,6 @@
 # Sovereign Agent Capability Status Matrix
 
-Status: **PHASE 1A MERGED SNAPSHOT — 2026-07-15 / PHASE 1B HUMAN DECISIONS RECORDED / REVIEW PENDING**
+Status: **PHASE 1A MERGED / PHASE 1B.1 REPOSITORY CANDIDATE — 2026-07-17**
 
 The status describes executable evidence in the audited snapshots, not target architecture, live deployment, or product aspiration.
 
@@ -33,7 +33,7 @@ The status describes executable evidence in the audited snapshots, not target ar
 | Structured model output | Edge | `MISSING` | No validated structured decision schema found | Later Supervisor phase |
 | Edge embeddings | Edge | `MISSING` | No local embedding provider/store found | Later memory phase |
 | Web cloud chat/embeddings | Web cloud boundary | `IMPLEMENTED_BUT_UNVERIFIED` | `ai-agent-chat` calls cloud gateway after auth checks; live provider not called | Separate cloud feature verification |
-| Durable runtime state | Edge | `MISSING` | No SQLite dependency, runtime store, schema, or migration runner exists at main `62a1d514…`; HD-01 through HD-09 approve the docs-only Phase 1B plan, but its fresh exact-head review is pending and implementation remains `NO_GO` | Final docs review/merge gate, then a separate explicit authorization for slice 1B.1 |
+| Durable runtime state | Edge | `PARTIALLY_IMPLEMENTED` | The Phase 1B.1 candidate adds a Rust-owned SQLite 3.53.2 connection on one bounded worker, immutable version-1 migration with exactly five empty tables, fail-closed path/migration/integrity controls, one safe read-only Tauri DTO, typed client, and mounted Dashboard card. Thirty-five focused repository tests prove bootstrap, path replacement refusal, resource-limit re-evaluation, controlled shutdown, and clean reopen; there is still no public content CRUD, deletion/export/backup, full desktop/platform smoke, or Phase 1B.2 behavior | Exact-head draft review, merge/fresh-main verification, then separately authorize Phase 1B.2 only if accepted |
 | Six-level memory | Edge | `MISSING` | No working/conversation/episodic/semantic/procedural/graph implementation | Phase 2 after foundation |
 | Agent Supervisor | Edge | `MISSING` | Agent-shaped modules do not form a traced deterministic Supervisor | Phase 1C |
 | Bounded Loop Runtime | Edge | `MISSING` | No versioned definition, durable run/checkpoint model, limits or resume | Phase 3 |
@@ -55,3 +55,6 @@ The status describes executable evidence in the audited snapshots, not target ar
 - `IMPLEMENTED_AND_VERIFIED` is limited to the cited Phase 1A repository checks and fresh-main readback. It does not imply a live Ollama run, packaging proof, deployment truth or production readiness.
 - A live/deployed result must be recorded separately from repository evidence.
 - Status changes require evidence, date, command/result or deployed proof, and documentation update.
+- Phase 1B.1 repository evidence does not claim that conversation, message, task,
+  or audit persistence APIs exist. The empty schema and safe readiness projection
+  are not complete memory or a completed Phase 1B release.
