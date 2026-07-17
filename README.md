@@ -60,7 +60,16 @@ The client is compiled for cross-platform availability, leveraging Tauri v2:
 
 ## 🛠️ Developer Setup & Dev-Run
 
-Ensure you have Rust stable and Node.js v20+ installed.
+Install `rustup` and Node.js v20+. The repository-owned
+`rust-toolchain.toml` selects Rust 1.95.0 with `rustfmt` and `clippy`. Ensure
+the rustup proxies (normally `~/.cargo/bin`) precede any standalone Rust
+installation on `PATH`, then verify the repository selection:
+
+```bash
+rustup show active-toolchain
+rustc --version
+cargo --version
+```
 
 ### 1. Install Dependencies
 ```bash
