@@ -119,6 +119,7 @@ pub fn run() {
         }
     };
     let storage_runtime = runtime_store::RuntimeStoreManager::new();
+    let storage_lifecycle = runtime_store::RuntimeStoreLifecycle::new();
 
     let builder = tauri::Builder::default();
     boot_log("  Tauri builder created");
@@ -284,10 +285,18 @@ pub fn run() {
 
     boot_log("Running Tauri application...");
 
-    match builder.run(tauri::generate_context!()) {
-        Ok(()) => {
-            boot_log("Tauri application exited cleanly");
-        }
+    match builder.build(tauri::generate_context!()) {
+        Ok(app) => app.run(move |app_handle, event| {
+            let storage_runtime = app_handle.state::<runtime_store::RuntimeStoreManager>();
+            if let Some(result) = storage_lifecycle.on_run_event(storage_runtime.inner(), &event) {
+                match result {
+                    Ok(()) => boot_log("Storage runtime production shutdown completed"),
+                    Err(error) => boot_log(&format!(
+                        "Storage runtime production shutdown failed: {error}"
+                    )),
+                }
+            }
+        }),
         Err(e) => {
             let msg = format!("Tauri application failed to start: {}", e);
             show_fatal_error(&msg);

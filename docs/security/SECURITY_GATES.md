@@ -7,7 +7,7 @@ No gate is satisfied by documentation or module names alone. “Open” means im
 | Gate | Current state | Required evidence to close | Owner/phase |
 | --- | --- | --- | --- |
 | Local-only inference | REPOSITORY PASS — MERGED / FRESH-MAIN VERIFIED | Phase 1A has only `LocalOnly`; loopback/redirect/proxy controls; mandatory `/api/status` cloud-disabled proof; exact stable `/api/tags` → `/api/show` → `/api/tags` local-model evidence; immediate pre-chat revalidation; post-preparation verification; service-owned probe/chat/preparation deadlines and cancellation; bounded streaming; zero-chat sentinel tests; truthful UI; and no main-webview shell authority. Reviewed head `9e8c5d9…` was merged as `62a1d514…` and verified from fresh main. No real Ollama/model smoke or cryptographic daemon/artifact attestation is claimed. | Edge / 1A |
-| Durable runtime state | OPEN — PHASE 1B.1 REPOSITORY CANDIDATE / EXTERNAL REVIEW PENDING | The candidate verifies the five-table bootstrap, transaction rollback, exact migration evidence, one bounded Rust owner, required pragmas, path/symlink/replacement controls, Unix modes, corruption preservation, clean shutdown/reopen, and redacted read-only status. Closure still requires accepted exact-head review and fresh-main proof, Phase 1B.2 content services, deletion/export/backup, desktop target matrix, and the pre-production SQLCipher decision | Edge / 1B |
+| Durable runtime state | OPEN — PHASE 1B.1 R1 CORRECTION / FRESH REVIEW PENDING | R1 blocked the original candidate with five Medium and three Low findings. The locally tested correction covers explicit bounded lifecycle shutdown and checkpoint propagation, abnormal worker termination, real SQLite deadline interruption, hard-link-aware Unix/Windows identity policy, strict UUID-v4 constraints, effective limit readback, real queue saturation, and exact contract validation. No R1 finding is independently closed. Closure still requires accepted fresh exact-head review and fresh-main proof, Phase 1B.2 content services, deletion/export/backup, desktop target matrix, and the pre-production SQLCipher decision | Edge / 1B |
 | Inert Supervisor | OPEN | Deterministic IDs, explicit bounded state machine, idempotency, cancellation and crash recovery; no tools/network/scheduling | Edge / 1C |
 | Production pairing | OPEN | Signed purpose-bound invitation, trusted issuer, membership/device binding, expiry, nonce/replay, single use, revocation and downgrade tests | Both / ADR 0004 |
 | Readiness projection | OPEN | Separate signed schema, minimal allowlist, producer identity, expiry/freshness, replay/revocation, cross-repo fixtures and privacy tests | Both / ADR 0005 + Phase 5 |
@@ -120,7 +120,8 @@ bundled SQLite 3.53.2, the empty five-table migration, private Rust service, one
 no-argument status command, typed client, and Dashboard card. It has no content
 CRUD, backup/export, remote sync, Supervisor, memory extraction, or generic SQL
 authority. Automated tests use generated temporary roots; no real user profile
-or production system is written.
+or production system is written. Independent R1 blocked the original head; the
+bounded correction is locally tested and still awaits a fresh exact-head review.
 
 SQLCipher remains a separate pre-production decision. The durable-state gate
 stays open through exact-head review, merge/fresh-main verification, later

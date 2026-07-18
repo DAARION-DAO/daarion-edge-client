@@ -1,16 +1,82 @@
 # Phase 1B.1 — Storage Runtime Vertical Slice Completion
 
-Status: **IMPLEMENTED / REPOSITORY VERIFIED / SECURITY REVIEWED / DRAFT PR GATE**
+Status: **R1 CORRECTION IMPLEMENTED / LOCAL GATE PASS / FRESH REVIEW PENDING**
 
 Starting `main`: `eb0d7def94675e5668f8a061ecc9e74b493c48c3`
+
+Independent R1 reviewed head: `ffcc83d031b4506aebc4e9fb68e6db11590cecde`
 
 Branch: `phase-01b1/storage-runtime-vertical-slice`
 
 Date: 2026-07-17
 
+R1 correction date: 2026-07-18
+
 This completion report covers only the separately authorized Phase 1B.1
 vertical slice. It does not authorize or claim Phase 1B.2, public content CRUD,
 full memory, production readiness, deployment, or live-user-profile execution.
+
+## R1 correction ledger
+
+```text
+INDEPENDENT_REVIEW_R1 =
+REVIEW_BLOCKED_BY_FINDINGS
+
+R1_FINDINGS =
+CRITICAL 0 / HIGH 0 / MEDIUM 5 / LOW 3 / INFO 4
+
+CORRECTION_IMPLEMENTATION =
+IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
+
+CORRECTION_COMMIT =
+RECORDED IN PR BODY AND FINAL REPORT AFTER COMMIT
+
+M_01_CORRECTION =
+IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
+
+M_02_CORRECTION =
+IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
+
+M_03_CORRECTION =
+IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
+
+M_04_CORRECTION =
+IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
+
+M_05_CORRECTION =
+IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
+
+L_01_CORRECTION =
+CORRECTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
+
+L_02_CORRECTION =
+CORRECTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
+
+L_03_CORRECTION =
+CORRECTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
+
+INDEPENDENT_REVIEW_CLOSURE =
+PENDING
+```
+
+| Finding | State before correction | Affected paths and symbols | Root cause | Bounded correction design | Required evidence | Residual boundary |
+| --- | --- | --- | --- | --- | --- | --- |
+| M-01 | `OPEN` | `runtime_store/worker.rs::RuntimeStoreManager::shutdown`, `RuntimeStoreManagerInner::drop`; `runtime_store/connection.rs::RuntimeStoreConnection::close`; Tauri composition | Production lifecycle had no explicit shutdown call, `Drop` discarded the inner close result, and `join` was not guarded by worker-exit proof | One public-in-crate idempotent shutdown primitive with an absolute deadline, capacity-one exit notification, checkpoint deadline/interrupt handling, safe failure projection, and a Tauri `ExitRequested`/`Exit` lifecycle adapter | Production-helper, checkpoint, deadline, exit-before-join, missing-exit, idempotency, post-shutdown, redaction, and composition tests | Fresh independent exact-head review remains required; real desktop restart remains unverified |
+| M-02 | `OPEN` | `runtime_store/worker.rs::run_worker`, `RuntimeStoreManager::read_status` | Worker termination did not always disable intake and request failures could return the previously cached healthy status | Panic-boundary supervision with unconditional finalization, explicit exit classification, fresh unavailable/internal status on abnormal termination or communication failure, and separate clean-shutdown classification | Panic-after-healthy, disconnect-after-healthy, stale-success denial, exit observation, bounded post-panic shutdown, and clean-exit tests | No public crash command; fresh independent exact-head review remains required |
+| M-03 | `OPEN` | `runtime_store/worker.rs::initialize_connection`; `runtime_store/connection.rs`; `runtime_store/migrations.rs` | Initialization elapsed time was checked only after all SQLite work returned | One absolute deadline propagated through path/open/configuration/migration/integrity/post-open phases plus one scoped rusqlite interrupt watchdog that is disarmed and joined | Real SQLite interruption, transaction rollback/history absence, bounded completion, no late healthy status, bounded shutdown, and watchdog cleanup tests | No new public DTO; cross-platform runtime evidence remains limited to executed targets |
+| M-04 | `OPEN` | `runtime_store/path_policy.rs::{FileIdentity,existing_regular_file_identity,revalidate_database,enforce_sidecar_permissions}` | Unix identity omitted link count and non-Unix identity used mutable size/timestamps | Separate directory/file identities; Unix `dev`/`ino`/`nlink == 1`; Windows standard-library `MetadataExt` volume/file-index/link-count identity; fail closed elsewhere; validate before permission mutation | Initial/post-open DB hard-link, WAL/SHM hard-link, identity continuity, permission preservation, and Windows-gated source/tests | Windows runtime PASS must not be claimed on the macOS host |
+| M-05 | `OPEN` | `migrations/runtime_state/0001_runtime_state_initial.sql`; migration checksum/fingerprint constants and schema tests | UUID checks allowed `-` at non-separator positions | Replace every UUID-bearing-column check with exact lowercase UUID-v4 segment constraints in migration 1, then recalculate checksum and structural fingerprint | Per-column malformed/uppercase/version/variant/length/hyphen negatives, NULL positives, FK positives, exact inventory, checksum, and reopen evidence | No migration 2 and no public CRUD |
+| L-01 | `OPEN` | `runtime_store/connection.rs::configure_limits` | Successful setters were treated as effective-limit proof | Read back every configured SQLite limit and compare with the required value | Table-driven configured-limit test | None beyond fresh exact-head review |
+| L-02 | `OPEN` | `runtime_store/worker.rs`; `runtime_store/tests.rs::worker_contract_has_one_named_owner_and_bounded_queue` | Queue evidence was source-text/constant-only | Test-only worker hold plus the real capacity-128 sync channel to prove exact saturation and controlled overflow | Behavioral saturation and bounded cleanup test | Test-only authority must remain private to `runtime_store` |
+| L-03 | `OPEN` | `scripts/validate-storage-runtime-contract.mjs` | Validator did not independently compare Rust/TypeScript enums or enforce the no-user-argument command contract | Parse exact enum/command/registration contracts and run deterministic mutation self-tests | Validator PASS plus mutation detection | No frontend testing framework |
+
+No R1 finding is recorded as closed in this correction task. After local
+implementation and verification, each corrected item may advance only to
+`IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING` until a fresh independent
+review examines the exact correction head. A Git commit cannot truthfully embed
+its own SHA, so the exact correction SHA is recorded after commit in the PR
+body, remote readback, and final task report rather than as a self-reference in
+the commit it identifies.
 
 ## 1. Existing behavior before task
 
@@ -53,7 +119,7 @@ projection. The Dashboard renders the required status, initialization, schema,
 SQLite version, database health/size, and persistence fields without receiving
 a path, SQL, migration content, raw error, or user data.
 
-Capability classification after repository verification:
+Capability classification after local correction verification:
 
 ```text
 DURABLE_RUNTIME_STATE = PARTIALLY_IMPLEMENTED
@@ -69,7 +135,7 @@ is no public repository/service CRUD for them.
 ## 3. Regression test for old behavior
 
 - Phase 1A inference Rust tests: **67 passed / 0 failed**.
-- Full Rust suite: **151 passed / 0 failed** after adding 35 storage tests.
+- Full Rust suite: **169 passed / 0 failed** after adding 53 storage tests.
 - Existing inference TypeScript/Rust contract: **PASS**.
 - TypeScript validation and production Vite build: **PASS**.
 - Existing Dashboard composition, Inference, Messaging, Activation, Genesis,
@@ -80,7 +146,7 @@ is no public repository/service CRUD for them.
 
 ## 4. New feature test
 
-The focused storage suite contains **35 passed / 0 failed** tests covering:
+The focused storage suite contains **53 passed / 0 failed** tests covering:
 
 - fresh bootstrap and truthful `created_new` projection;
 - exact five-table and fourteen-index inventory with no `sqlite_sequence`;
@@ -95,16 +161,34 @@ The focused storage suite contains **35 passed / 0 failed** tests covering:
 - one named worker, one connection, capacity-128 queue, concurrent initialize,
   lock deadline, status deadline, and post-shutdown refusal;
 - clean checkpoint/close/reopen and propagation of a busy checkpoint failure;
+- production `ExitRequested`/`Exit` lifecycle composition, idempotent shutdown,
+  bounded checkpoint/worker-exit/join handling, and missing-exit fail-closed
+  behavior;
+- worker panic/disconnect finalization with intake disabled and no stale healthy
+  projection;
+- one absolute initialization deadline, real SQLite interruption, transactional
+  rollback, no late healthy publication, and joined interrupt watchdogs;
 - traversal, symlink, non-regular file, database replacement, and runtime
   directory replacement with a same-inode hard-link refusal;
+- initial/post-open database hard-link refusal, WAL/SHM hard-link refusal,
+  permission preservation, Unix stable identity, and Windows stable-identity
+  source/test gates;
+- exact lowercase UUID-v4 lexical constraints for all eight UUID-bearing
+  columns, exercised by twelve unique malformed values per column plus valid,
+  nullable, and foreign-key-positive cases;
+- exact readback of all eleven configured SQLite limits and behavioral
+  saturation of the real capacity-128 queue;
 - Unix private modes, corruption preservation, size hard limit, read-only
   status behavior, post-start resource-limit re-evaluation, and redacted public
   errors.
 
 The deterministic frontend contract validator confirms the command name,
-Rust/TypeScript fields, all required UI states, typed-client-only invocation,
-Dashboard mount, local-only copy, no prohibited projection fields, and absence
-of public content CRUD/generic SQL commands.
+Rust/TypeScript enum equality and fields, no frontend-deserialized command
+arguments, exact command registration, all required UI states,
+typed-client-only invocation, Dashboard mount, local-only copy, no prohibited
+projection fields, and absence of public content CRUD/generic SQL commands.
+Mutation self-tests prove missing and extra enum variants, a path argument, and
+a missing registration are rejected.
 
 ## 5. Live smoke checklist
 
@@ -143,7 +227,9 @@ Application and contract changes are limited to these exact paths:
 - `src-tauri/src/runtime_store/commands.rs`
 - `src-tauri/src/runtime_store/config.rs`
 - `src-tauri/src/runtime_store/connection.rs`
+- `src-tauri/src/runtime_store/deadline.rs`
 - `src-tauri/src/runtime_store/error.rs`
+- `src-tauri/src/runtime_store/lifecycle.rs`
 - `src-tauri/src/runtime_store/migrations.rs`
 - `src-tauri/src/runtime_store/mod.rs`
 - `src-tauri/src/runtime_store/path_policy.rs`
@@ -178,6 +264,11 @@ Exactly one direct application dependency was added:
 ```toml
 rusqlite = { version = "=0.40.1", default-features = false, features = ["bundled", "limits", "backup"] }
 ```
+
+The R1 correction adds **no** dependency and changes no Rust or frontend
+manifest/lockfile. Rust 1.95.0 provides the required Windows stable file
+identity through `std::os::windows::fs::MetadataExt`, so the conditionally
+authorized `windows-sys` dependency was not needed.
 
 New lockfile packages:
 
@@ -216,9 +307,19 @@ Migration identity:
 ```text
 migration_id = 1
 name = runtime_state_initial
-checksum_sha256 = 843fa8f5d27d691359a4f3e167c4a454d3ae28e021563a429951c2430afcc4d6
-schema_fingerprint = 0252c83b7989e552ac183a6a886b8eac9148de7a6d406709d6e366a41a05a5a0
+checksum_sha256 = 62341c5015e70605bc3d57f9152c9e6a571739beaec33a2a7574b3e9a482575d
+schema_fingerprint = 37f9060cd050c615e2576809266ad9535e05c105f57a0a168bcf488f1f14ed77
 ```
+
+Historical replacement inventory:
+
+```text
+R1_HEAD_CHECKSUM_SUPERSEDED = 843fa8f5d27d691359a4f3e167c4a454d3ae28e021563a429951c2430afcc4d6
+CORRECTED_CURRENT_CHECKSUM = 62341c5015e70605bc3d57f9152c9e6a571739beaec33a2a7574b3e9a482575d
+```
+
+The superseded value above is historical review evidence only and is not
+accepted as the current embedded migration identity anywhere in code or tests.
 
 Exact application table inventory:
 
@@ -265,11 +366,24 @@ downgraded.
 - The public async command uses `spawn_blocking` for status access.
 - Read status revalidates trusted directory/file identities and storage size;
   it does not reopen, migrate, retry failed initialization, or write content.
-- Shutdown stops new intake, drains FIFO accepted work, executes and verifies
-  `wal_checkpoint(TRUNCATE)`, closes the connection, and joins within the
-  bounded lifecycle. A busy checkpoint is returned as a controlled failure.
-- Drop uses a bounded two-second shutdown attempt and never blocks process exit
-  indefinitely.
+- Tauri `ExitRequested` invokes one idempotent production shutdown primitive;
+  `Exit` is a fallback only when that primitive was not already invoked.
+- Production shutdown owns one absolute five-second deadline, stops new intake,
+  drains accepted FIFO work within that budget, protects
+  `wal_checkpoint(TRUNCATE)` with a bounded busy timeout and SQLite interrupt,
+  propagates checkpoint/close failure, and waits for a capacity-one worker-exit
+  signal before joining.
+- Missing exit proof never triggers an unbounded join; the handle is detached
+  and the safe failure is projected. Drop reuses the same state machine with a
+  bounded two-second budget.
+- The worker has a panic boundary and unconditional finalization. Panic,
+  unexpected exit, request/reply disconnect, and post-health communication
+  failure disable intake and replace any cached success with a fresh
+  unavailable/internal projection.
+- Initialization propagates one absolute 120-second production deadline through
+  path preparation, open/configuration, migration, schema/integrity validation,
+  and post-open checks. A scoped rusqlite interrupt watchdog is always disarmed
+  and joined before the attempt returns.
 
 ### Trusted path policy
 
@@ -287,9 +401,15 @@ downgraded.
 - SQLite opens with `SQLITE_OPEN_NOFOLLOW`, read-write/create, full mutex, and
   extended result codes.
 - Unix directories are forced to `0700`; DB/WAL/SHM files are forced to `0600`.
-- Windows does not inherit a Unix-mode claim; non-Unix metadata identity checks
-  are repository-compiled but real Windows ACL/replacement behavior is not
-  claimed without a Windows target run.
+- Unix regular-file identity is `dev`/`ino`/`nlink`, requires `nlink == 1`
+  before permission mutation, and is rechecked after open, on status, before
+  checkpoint/close, and for every existing WAL/SHM sidecar.
+- Windows does not inherit a Unix-mode claim. Target-gated code uses Rust 1.95
+  standard-library `volume_serial_number`, `file_index`, and `number_of_links`;
+  its source contract and Windows-gated tests exist, but neither target
+  compilation nor real Windows runtime behavior is claimed from the macOS host.
+- Platforms that are neither Unix nor Windows fail closed rather than using a
+  timestamp/length identity fallback.
 - Automated tests use generated temporary roots only.
 
 ### Tauri and TypeScript status contract
@@ -383,9 +503,9 @@ unqualified child-process resolution was therefore not accepted as evidence.
 | Active rustup toolchain | `1.95.0-aarch64-apple-darwin` |
 | `rustc --version --verbose` through exact toolchain | `1.95.0` |
 | `cargo --version --verbose` through exact toolchain | `1.95.0` |
-| Focused `runtime_store` tests | 35 passed / 0 failed |
+| Focused `runtime_store` tests | 53 passed / 0 failed |
 | Phase 1A `inference::` tests | 67 passed / 0 failed |
-| Full Rust tests | 151 passed / 0 failed |
+| Full Rust tests | 169 passed / 0 failed |
 | `cargo check --all-targets --locked` | PASS |
 | `cargo clippy --all-targets --locked` | PASS; no `runtime_store` warning |
 | Storage frontend/Rust contract | PASS |
@@ -397,9 +517,11 @@ unqualified child-process resolution was therefore not accepted as evidence.
 | Scoped rustfmt | PASS |
 | `git diff --check` | PASS |
 | Package lock unchanged | PASS |
+| R1 correction manifest/lockfiles versus `ffcc83d…` | PASS; no dependency change |
 | Added SQLite-chain advisories | PASS; 0 |
 | Complete RustSec baseline | FAIL; 13 inherited entries, unchanged from starting main |
 | Repository-wide rustfmt | 94 legacy files; no candidate runtime/composition file in debt |
+| Repeated focused race/deadline gate | PASS; 10 runs / 530 test executions |
 | Real desktop smoke | `BLOCKED_BY_SAFE_PROFILE_REQUIREMENT` |
 
 Existing repository warning debt remains visible: regular Rust compilation
@@ -408,6 +530,16 @@ warning gate reports no warning in the protected/new hardening modules. This
 task does not perform an unrelated repository cleanup.
 
 ## Security review
+
+```text
+CORRECTION_SELF_REVIEW =
+CRITICAL 0 / HIGH 0 / MEDIUM 0 / LOW 0 / INFO 4
+```
+
+The informational boundaries are unchanged inherited RustSec/rustfmt/warning
+debt, missing real desktop restart proof, incomplete cross-platform execution,
+and accepted plaintext-SQLite risk. This local self-review does not close or
+supersede independent R1.
 
 ### Critical
 
@@ -424,20 +556,20 @@ task does not perform an unrelated repository cleanup.
 
 ### Medium
 
-- **Resolved:** shutdown originally executed `wal_checkpoint(TRUNCATE)` without
-  validating its returned busy result. The candidate now checks the result,
-  propagates failure, joins the worker, and has a deterministic busy-checkpoint
-  test.
-- **Resolved:** DB-inode checking alone could miss replacement of the parent
-  runtime directory with a same-inode hard-link. The candidate now tracks and
-  revalidates app/runtime directory identities and has a negative replacement
-  test.
-- **Resolved:** status refresh updated the byte count without re-evaluating the
-  configured warning/hard limits. The connection now owns those limits and
-  every status read fails closed at the hard threshold; post-start growth is
-  covered by a deterministic test.
-- **0 scoped open material findings** in migration integrity, corruption,
-  path handling, actor bounds, shutdown, projection redaction, or UI authority.
+- Independent review R1 reported five Medium findings: production shutdown and
+  checkpoint propagation, abnormal worker termination/stale success,
+  enforceable initialization deadline, stable hard-link-aware file identity,
+  and strict UUID-v4 lexical constraints.
+- The bounded correction is implemented and locally tested for all five items,
+  but **none is recorded as independently closed**. A fresh exact-head review
+  remains mandatory.
+- Correction self-review found no new unresolved scoped Medium data-integrity,
+  lifecycle, deadline, path-identity, migration, or false-status blocker. This
+  is local evidence only and does not replace R1 closure.
+- A pre-final repeated gate exposed an intermittent M-01 result-delivery race:
+  the former 100 ms worker-exit reserve could collapse a busy-checkpoint result
+  into `Unavailable`. The correction now reserves up to 500 ms inside the same
+  absolute shutdown deadline; the subsequent ten full focused runs passed.
 
 ### Low / informational
 
@@ -502,14 +634,17 @@ LOCAL_TEST_WRITES = GENERATED TEMP ROOTS / CARGO TARGET / NODE BUILD ONLY
 ```
 
 Local test databases were created only under generated temporary directories
-and removed by the test fixtures. No real DAARION app-local-data path was used.
+and removed by the test fixtures. One additional disposable temporary database
+was created for the independent SQLite table/index inventory. No real DAARION
+app-local-data path was used.
 
 Overall local release classification:
 
 ```text
-SCOPED_PHASE_1B_1_GATE = PASS
+CORRECTION_LOCAL_GATE = PASS
+SCOPED_PHASE_1B_1_GATE = REVIEW_PENDING
 REPOSITORY_BASELINE_GATE = CONDITIONAL_PASS
-EXTERNAL_EXACT_HEAD_REVIEW = PENDING
+INDEPENDENT_EXACT_HEAD_REVIEW = REQUIRED / NOT_PERFORMED
 PR_READY_OR_MERGE = NOT_AUTHORIZED
 PHASE_1B_2 = NOT_AUTHORIZED
 ```
@@ -522,8 +657,8 @@ scoped implementation failure and does not convert them into verified claims.
 
 ```text
 PHASE_1B_1 =
-IMPLEMENTED / TESTED / SECURITY-REVIEWED /
-DRAFT_PR_GATE / EXTERNAL_REVIEW_PENDING
+R1_CORRECTION_IMPLEMENTED / LOCAL_TESTED /
+DRAFT_PR_GATE / FRESH_REVIEW_PENDING
 
 PRODUCT_SLICE =
 VISIBLE IN REPOSITORY / REAL DESKTOP SMOKE NOT CLAIMED
@@ -542,6 +677,15 @@ NOT_AUTHORIZED
 
 PROTECTED_OLD_WORKTREE =
 UNCHANGED / EVIDENCE ONLY
+
+REAL_DESKTOP_RESTART_FLOW =
+NOT_VERIFIED
+
+READY =
+NOT_PERFORMED
+
+MERGE =
+NOT_PERFORMED
 
 REMOTE_PRODUCTION_WRITES =
 0

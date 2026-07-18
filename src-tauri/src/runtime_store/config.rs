@@ -8,6 +8,15 @@ pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const DATABASE_WARNING_THRESHOLD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 pub(crate) const DATABASE_HARD_LIMIT_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum InitializationTestHook {
+    #[default]
+    None,
+    LongQueryBeforeMigration,
+    LongQueryInsideMigration,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct RuntimeStoreConfig {
     pub(crate) app_local_data_root: PathBuf,
@@ -16,6 +25,8 @@ pub(crate) struct RuntimeStoreConfig {
     pub(crate) busy_timeout: Duration,
     pub(crate) database_warning_threshold_bytes: u64,
     pub(crate) database_hard_limit_bytes: u64,
+    #[cfg(test)]
+    pub(crate) initialization_test_hook: InitializationTestHook,
 }
 
 impl RuntimeStoreConfig {
@@ -27,6 +38,8 @@ impl RuntimeStoreConfig {
             busy_timeout: BUSY_TIMEOUT,
             database_warning_threshold_bytes: DATABASE_WARNING_THRESHOLD_BYTES,
             database_hard_limit_bytes: DATABASE_HARD_LIMIT_BYTES,
+            #[cfg(test)]
+            initialization_test_hook: InitializationTestHook::None,
         }
     }
 
@@ -39,6 +52,7 @@ impl RuntimeStoreConfig {
             busy_timeout: Duration::from_millis(150),
             database_warning_threshold_bytes: DATABASE_WARNING_THRESHOLD_BYTES,
             database_hard_limit_bytes: DATABASE_HARD_LIMIT_BYTES,
+            initialization_test_hook: InitializationTestHook::None,
         }
     }
 }

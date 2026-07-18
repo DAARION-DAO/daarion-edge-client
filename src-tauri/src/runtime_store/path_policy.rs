@@ -1,9 +1,9 @@
+use crate::runtime_store::deadline::ensure_before;
 use crate::runtime_store::error::RuntimeStoreError;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-#[cfg(not(unix))]
-use std::time::SystemTime;
+use std::time::Instant;
 
 const RUNTIME_STATE_DIRECTORY: &str = "runtime-state";
 const DATABASE_FILENAME: &str = "runtime-state-v1.sqlite3";
@@ -15,12 +15,26 @@ pub(crate) struct FileIdentity {
     device: u64,
     #[cfg(unix)]
     inode: u64,
-    #[cfg(not(unix))]
-    length: u64,
-    #[cfg(not(unix))]
-    created: Option<SystemTime>,
-    #[cfg(not(unix))]
-    modified: Option<SystemTime>,
+    #[cfg(unix)]
+    link_count: u64,
+    #[cfg(windows)]
+    volume_serial_number: u32,
+    #[cfg(windows)]
+    file_index: u64,
+    #[cfg(windows)]
+    link_count: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct DirectoryIdentity {
+    #[cfg(unix)]
+    device: u64,
+    #[cfg(unix)]
+    inode: u64,
+    #[cfg(windows)]
+    volume_serial_number: u32,
+    #[cfg(windows)]
+    file_index: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -28,17 +42,20 @@ pub(crate) struct PreparedStoragePaths {
     pub(crate) database_path: PathBuf,
     pub(crate) existed_before_open: bool,
     app_root: PathBuf,
-    app_root_identity: FileIdentity,
+    app_root_identity: DirectoryIdentity,
     runtime_root: PathBuf,
-    runtime_root_identity: FileIdentity,
+    runtime_root_identity: DirectoryIdentity,
     identity_before_open: Option<FileIdentity>,
 }
 
-pub(crate) fn prepare_storage_paths(
+pub(crate) fn prepare_storage_paths_until(
     app_local_data_root: &Path,
+    deadline: Instant,
 ) -> Result<PreparedStoragePaths, RuntimeStoreError> {
+    ensure_before(deadline)?;
     validate_absolute_normal_path(app_local_data_root)?;
     fs::create_dir_all(app_local_data_root).map_err(|error| RuntimeStoreError::from_io(&error))?;
+    ensure_before(deadline)?;
     reject_symlink_components(app_local_data_root)?;
     let app_root_identity = directory_identity(app_local_data_root)?;
     let canonical_app_root = fs::canonicalize(app_local_data_root)
@@ -48,6 +65,7 @@ pub(crate) fn prepare_storage_paths(
         return Err(RuntimeStoreError::path_invalid());
     }
     enforce_private_directory(&canonical_app_root)?;
+    ensure_before(deadline)?;
 
     let runtime_root = canonical_app_root.join(RUNTIME_STATE_DIRECTORY);
     reject_existing_symlink(&runtime_root)?;
@@ -63,6 +81,7 @@ pub(crate) fn prepare_storage_paths(
         return Err(RuntimeStoreError::path_invalid());
     }
     enforce_private_directory(&canonical_runtime_root)?;
+    ensure_before(deadline)?;
 
     for directory in RESERVED_DIRECTORIES {
         let reserved_path = canonical_runtime_root.join(directory);
@@ -75,6 +94,7 @@ pub(crate) fn prepare_storage_paths(
         }
         ensure_directory(&canonical_reserved)?;
         enforce_private_directory(&canonical_reserved)?;
+        ensure_before(deadline)?;
     }
 
     let database_path = canonical_runtime_root.join(DATABASE_FILENAME);
@@ -82,6 +102,7 @@ pub(crate) fn prepare_storage_paths(
         return Err(RuntimeStoreError::path_invalid());
     }
     let identity_before_open = existing_regular_file_identity(&database_path)?;
+    ensure_before(deadline)?;
 
     Ok(PreparedStoragePaths {
         database_path,
@@ -107,8 +128,12 @@ pub(crate) fn validate_database_after_open(
     {
         return Err(RuntimeStoreError::path_invalid());
     }
-    paths.identity_before_open = Some(identity_after_open);
-    enforce_private_file(&paths.database_path)
+    let identity_after_permissions = enforce_private_file(&paths.database_path)?;
+    if identity_after_permissions != identity_after_open {
+        return Err(RuntimeStoreError::path_invalid());
+    }
+    paths.identity_before_open = Some(identity_after_permissions);
+    Ok(())
 }
 
 pub(crate) fn revalidate_database(paths: &PreparedStoragePaths) -> Result<(), RuntimeStoreError> {
@@ -118,7 +143,11 @@ pub(crate) fn revalidate_database(paths: &PreparedStoragePaths) -> Result<(), Ru
     if paths.identity_before_open.as_ref() != Some(&current_identity) {
         return Err(RuntimeStoreError::path_invalid());
     }
-    enforce_private_file(&paths.database_path)
+    let identity_after_permissions = enforce_private_file(&paths.database_path)?;
+    if identity_after_permissions != current_identity {
+        return Err(RuntimeStoreError::path_invalid());
+    }
+    Ok(())
 }
 
 fn revalidate_trusted_directories(paths: &PreparedStoragePaths) -> Result<(), RuntimeStoreError> {
@@ -135,9 +164,12 @@ pub(crate) fn enforce_sidecar_permissions(database_path: &Path) -> Result<(), Ru
     for suffix in ["-wal", "-shm"] {
         let sidecar = sidecar_path(database_path, suffix);
         if sidecar.exists() {
-            existing_regular_file_identity(&sidecar)?
+            let before = existing_regular_file_identity(&sidecar)?
                 .ok_or_else(RuntimeStoreError::path_invalid)?;
-            enforce_private_file(&sidecar)?;
+            let after = enforce_private_file(&sidecar)?;
+            if before != after {
+                return Err(RuntimeStoreError::path_invalid());
+            }
         }
     }
     Ok(())
@@ -155,6 +187,8 @@ pub(crate) fn database_total_size(database_path: &Path) -> Result<u64, RuntimeSt
                 if metadata.file_type().is_symlink() || !metadata.is_file() {
                     return Err(RuntimeStoreError::path_invalid());
                 }
+                existing_regular_file_identity(&path)?
+                    .ok_or_else(RuntimeStoreError::path_invalid)?;
                 total = total
                     .checked_add(metadata.len())
                     .ok_or_else(RuntimeStoreError::resource_limit)?;
@@ -214,13 +248,13 @@ fn ensure_directory(path: &Path) -> Result<(), RuntimeStoreError> {
     Ok(())
 }
 
-fn directory_identity(path: &Path) -> Result<FileIdentity, RuntimeStoreError> {
+fn directory_identity(path: &Path) -> Result<DirectoryIdentity, RuntimeStoreError> {
     let metadata =
         fs::symlink_metadata(path).map_err(|error| RuntimeStoreError::from_io(&error))?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
         return Err(RuntimeStoreError::path_invalid());
     }
-    Ok(file_identity(&metadata))
+    platform_directory_identity(&metadata)
 }
 
 fn existing_regular_file_identity(path: &Path) -> Result<Option<FileIdentity>, RuntimeStoreError> {
@@ -232,25 +266,106 @@ fn existing_regular_file_identity(path: &Path) -> Result<Option<FileIdentity>, R
     if metadata.file_type().is_symlink() || !metadata.is_file() {
         return Err(RuntimeStoreError::path_invalid());
     }
-    Ok(Some(file_identity(&metadata)))
+    Ok(Some(platform_file_identity(&metadata)?))
 }
 
 #[cfg(unix)]
-fn file_identity(metadata: &fs::Metadata) -> FileIdentity {
+fn platform_directory_identity(
+    metadata: &fs::Metadata,
+) -> Result<DirectoryIdentity, RuntimeStoreError> {
     use std::os::unix::fs::MetadataExt;
-    FileIdentity {
+    Ok(DirectoryIdentity {
         device: metadata.dev(),
         inode: metadata.ino(),
-    }
+    })
 }
 
-#[cfg(not(unix))]
-fn file_identity(metadata: &fs::Metadata) -> FileIdentity {
-    FileIdentity {
-        length: metadata.len(),
-        created: metadata.created().ok(),
-        modified: metadata.modified().ok(),
+#[cfg(unix)]
+fn platform_file_identity(metadata: &fs::Metadata) -> Result<FileIdentity, RuntimeStoreError> {
+    use std::os::unix::fs::MetadataExt;
+    let link_count = metadata.nlink();
+    if link_count != 1 {
+        return Err(RuntimeStoreError::path_invalid());
     }
+    Ok(FileIdentity {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+        link_count,
+    })
+}
+
+#[cfg(windows)]
+fn platform_directory_identity(
+    metadata: &fs::Metadata,
+) -> Result<DirectoryIdentity, RuntimeStoreError> {
+    use std::os::windows::fs::MetadataExt;
+    Ok(DirectoryIdentity {
+        volume_serial_number: metadata
+            .volume_serial_number()
+            .ok_or_else(RuntimeStoreError::path_invalid)?,
+        file_index: metadata
+            .file_index()
+            .ok_or_else(RuntimeStoreError::path_invalid)?,
+    })
+}
+
+#[cfg(windows)]
+fn platform_file_identity(metadata: &fs::Metadata) -> Result<FileIdentity, RuntimeStoreError> {
+    use std::os::windows::fs::MetadataExt;
+    let link_count = metadata
+        .number_of_links()
+        .ok_or_else(RuntimeStoreError::path_invalid)?;
+    if link_count != 1 {
+        return Err(RuntimeStoreError::path_invalid());
+    }
+    Ok(FileIdentity {
+        volume_serial_number: metadata
+            .volume_serial_number()
+            .ok_or_else(RuntimeStoreError::path_invalid)?,
+        file_index: metadata
+            .file_index()
+            .ok_or_else(RuntimeStoreError::path_invalid)?,
+        link_count,
+    })
+}
+
+#[cfg(not(any(unix, windows)))]
+fn platform_directory_identity(
+    _metadata: &fs::Metadata,
+) -> Result<DirectoryIdentity, RuntimeStoreError> {
+    Err(RuntimeStoreError::path_invalid())
+}
+
+#[cfg(not(any(unix, windows)))]
+fn platform_file_identity(_metadata: &fs::Metadata) -> Result<FileIdentity, RuntimeStoreError> {
+    Err(RuntimeStoreError::path_invalid())
+}
+
+#[cfg(test)]
+pub(crate) fn regular_file_identity_for_test(
+    path: &Path,
+) -> Result<FileIdentity, RuntimeStoreError> {
+    existing_regular_file_identity(path)?.ok_or_else(RuntimeStoreError::path_invalid)
+}
+
+#[cfg(test)]
+pub(crate) fn sidecar_path_for_test(database_path: &Path, suffix: &str) -> PathBuf {
+    sidecar_path(database_path, suffix)
+}
+
+#[cfg(unix)]
+fn enforce_private_file(path: &Path) -> Result<FileIdentity, RuntimeStoreError> {
+    use std::os::unix::fs::PermissionsExt;
+    let before =
+        existing_regular_file_identity(path)?.ok_or_else(RuntimeStoreError::path_invalid)?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+        .map_err(|error| RuntimeStoreError::from_io(&error))?;
+    let after =
+        existing_regular_file_identity(path)?.ok_or_else(RuntimeStoreError::path_invalid)?;
+    if before != after {
+        return Err(RuntimeStoreError::path_invalid());
+    }
+    Ok(after)
 }
 
 #[cfg(unix)]
@@ -265,14 +380,7 @@ fn enforce_private_directory(_path: &Path) -> Result<(), RuntimeStoreError> {
     Ok(())
 }
 
-#[cfg(unix)]
-fn enforce_private_file(path: &Path) -> Result<(), RuntimeStoreError> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
-        .map_err(|error| RuntimeStoreError::from_io(&error))
-}
-
 #[cfg(not(unix))]
-fn enforce_private_file(_path: &Path) -> Result<(), RuntimeStoreError> {
-    Ok(())
+fn enforce_private_file(path: &Path) -> Result<FileIdentity, RuntimeStoreError> {
+    existing_regular_file_identity(path)?.ok_or_else(RuntimeStoreError::path_invalid)
 }

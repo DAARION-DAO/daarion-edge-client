@@ -1,23 +1,29 @@
 use crate::runtime_store::config::{RuntimeStoreConfig, STORAGE_QUEUE_CAPACITY};
 use crate::runtime_store::connection::RuntimeStoreConnection;
+use crate::runtime_store::deadline::ensure_before;
 use crate::runtime_store::error::{RuntimeStoreError, RuntimeStoreErrorKind};
-use crate::runtime_store::migrations::migrate_and_validate;
-use crate::runtime_store::types::StorageRuntimeStatus;
+use crate::runtime_store::migrations::{migrate_and_validate_until, CURRENT_SCHEMA_VERSION};
+use crate::runtime_store::types::{StorageRuntimeErrorCode, StorageRuntimeStatus};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+pub(crate) const PRODUCTION_SHUTDOWN_DEADLINE: Duration = Duration::from_secs(5);
 
 enum RuntimeStoreRequest {
     Initialize {
         config: RuntimeStoreConfig,
-        reply: SyncSender<StorageRuntimeStatus>,
+        deadline: Instant,
+        reply: Option<SyncSender<StorageRuntimeStatus>>,
     },
     ReadStatus {
         reply: SyncSender<StorageRuntimeStatus>,
     },
     Shutdown {
+        deadline: Instant,
         reply: SyncSender<Result<(), RuntimeStoreError>>,
     },
     #[cfg(test)]
@@ -25,14 +31,49 @@ enum RuntimeStoreRequest {
         duration: Duration,
         reply: SyncSender<()>,
     },
+    #[cfg(test)]
+    Block {
+        entered: SyncSender<()>,
+        release: Receiver<()>,
+    },
+    #[cfg(test)]
+    Panic,
+    #[cfg(test)]
+    ExitUnexpectedly,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum WorkerExit {
+    CleanShutdown,
+    ControlledFailure,
+    ChannelDisconnected,
+    #[cfg(test)]
+    UnexpectedExit,
+    Panic,
+}
+
+#[derive(Clone, Copy)]
+enum ShutdownPhase {
+    Running,
+    InProgress,
+    Complete(Result<(), RuntimeStoreError>),
 }
 
 struct RuntimeStoreManagerInner {
     sender: SyncSender<RuntimeStoreRequest>,
     status: Arc<RwLock<StorageRuntimeStatus>>,
     join_handle: Mutex<Option<JoinHandle<()>>>,
-    accepting: AtomicBool,
+    worker_exit: Mutex<Receiver<WorkerExit>>,
+    #[cfg(test)]
+    last_worker_exit: Arc<Mutex<Option<WorkerExit>>>,
+    accepting: Arc<AtomicBool>,
     ordinary_deadline: RwLock<Duration>,
+    shutdown_phase: Mutex<ShutdownPhase>,
+    shutdown_complete: Condvar,
+    #[cfg(test)]
+    suppress_exit_signal: Arc<AtomicBool>,
+    #[cfg(test)]
+    joined_after_exit: AtomicBool,
 }
 
 #[derive(Clone)]
@@ -45,12 +86,50 @@ impl RuntimeStoreManager {
         let last_start_time_ms = current_time_ms();
         let initial_status = StorageRuntimeStatus::initializing(last_start_time_ms);
         let status = Arc::new(RwLock::new(initial_status));
+        let accepting = Arc::new(AtomicBool::new(true));
+        #[cfg(test)]
+        let last_worker_exit = Arc::new(Mutex::new(None));
         let (sender, receiver) = mpsc::sync_channel(STORAGE_QUEUE_CAPACITY);
+        let (worker_exit_sender, worker_exit) = mpsc::sync_channel(1);
+        #[cfg(test)]
+        let suppress_exit_signal = Arc::new(AtomicBool::new(false));
+
         let worker_status = Arc::clone(&status);
+        let worker_accepting = Arc::clone(&accepting);
+        #[cfg(test)]
+        let worker_last_exit = Arc::clone(&last_worker_exit);
+        #[cfg(test)]
+        let worker_suppress_exit_signal = Arc::clone(&suppress_exit_signal);
         let join_handle = thread::Builder::new()
             .name("daarion-runtime-store".to_string())
-            .spawn(move || run_worker(receiver, worker_status, last_start_time_ms));
-        let (join_handle, accepting) = match join_handle {
+            .spawn(move || {
+                let exit = match catch_unwind(AssertUnwindSafe(|| {
+                    run_worker(receiver, &worker_status, last_start_time_ms)
+                })) {
+                    Ok(exit) => exit,
+                    Err(_) => WorkerExit::Panic,
+                };
+                worker_accepting.store(false, Ordering::Release);
+                if worker_exit_is_abnormal(exit) {
+                    store_status(
+                        &worker_status,
+                        failure_status(RuntimeStoreError::internal(), last_start_time_ms),
+                    );
+                }
+                #[cfg(test)]
+                if let Ok(mut recorded) = worker_last_exit.lock() {
+                    *recorded = Some(exit);
+                }
+                #[cfg(test)]
+                let suppress = worker_suppress_exit_signal.load(Ordering::Acquire);
+                #[cfg(not(test))]
+                let suppress = false;
+                if !suppress {
+                    let _ = worker_exit_sender.try_send(exit);
+                }
+            });
+
+        let (join_handle, spawned) = match join_handle {
             Ok(handle) => (Some(handle), true),
             Err(_) => {
                 store_status(
@@ -60,30 +139,49 @@ impl RuntimeStoreManager {
                 (None, false)
             }
         };
+        accepting.store(spawned, Ordering::Release);
+
         Self {
             inner: Arc::new(RuntimeStoreManagerInner {
                 sender,
                 status,
                 join_handle: Mutex::new(join_handle),
-                accepting: AtomicBool::new(accepting),
+                worker_exit: Mutex::new(worker_exit),
+                #[cfg(test)]
+                last_worker_exit,
+                accepting,
                 ordinary_deadline: RwLock::new(
                     crate::runtime_store::config::ORDINARY_OPERATION_DEADLINE,
                 ),
+                shutdown_phase: Mutex::new(if spawned {
+                    ShutdownPhase::Running
+                } else {
+                    ShutdownPhase::Complete(Err(RuntimeStoreError::unavailable()))
+                }),
+                shutdown_complete: Condvar::new(),
+                #[cfg(test)]
+                suppress_exit_signal,
+                #[cfg(test)]
+                joined_after_exit: AtomicBool::new(false),
             }),
         }
     }
 
     pub(crate) fn start_initialization(&self, config: RuntimeStoreConfig) {
         self.store_ordinary_deadline(config.ordinary_deadline);
-        let (reply, _response) = mpsc::sync_channel(1);
+        let deadline = Instant::now() + config.migration_deadline;
         if self
             .send_with_deadline(
-                RuntimeStoreRequest::Initialize { config, reply },
-                Duration::from_millis(250),
+                RuntimeStoreRequest::Initialize {
+                    config,
+                    deadline,
+                    reply: None,
+                },
+                deadline,
             )
             .is_err()
         {
-            self.store_failure(RuntimeStoreError::unavailable());
+            self.disable_with_fresh_failure(RuntimeStoreError::unavailable());
         }
     }
 
@@ -93,27 +191,29 @@ impl RuntimeStoreManager {
 
     pub(crate) fn read_status(&self) -> StorageRuntimeStatus {
         if !self.inner.accepting.load(Ordering::Acquire) {
-            return self.internal_failure_status();
+            return self.disable_with_fresh_failure(RuntimeStoreError::internal());
         }
-        let deadline = self.ordinary_deadline();
-        let fallback = self.current_status();
+        let deadline = Instant::now() + self.ordinary_deadline();
         let (reply, response) = mpsc::sync_channel(1);
         if self
             .send_with_deadline(RuntimeStoreRequest::ReadStatus { reply }, deadline)
             .is_err()
         {
-            return fallback;
+            return self.disable_with_fresh_failure(RuntimeStoreError::internal());
         }
-        response.recv_timeout(deadline).unwrap_or(fallback)
+        match response.recv_timeout(remaining_or_zero(deadline)) {
+            Ok(status) => status,
+            Err(_) => self.disable_with_fresh_failure(RuntimeStoreError::internal()),
+        }
+    }
+
+    pub(crate) fn production_shutdown(&self) -> Result<(), RuntimeStoreError> {
+        self.shutdown(PRODUCTION_SHUTDOWN_DEADLINE)
     }
 
     pub(crate) fn internal_failure_status(&self) -> StorageRuntimeStatus {
         let last_start_time_ms = self.current_status().last_start_time_ms;
-        StorageRuntimeStatus::failed(
-            last_start_time_ms,
-            RuntimeStoreError::internal().public_state(),
-            RuntimeStoreError::internal().public_code(),
-        )
+        failure_status(RuntimeStoreError::internal(), last_start_time_ms)
     }
 
     fn current_status(&self) -> StorageRuntimeStatus {
@@ -121,25 +221,22 @@ impl RuntimeStoreManager {
             .status
             .read()
             .map(|status| status.clone())
-            .unwrap_or_else(|_| {
-                StorageRuntimeStatus::failed(
-                    current_time_ms(),
-                    RuntimeStoreError::internal().public_state(),
-                    RuntimeStoreError::internal().public_code(),
-                )
-            })
+            .unwrap_or_else(|_| failure_status(RuntimeStoreError::internal(), current_time_ms()))
     }
 
     fn store_failure(&self, error: RuntimeStoreError) {
         let last_start_time_ms = self.current_status().last_start_time_ms;
         store_status(
             &self.inner.status,
-            StorageRuntimeStatus::failed(
-                last_start_time_ms,
-                error.public_state(),
-                error.public_code(),
-            ),
+            failure_status(error, last_start_time_ms),
         );
+    }
+
+    fn disable_with_fresh_failure(&self, error: RuntimeStoreError) -> StorageRuntimeStatus {
+        self.inner.accepting.store(false, Ordering::Release);
+        let status = failure_status(error, self.current_status().last_start_time_ms);
+        store_status(&self.inner.status, status.clone());
+        status
     }
 
     fn ordinary_deadline(&self) -> Duration {
@@ -159,25 +256,40 @@ impl RuntimeStoreManager {
     fn send_with_deadline(
         &self,
         request: RuntimeStoreRequest,
-        deadline: Duration,
+        deadline: Instant,
     ) -> Result<(), RuntimeStoreError> {
-        let expires_at = Instant::now() + deadline;
-        try_send_with_deadline(&self.inner.sender, request, expires_at)
+        if !self.inner.accepting.load(Ordering::Acquire) {
+            return Err(RuntimeStoreError::unavailable());
+        }
+        try_send_with_deadline(&self.inner.sender, request, deadline)
+    }
+
+    fn shutdown(&self, budget: Duration) -> Result<(), RuntimeStoreError> {
+        shutdown_inner(&self.inner, Instant::now() + budget)
     }
 
     #[cfg(test)]
     pub(crate) fn initialize_for_test(&self, config: RuntimeStoreConfig) -> StorageRuntimeStatus {
         self.store_ordinary_deadline(config.ordinary_deadline);
-        let deadline = config.migration_deadline;
+        let deadline = Instant::now() + config.migration_deadline;
         let fallback = self.internal_failure_status();
         let (reply, response) = mpsc::sync_channel(1);
         if self
-            .send_with_deadline(RuntimeStoreRequest::Initialize { config, reply }, deadline)
+            .send_with_deadline(
+                RuntimeStoreRequest::Initialize {
+                    config,
+                    deadline,
+                    reply: Some(reply),
+                },
+                deadline,
+            )
             .is_err()
         {
-            return fallback;
+            return self.disable_with_fresh_failure(RuntimeStoreError::internal());
         }
-        response.recv_timeout(deadline).unwrap_or(fallback)
+        response
+            .recv_timeout(remaining_or_zero(deadline))
+            .unwrap_or(fallback)
     }
 
     #[cfg(test)]
@@ -185,11 +297,62 @@ impl RuntimeStoreManager {
         let (reply, response) = mpsc::sync_channel(1);
         self.send_with_deadline(
             RuntimeStoreRequest::Hold { duration, reply },
-            Duration::from_millis(100),
+            Instant::now() + Duration::from_millis(100),
         )?;
         response
             .recv_timeout(duration + Duration::from_secs(1))
             .map_err(|_| RuntimeStoreError::unavailable())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn block_worker_for_test(&self) -> Result<SyncSender<()>, RuntimeStoreError> {
+        let (entered, entered_response) = mpsc::sync_channel(1);
+        let (release, release_response) = mpsc::sync_channel(1);
+        self.send_with_deadline(
+            RuntimeStoreRequest::Block {
+                entered,
+                release: release_response,
+            },
+            Instant::now() + Duration::from_millis(100),
+        )?;
+        entered_response
+            .recv_timeout(Duration::from_secs(1))
+            .map_err(|_| RuntimeStoreError::unavailable())?;
+        Ok(release)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn try_enqueue_status_for_test(
+        &self,
+    ) -> Result<Receiver<StorageRuntimeStatus>, RuntimeStoreError> {
+        let (reply, response) = mpsc::sync_channel(1);
+        match self
+            .inner
+            .sender
+            .try_send(RuntimeStoreRequest::ReadStatus { reply })
+        {
+            Ok(()) => Ok(response),
+            Err(TrySendError::Full(_)) => {
+                Err(RuntimeStoreError::new(RuntimeStoreErrorKind::BusyTimeout))
+            }
+            Err(TrySendError::Disconnected(_)) => Err(RuntimeStoreError::unavailable()),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn trigger_worker_panic_for_test(&self) -> Result<(), RuntimeStoreError> {
+        self.send_with_deadline(
+            RuntimeStoreRequest::Panic,
+            Instant::now() + Duration::from_secs(1),
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn trigger_unexpected_exit_for_test(&self) -> Result<(), RuntimeStoreError> {
+        self.send_with_deadline(
+            RuntimeStoreRequest::ExitUnexpectedly,
+            Instant::now() + Duration::from_secs(1),
+        )
     }
 
     #[cfg(test)]
@@ -198,21 +361,24 @@ impl RuntimeStoreManager {
     }
 
     #[cfg(test)]
-    fn shutdown(&self, deadline: Duration) -> Result<(), RuntimeStoreError> {
-        if !self.inner.accepting.swap(false, Ordering::AcqRel) {
-            return Ok(());
-        }
-        let (reply, response) = mpsc::sync_channel(1);
-        self.send_with_deadline(RuntimeStoreRequest::Shutdown { reply }, deadline)?;
-        let close_result = response
-            .recv_timeout(deadline)
-            .map_err(|_| RuntimeStoreError::unavailable())?;
-        if let Ok(mut guard) = self.inner.join_handle.lock() {
-            if let Some(handle) = guard.take() {
-                handle.join().map_err(|_| RuntimeStoreError::internal())?;
-            }
-        }
-        close_result
+    pub(crate) fn worker_exit_for_test(&self) -> Option<WorkerExit> {
+        self.inner
+            .last_worker_exit
+            .lock()
+            .ok()
+            .and_then(|exit| *exit)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn suppress_exit_signal_for_test(&self) {
+        self.inner
+            .suppress_exit_signal
+            .store(true, Ordering::Release);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn joined_after_exit_for_test(&self) -> bool {
+        self.inner.joined_after_exit.load(Ordering::Acquire)
     }
 }
 
@@ -224,28 +390,112 @@ impl Default for RuntimeStoreManager {
 
 impl Drop for RuntimeStoreManagerInner {
     fn drop(&mut self) {
-        self.accepting.store(false, Ordering::Release);
-        let (reply, response) = mpsc::sync_channel(1);
-        let deadline = Duration::from_secs(2);
-        if try_send_with_deadline(
-            &self.sender,
-            RuntimeStoreRequest::Shutdown { reply },
-            Instant::now() + deadline,
-        )
-        .is_ok()
-            && response.recv_timeout(deadline).is_ok()
-        {
-            if let Ok(mut guard) = self.join_handle.lock() {
-                if let Some(handle) = guard.take() {
-                    let _ = handle.join();
+        let _ = shutdown_inner(self, Instant::now() + Duration::from_secs(2));
+    }
+}
+
+fn shutdown_inner(
+    inner: &RuntimeStoreManagerInner,
+    deadline: Instant,
+) -> Result<(), RuntimeStoreError> {
+    let mut phase = inner
+        .shutdown_phase
+        .lock()
+        .map_err(|_| RuntimeStoreError::internal())?;
+    loop {
+        match *phase {
+            ShutdownPhase::Complete(result) => return result,
+            ShutdownPhase::InProgress => {
+                let wait = remaining_or_zero(deadline);
+                if wait.is_zero() {
+                    return Err(RuntimeStoreError::unavailable());
+                }
+                let (next, timeout) = inner
+                    .shutdown_complete
+                    .wait_timeout(phase, wait)
+                    .map_err(|_| RuntimeStoreError::internal())?;
+                phase = next;
+                if timeout.timed_out() {
+                    return Err(RuntimeStoreError::unavailable());
                 }
             }
-            return;
-        }
-        if let Ok(mut guard) = self.join_handle.lock() {
-            let _ = guard.take();
+            ShutdownPhase::Running => {
+                *phase = ShutdownPhase::InProgress;
+                break;
+            }
         }
     }
+    drop(phase);
+
+    inner.accepting.store(false, Ordering::Release);
+    let (reply, response) = mpsc::sync_channel(1);
+    let send_result = try_send_with_deadline(
+        &inner.sender,
+        RuntimeStoreRequest::Shutdown { deadline, reply },
+        deadline,
+    );
+    let close_result = match send_result {
+        Ok(()) => response
+            .recv_timeout(remaining_or_zero(deadline))
+            .map_err(|_| RuntimeStoreError::unavailable())
+            .and_then(|result| result),
+        Err(error) => Err(error),
+    };
+
+    let exit = inner
+        .worker_exit
+        .lock()
+        .map_err(|_| RuntimeStoreError::internal())
+        .and_then(|receiver| match receiver.try_recv() {
+            Ok(exit) => Ok(exit),
+            Err(TryRecvError::Empty) => receiver
+                .recv_timeout(remaining_or_zero(deadline))
+                .map_err(|_| RuntimeStoreError::unavailable()),
+            Err(TryRecvError::Disconnected) => Err(RuntimeStoreError::unavailable()),
+        });
+
+    let projected_failure = projected_internal_error(&inner.status);
+    let mut result = match (close_result, exit) {
+        (Err(error), Ok(WorkerExit::ControlledFailure))
+            if error.kind == RuntimeStoreErrorKind::Unavailable =>
+        {
+            Err(projected_failure.unwrap_or(error))
+        }
+        (Err(error), _) => Err(error),
+        (Ok(()), Ok(WorkerExit::CleanShutdown)) => Ok(()),
+        (Ok(()), Ok(WorkerExit::ControlledFailure)) => Err(RuntimeStoreError::internal()),
+        (Ok(()), Ok(_)) | (Ok(()), Err(_)) => Err(RuntimeStoreError::unavailable()),
+    };
+
+    if exit.is_ok() {
+        match inner.join_handle.lock() {
+            Ok(mut guard) => {
+                if let Some(handle) = guard.take() {
+                    if handle.join().is_err() {
+                        result = Err(RuntimeStoreError::internal());
+                    }
+                    #[cfg(test)]
+                    inner.joined_after_exit.store(true, Ordering::Release);
+                }
+            }
+            Err(_) => result = Err(RuntimeStoreError::internal()),
+        }
+    } else if let Ok(mut guard) = inner.join_handle.lock() {
+        let _ = guard.take();
+    }
+
+    if let Err(error) = result {
+        store_status(
+            &inner.status,
+            failure_status(error, current_status_time(&inner.status)),
+        );
+    }
+
+    if let Ok(mut phase) = inner.shutdown_phase.lock() {
+        *phase = ShutdownPhase::Complete(result);
+        inner.shutdown_complete.notify_all();
+    }
+    result
 }
 
 fn try_send_with_deadline(
@@ -270,91 +520,141 @@ fn try_send_with_deadline(
     }
 }
 
+fn worker_exit_is_abnormal(exit: WorkerExit) -> bool {
+    match exit {
+        WorkerExit::ChannelDisconnected | WorkerExit::Panic => true,
+        #[cfg(test)]
+        WorkerExit::UnexpectedExit => true,
+        WorkerExit::CleanShutdown | WorkerExit::ControlledFailure => false,
+    }
+}
+
 fn run_worker(
     receiver: Receiver<RuntimeStoreRequest>,
-    shared_status: Arc<RwLock<StorageRuntimeStatus>>,
+    shared_status: &RwLock<StorageRuntimeStatus>,
     last_start_time_ms: u64,
-) {
+) -> WorkerExit {
     let mut connection: Option<RuntimeStoreConnection> = None;
-    while let Ok(request) = receiver.recv() {
-        match request {
-            RuntimeStoreRequest::Initialize { config, reply } => {
-                if connection.is_some() {
-                    let status = shared_status
-                        .read()
-                        .map(|status| status.clone())
-                        .unwrap_or_else(|_| {
-                            failure_status(RuntimeStoreError::internal(), last_start_time_ms)
-                        });
-                    let _ = reply.try_send(status);
-                    continue;
+    loop {
+        let request = match receiver.recv() {
+            Ok(request) => request,
+            Err(_) => {
+                if let Some(opened) = connection.take() {
+                    let _ = opened.close_until(Instant::now() + Duration::from_secs(2));
                 }
-                let started_at = Instant::now();
-                let result = initialize_connection(&config, last_start_time_ms);
-                let status = match result {
-                    Ok(opened) if started_at.elapsed() <= config.migration_deadline => {
-                        let status = build_healthy_status(&opened, last_start_time_ms)
-                            .unwrap_or_else(|error| failure_status(error, last_start_time_ms));
-                        if status.initialized {
+                return WorkerExit::ChannelDisconnected;
+            }
+        };
+        match request {
+            RuntimeStoreRequest::Initialize {
+                config,
+                deadline,
+                reply,
+            } => {
+                let status = if connection.is_some() {
+                    current_shared_status(shared_status, last_start_time_ms)
+                } else {
+                    match initialize_connection(&config, deadline, last_start_time_ms) {
+                        Ok((opened, status)) => {
                             connection = Some(opened);
-                        } else {
-                            let _ = opened.close();
+                            status
                         }
-                        status
+                        Err(error) => failure_status(error, last_start_time_ms),
                     }
-                    Ok(opened) => {
-                        let _ = opened.close();
-                        failure_status(RuntimeStoreError::unavailable(), last_start_time_ms)
-                    }
-                    Err(error) => failure_status(error, last_start_time_ms),
                 };
-                store_status(&shared_status, status.clone());
-                let _ = reply.try_send(status);
+                store_status(shared_status, status.clone());
+                if reply.is_some_and(|reply| reply.try_send(status).is_err()) {
+                    return WorkerExit::ChannelDisconnected;
+                }
             }
             RuntimeStoreRequest::ReadStatus { reply } => {
                 let status = match connection.as_ref() {
-                    Some(opened) => {
-                        let status = build_healthy_status(opened, last_start_time_ms)
-                            .unwrap_or_else(|error| failure_status(error, last_start_time_ms));
-                        store_status(&shared_status, status.clone());
-                        status
-                    }
-                    None => shared_status
-                        .read()
-                        .map(|status| status.clone())
-                        .unwrap_or_else(|_| {
-                            failure_status(RuntimeStoreError::internal(), last_start_time_ms)
-                        }),
+                    Some(opened) => build_healthy_status(opened, last_start_time_ms)
+                        .unwrap_or_else(|error| failure_status(error, last_start_time_ms)),
+                    None => current_shared_status(shared_status, last_start_time_ms),
                 };
-                let _ = reply.try_send(status);
+                store_status(shared_status, status.clone());
+                if reply.try_send(status).is_err() {
+                    return WorkerExit::ChannelDisconnected;
+                }
             }
-            RuntimeStoreRequest::Shutdown { reply } => {
-                let close_result = connection
-                    .take()
-                    .map_or(Ok(()), RuntimeStoreConnection::close);
+            RuntimeStoreRequest::Shutdown { deadline, reply } => {
+                let close_result = connection.take().map_or(Ok(()), |opened| {
+                    opened.close_until(reserve_worker_exit_budget(deadline))
+                });
+                if let Err(error) = close_result {
+                    store_status(shared_status, failure_status(error, last_start_time_ms));
+                }
                 let _ = reply.try_send(close_result);
-                break;
+                return if close_result.is_ok() {
+                    WorkerExit::CleanShutdown
+                } else {
+                    WorkerExit::ControlledFailure
+                };
             }
             #[cfg(test)]
             RuntimeStoreRequest::Hold { duration, reply } => {
                 thread::sleep(duration);
-                let _ = reply.try_send(());
+                if reply.try_send(()).is_err() {
+                    return WorkerExit::ChannelDisconnected;
+                }
             }
+            #[cfg(test)]
+            RuntimeStoreRequest::Block { entered, release } => {
+                if entered.try_send(()).is_err() || release.recv().is_err() {
+                    return WorkerExit::ChannelDisconnected;
+                }
+            }
+            #[cfg(test)]
+            RuntimeStoreRequest::Panic => panic!("runtime_store_test_panic"),
+            #[cfg(test)]
+            RuntimeStoreRequest::ExitUnexpectedly => return WorkerExit::UnexpectedExit,
         }
-    }
-    if let Some(opened) = connection.take() {
-        let _ = opened.close();
     }
 }
 
 fn initialize_connection(
     config: &RuntimeStoreConfig,
-    _last_start_time_ms: u64,
-) -> Result<RuntimeStoreConnection, RuntimeStoreError> {
-    let mut opened = RuntimeStoreConnection::open(config)?;
-    migrate_and_validate(&mut opened.connection)?;
+    deadline: Instant,
+    last_start_time_ms: u64,
+) -> Result<(RuntimeStoreConnection, StorageRuntimeStatus), RuntimeStoreError> {
+    ensure_before(deadline)?;
+    let (mut opened, watchdog) = RuntimeStoreConnection::open_for_initialization(config, deadline)?;
+
+    #[cfg(test)]
+    if config.initialization_test_hook
+        == crate::runtime_store::config::InitializationTestHook::LongQueryBeforeMigration
+    {
+        crate::runtime_store::migrations::run_long_query(&opened.connection)?;
+    }
+
+    #[cfg(test)]
+    let schema_version = if config.initialization_test_hook
+        == crate::runtime_store::config::InitializationTestHook::LongQueryInsideMigration
+    {
+        crate::runtime_store::migrations::migrate_and_validate_with_test_interrupt(
+            &mut opened.connection,
+            deadline,
+        )?
+    } else {
+        migrate_and_validate_until(&mut opened.connection, deadline)?
+    };
+    #[cfg(not(test))]
+    let schema_version = migrate_and_validate_until(&mut opened.connection, deadline)?;
+
+    if schema_version != CURRENT_SCHEMA_VERSION {
+        return Err(RuntimeStoreError::migration_mismatch());
+    }
+    ensure_before(deadline)?;
     opened.revalidate_artifacts()?;
-    Ok(opened)
+    ensure_before(deadline)?;
+    let status = build_healthy_status(&opened, last_start_time_ms)?;
+    ensure_before(deadline)?;
+    if watchdog.finish()? {
+        return Err(RuntimeStoreError::deadline_exceeded());
+    }
+    ensure_before(deadline)?;
+    Ok((opened, status))
 }
 
 fn build_healthy_status(
@@ -367,13 +667,30 @@ fn build_healthy_status(
     }
     Ok(StorageRuntimeStatus::healthy(
         last_start_time_ms,
-        crate::runtime_store::migrations::CURRENT_SCHEMA_VERSION,
+        CURRENT_SCHEMA_VERSION,
         rusqlite::version().to_string(),
         database_size_bytes,
         opened.persistence_state,
         opened.database_warning_threshold_bytes,
         opened.database_hard_limit_bytes,
     ))
+}
+
+fn current_shared_status(
+    shared_status: &RwLock<StorageRuntimeStatus>,
+    last_start_time_ms: u64,
+) -> StorageRuntimeStatus {
+    shared_status
+        .read()
+        .map(|status| status.clone())
+        .unwrap_or_else(|_| failure_status(RuntimeStoreError::internal(), last_start_time_ms))
+}
+
+fn current_status_time(shared_status: &RwLock<StorageRuntimeStatus>) -> u64 {
+    shared_status
+        .read()
+        .map(|status| status.last_start_time_ms)
+        .unwrap_or_else(|_| current_time_ms())
 }
 
 fn failure_status(error: RuntimeStoreError, last_start_time_ms: u64) -> StorageRuntimeStatus {
@@ -388,6 +705,35 @@ fn store_status(shared: &RwLock<StorageRuntimeStatus>, status: StorageRuntimeSta
     if let Ok(mut current) = shared.write() {
         *current = status;
     }
+}
+
+fn remaining_or_zero(deadline: Instant) -> Duration {
+    deadline
+        .checked_duration_since(Instant::now())
+        .unwrap_or(Duration::ZERO)
+}
+
+fn reserve_worker_exit_budget(deadline: Instant) -> Instant {
+    let remaining = remaining_or_zero(deadline);
+    let reserve = (remaining / 4).min(Duration::from_millis(500));
+    deadline.checked_sub(reserve).unwrap_or(deadline)
+}
+
+fn projected_internal_error(status: &RwLock<StorageRuntimeStatus>) -> Option<RuntimeStoreError> {
+    let code = status.read().ok()?.error_code?;
+    let kind = match code {
+        StorageRuntimeErrorCode::PathInvalid => RuntimeStoreErrorKind::PathInvalid,
+        StorageRuntimeErrorCode::PermissionDenied => RuntimeStoreErrorKind::PermissionDenied,
+        StorageRuntimeErrorCode::Locked => RuntimeStoreErrorKind::Locked,
+        StorageRuntimeErrorCode::BusyTimeout => RuntimeStoreErrorKind::BusyTimeout,
+        StorageRuntimeErrorCode::MigrationMismatch => RuntimeStoreErrorKind::MigrationMismatch,
+        StorageRuntimeErrorCode::NewerSchema => RuntimeStoreErrorKind::NewerSchema,
+        StorageRuntimeErrorCode::MigrationFailed => RuntimeStoreErrorKind::MigrationFailed,
+        StorageRuntimeErrorCode::IntegrityFailed => RuntimeStoreErrorKind::IntegrityFailed,
+        StorageRuntimeErrorCode::ResourceLimit => RuntimeStoreErrorKind::ResourceLimit,
+        StorageRuntimeErrorCode::Internal => RuntimeStoreErrorKind::Internal,
+    };
+    Some(RuntimeStoreError::new(kind))
 }
 
 fn current_time_ms() -> u64 {

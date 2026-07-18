@@ -1,8 +1,9 @@
 use crate::runtime_store::config::RuntimeStoreConfig;
+use crate::runtime_store::deadline::{ensure_before, remaining, SqliteInterruptGuard};
 use crate::runtime_store::error::RuntimeStoreError;
 use crate::runtime_store::path_policy::{
-    database_total_size, enforce_sidecar_permissions, prepare_storage_paths, revalidate_database,
-    validate_database_after_open, PreparedStoragePaths,
+    database_total_size, enforce_sidecar_permissions, prepare_storage_paths_until,
+    revalidate_database, validate_database_after_open, PreparedStoragePaths,
 };
 use crate::runtime_store::types::PersistenceState;
 use rusqlite::limits::Limit;
@@ -17,8 +18,23 @@ pub(crate) struct RuntimeStoreConnection {
 }
 
 impl RuntimeStoreConnection {
+    #[cfg(test)]
     pub(crate) fn open(config: &RuntimeStoreConfig) -> Result<Self, RuntimeStoreError> {
-        let mut paths = prepare_storage_paths(&config.app_local_data_root)?;
+        let deadline = std::time::Instant::now() + config.migration_deadline;
+        let (opened, watchdog) = Self::open_for_initialization(config, deadline)?;
+        if watchdog.finish()? || std::time::Instant::now() >= deadline {
+            return Err(RuntimeStoreError::deadline_exceeded());
+        }
+        Ok(opened)
+    }
+
+    pub(crate) fn open_for_initialization(
+        config: &RuntimeStoreConfig,
+        deadline: std::time::Instant,
+    ) -> Result<(Self, SqliteInterruptGuard), RuntimeStoreError> {
+        ensure_before(deadline)?;
+        let mut paths = prepare_storage_paths_until(&config.app_local_data_root, deadline)?;
+        ensure_before(deadline)?;
         if database_total_size(&paths.database_path)? > config.database_hard_limit_bytes {
             return Err(RuntimeStoreError::resource_limit());
         }
@@ -30,24 +46,34 @@ impl RuntimeStoreConnection {
             | OpenFlags::SQLITE_OPEN_EXRESCODE;
         let connection = Connection::open_with_flags(&paths.database_path, flags)
             .map_err(|error| RuntimeStoreError::from_sqlite(&error))?;
+        let watchdog = SqliteInterruptGuard::start(&connection, deadline)?;
+        ensure_before(deadline)?;
         validate_database_after_open(&mut paths)?;
+        ensure_before(deadline)?;
         configure_limits(&connection)?;
+        ensure_before(deadline)?;
         configure_pragmas(&connection, config)?;
+        ensure_before(deadline)?;
         validate_pragmas(&connection, config)?;
+        ensure_before(deadline)?;
         enforce_sidecar_permissions(&paths.database_path)?;
+        ensure_before(deadline)?;
 
         let persistence_state = if paths.existed_before_open {
             PersistenceState::ReopenedExisting
         } else {
             PersistenceState::CreatedNew
         };
-        Ok(Self {
-            connection,
-            paths,
-            persistence_state,
-            database_warning_threshold_bytes: config.database_warning_threshold_bytes,
-            database_hard_limit_bytes: config.database_hard_limit_bytes,
-        })
+        Ok((
+            Self {
+                connection,
+                paths,
+                persistence_state,
+                database_warning_threshold_bytes: config.database_warning_threshold_bytes,
+                database_hard_limit_bytes: config.database_hard_limit_bytes,
+            },
+            watchdog,
+        ))
     }
 
     pub(crate) fn database_size_bytes(&self) -> Result<u64, RuntimeStoreError> {
@@ -62,43 +88,77 @@ impl RuntimeStoreConnection {
         enforce_sidecar_permissions(&self.paths.database_path)
     }
 
+    #[cfg(test)]
     pub(crate) fn close(self) -> Result<(), RuntimeStoreError> {
+        self.close_until(std::time::Instant::now() + std::time::Duration::from_secs(2))
+    }
+
+    pub(crate) fn close_until(self, deadline: std::time::Instant) -> Result<(), RuntimeStoreError> {
+        ensure_before(deadline)?;
         self.revalidate_artifacts()?;
-        let busy: i64 = self
+        let checkpoint_budget = remaining(deadline)?;
+        self.connection
+            .busy_timeout(checkpoint_budget.max(std::time::Duration::from_millis(1)))
+            .map_err(|error| RuntimeStoreError::from_sqlite(&error))?;
+        let watchdog = SqliteInterruptGuard::start(&self.connection, deadline)?;
+        let checkpoint: Result<i64, RuntimeStoreError> = self
             .connection
             .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))
-            .map_err(|error| RuntimeStoreError::from_sqlite(&error))?;
-        if busy != 0 {
+            .map_err(|error| RuntimeStoreError::from_sqlite(&error));
+        let checkpoint_expired = watchdog.finish()?;
+        let busy = match checkpoint {
+            Ok(busy) => busy,
+            Err(error)
+                if checkpoint_expired
+                    || error.kind
+                        == crate::runtime_store::error::RuntimeStoreErrorKind::DeadlineExceeded =>
+            {
+                return Err(RuntimeStoreError::new(
+                    crate::runtime_store::error::RuntimeStoreErrorKind::BusyTimeout,
+                ));
+            }
+            Err(error) => return Err(error),
+        };
+        if checkpoint_expired || busy != 0 {
             return Err(RuntimeStoreError::new(
                 crate::runtime_store::error::RuntimeStoreErrorKind::BusyTimeout,
             ));
         }
+        ensure_before(deadline)?;
         enforce_sidecar_permissions(&self.paths.database_path)?;
         revalidate_database(&self.paths)?;
+        ensure_before(deadline)?;
         self.connection
             .close()
             .map_err(|(_, error)| RuntimeStoreError::from_sqlite(&error))
     }
 }
 
+pub(crate) const REQUIRED_LIMITS: [(Limit, i32); 11] = [
+    (Limit::SQLITE_LIMIT_LENGTH, 512 * 1024),
+    (Limit::SQLITE_LIMIT_SQL_LENGTH, 1024 * 1024),
+    (Limit::SQLITE_LIMIT_COLUMN, 64),
+    (Limit::SQLITE_LIMIT_EXPR_DEPTH, 128),
+    (Limit::SQLITE_LIMIT_COMPOUND_SELECT, 16),
+    (Limit::SQLITE_LIMIT_FUNCTION_ARG, 32),
+    (Limit::SQLITE_LIMIT_ATTACHED, 0),
+    (Limit::SQLITE_LIMIT_LIKE_PATTERN_LENGTH, 4096),
+    (Limit::SQLITE_LIMIT_VARIABLE_NUMBER, 128),
+    (Limit::SQLITE_LIMIT_TRIGGER_DEPTH, 8),
+    (Limit::SQLITE_LIMIT_WORKER_THREADS, 0),
+];
+
 fn configure_limits(connection: &Connection) -> Result<(), RuntimeStoreError> {
-    let limits = [
-        (Limit::SQLITE_LIMIT_LENGTH, 512 * 1024),
-        (Limit::SQLITE_LIMIT_SQL_LENGTH, 1024 * 1024),
-        (Limit::SQLITE_LIMIT_COLUMN, 64),
-        (Limit::SQLITE_LIMIT_EXPR_DEPTH, 128),
-        (Limit::SQLITE_LIMIT_COMPOUND_SELECT, 16),
-        (Limit::SQLITE_LIMIT_FUNCTION_ARG, 32),
-        (Limit::SQLITE_LIMIT_ATTACHED, 0),
-        (Limit::SQLITE_LIMIT_LIKE_PATTERN_LENGTH, 4096),
-        (Limit::SQLITE_LIMIT_VARIABLE_NUMBER, 128),
-        (Limit::SQLITE_LIMIT_TRIGGER_DEPTH, 8),
-        (Limit::SQLITE_LIMIT_WORKER_THREADS, 0),
-    ];
-    for (limit, value) in limits {
+    for (limit, value) in REQUIRED_LIMITS {
         connection
             .set_limit(limit, value)
             .map_err(|error| RuntimeStoreError::from_sqlite(&error))?;
+        let effective = connection
+            .limit(limit)
+            .map_err(|error| RuntimeStoreError::from_sqlite(&error))?;
+        if effective != value {
+            return Err(RuntimeStoreError::resource_limit());
+        }
     }
     Ok(())
 }

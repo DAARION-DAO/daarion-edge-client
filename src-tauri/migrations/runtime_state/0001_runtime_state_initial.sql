@@ -16,13 +16,17 @@ CREATE TABLE conversations (
         CHECK (
             length(id) = 36
             AND id = lower(id)
+            AND substr(id, 1, 8) NOT GLOB '*[^0-9a-f]*'
             AND substr(id, 9, 1) = '-'
+            AND substr(id, 10, 4) NOT GLOB '*[^0-9a-f]*'
             AND substr(id, 14, 1) = '-'
             AND substr(id, 15, 1) = '4'
+            AND substr(id, 16, 3) NOT GLOB '*[^0-9a-f]*'
             AND substr(id, 19, 1) = '-'
             AND substr(id, 20, 1) IN ('8', '9', 'a', 'b')
+            AND substr(id, 21, 3) NOT GLOB '*[^0-9a-f]*'
             AND substr(id, 24, 1) = '-'
-            AND id NOT GLOB '*[^0-9a-f-]*'
+            AND substr(id, 25, 12) NOT GLOB '*[^0-9a-f]*'
         ),
     title TEXT
         CHECK (title IS NULL OR length(CAST(title AS BLOB)) <= 512),
@@ -42,15 +46,34 @@ CREATE TABLE messages (
         CHECK (
             length(id) = 36
             AND id = lower(id)
+            AND substr(id, 1, 8) NOT GLOB '*[^0-9a-f]*'
             AND substr(id, 9, 1) = '-'
+            AND substr(id, 10, 4) NOT GLOB '*[^0-9a-f]*'
             AND substr(id, 14, 1) = '-'
             AND substr(id, 15, 1) = '4'
+            AND substr(id, 16, 3) NOT GLOB '*[^0-9a-f]*'
             AND substr(id, 19, 1) = '-'
             AND substr(id, 20, 1) IN ('8', '9', 'a', 'b')
+            AND substr(id, 21, 3) NOT GLOB '*[^0-9a-f]*'
             AND substr(id, 24, 1) = '-'
-            AND id NOT GLOB '*[^0-9a-f-]*'
+            AND substr(id, 25, 12) NOT GLOB '*[^0-9a-f]*'
         ),
     conversation_id TEXT NOT NULL
+        CHECK (
+            length(conversation_id) = 36
+            AND conversation_id = lower(conversation_id)
+            AND substr(conversation_id, 1, 8) NOT GLOB '*[^0-9a-f]*'
+            AND substr(conversation_id, 9, 1) = '-'
+            AND substr(conversation_id, 10, 4) NOT GLOB '*[^0-9a-f]*'
+            AND substr(conversation_id, 14, 1) = '-'
+            AND substr(conversation_id, 15, 1) = '4'
+            AND substr(conversation_id, 16, 3) NOT GLOB '*[^0-9a-f]*'
+            AND substr(conversation_id, 19, 1) = '-'
+            AND substr(conversation_id, 20, 1) IN ('8', '9', 'a', 'b')
+            AND substr(conversation_id, 21, 3) NOT GLOB '*[^0-9a-f]*'
+            AND substr(conversation_id, 24, 1) = '-'
+            AND substr(conversation_id, 25, 12) NOT GLOB '*[^0-9a-f]*'
+        )
         REFERENCES conversations(id) ON DELETE CASCADE,
     sequence_no INTEGER NOT NULL CHECK (sequence_no > 0),
     role TEXT NOT NULL CHECK (role IN ('system', 'user', 'assistant')),
@@ -68,15 +91,38 @@ CREATE TABLE tasks (
         CHECK (
             length(id) = 36
             AND id = lower(id)
+            AND substr(id, 1, 8) NOT GLOB '*[^0-9a-f]*'
             AND substr(id, 9, 1) = '-'
+            AND substr(id, 10, 4) NOT GLOB '*[^0-9a-f]*'
             AND substr(id, 14, 1) = '-'
             AND substr(id, 15, 1) = '4'
+            AND substr(id, 16, 3) NOT GLOB '*[^0-9a-f]*'
             AND substr(id, 19, 1) = '-'
             AND substr(id, 20, 1) IN ('8', '9', 'a', 'b')
+            AND substr(id, 21, 3) NOT GLOB '*[^0-9a-f]*'
             AND substr(id, 24, 1) = '-'
-            AND id NOT GLOB '*[^0-9a-f-]*'
+            AND substr(id, 25, 12) NOT GLOB '*[^0-9a-f]*'
         ),
-    conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
+    conversation_id TEXT
+        CHECK (
+            conversation_id IS NULL
+            OR (
+                length(conversation_id) = 36
+                AND conversation_id = lower(conversation_id)
+                AND substr(conversation_id, 1, 8) NOT GLOB '*[^0-9a-f]*'
+                AND substr(conversation_id, 9, 1) = '-'
+                AND substr(conversation_id, 10, 4) NOT GLOB '*[^0-9a-f]*'
+                AND substr(conversation_id, 14, 1) = '-'
+                AND substr(conversation_id, 15, 1) = '4'
+                AND substr(conversation_id, 16, 3) NOT GLOB '*[^0-9a-f]*'
+                AND substr(conversation_id, 19, 1) = '-'
+                AND substr(conversation_id, 20, 1) IN ('8', '9', 'a', 'b')
+                AND substr(conversation_id, 21, 3) NOT GLOB '*[^0-9a-f]*'
+                AND substr(conversation_id, 24, 1) = '-'
+                AND substr(conversation_id, 25, 12) NOT GLOB '*[^0-9a-f]*'
+            )
+        )
+        REFERENCES conversations(id) ON DELETE CASCADE,
     task_kind TEXT NOT NULL
         CHECK (length(CAST(task_kind AS BLOB)) BETWEEN 1 AND 64),
     state TEXT NOT NULL DEFAULT 'created' CHECK (state = 'created'),
@@ -102,13 +148,17 @@ CREATE TABLE audit_events (
         CHECK (
             length(event_id) = 36
             AND event_id = lower(event_id)
+            AND substr(event_id, 1, 8) NOT GLOB '*[^0-9a-f]*'
             AND substr(event_id, 9, 1) = '-'
+            AND substr(event_id, 10, 4) NOT GLOB '*[^0-9a-f]*'
             AND substr(event_id, 14, 1) = '-'
             AND substr(event_id, 15, 1) = '4'
+            AND substr(event_id, 16, 3) NOT GLOB '*[^0-9a-f]*'
             AND substr(event_id, 19, 1) = '-'
             AND substr(event_id, 20, 1) IN ('8', '9', 'a', 'b')
+            AND substr(event_id, 21, 3) NOT GLOB '*[^0-9a-f]*'
             AND substr(event_id, 24, 1) = '-'
-            AND event_id NOT GLOB '*[^0-9a-f-]*'
+            AND substr(event_id, 25, 12) NOT GLOB '*[^0-9a-f]*'
         ),
     event_type TEXT NOT NULL
         CHECK (
@@ -143,13 +193,17 @@ CREATE TABLE audit_events (
             OR (
                 length(subject_id) = 36
                 AND subject_id = lower(subject_id)
+                AND substr(subject_id, 1, 8) NOT GLOB '*[^0-9a-f]*'
                 AND substr(subject_id, 9, 1) = '-'
+                AND substr(subject_id, 10, 4) NOT GLOB '*[^0-9a-f]*'
                 AND substr(subject_id, 14, 1) = '-'
                 AND substr(subject_id, 15, 1) = '4'
+                AND substr(subject_id, 16, 3) NOT GLOB '*[^0-9a-f]*'
                 AND substr(subject_id, 19, 1) = '-'
                 AND substr(subject_id, 20, 1) IN ('8', '9', 'a', 'b')
+                AND substr(subject_id, 21, 3) NOT GLOB '*[^0-9a-f]*'
                 AND substr(subject_id, 24, 1) = '-'
-                AND subject_id NOT GLOB '*[^0-9a-f-]*'
+                AND substr(subject_id, 25, 12) NOT GLOB '*[^0-9a-f]*'
             )
         ),
     outcome TEXT NOT NULL
@@ -168,13 +222,17 @@ CREATE TABLE audit_events (
             OR (
                 length(correlation_id) = 36
                 AND correlation_id = lower(correlation_id)
+                AND substr(correlation_id, 1, 8) NOT GLOB '*[^0-9a-f]*'
                 AND substr(correlation_id, 9, 1) = '-'
+                AND substr(correlation_id, 10, 4) NOT GLOB '*[^0-9a-f]*'
                 AND substr(correlation_id, 14, 1) = '-'
                 AND substr(correlation_id, 15, 1) = '4'
+                AND substr(correlation_id, 16, 3) NOT GLOB '*[^0-9a-f]*'
                 AND substr(correlation_id, 19, 1) = '-'
                 AND substr(correlation_id, 20, 1) IN ('8', '9', 'a', 'b')
+                AND substr(correlation_id, 21, 3) NOT GLOB '*[^0-9a-f]*'
                 AND substr(correlation_id, 24, 1) = '-'
-                AND correlation_id NOT GLOB '*[^0-9a-f-]*'
+                AND substr(correlation_id, 25, 12) NOT GLOB '*[^0-9a-f]*'
             )
         ),
     created_at_ms INTEGER NOT NULL,

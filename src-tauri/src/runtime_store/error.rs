@@ -13,6 +13,7 @@ pub(crate) enum RuntimeStoreErrorKind {
     MigrationFailed,
     IntegrityFailed,
     ResourceLimit,
+    DeadlineExceeded,
     Unavailable,
     Internal,
 }
@@ -55,6 +56,10 @@ impl RuntimeStoreError {
         Self::new(RuntimeStoreErrorKind::ResourceLimit)
     }
 
+    pub(crate) const fn deadline_exceeded() -> Self {
+        Self::new(RuntimeStoreErrorKind::DeadlineExceeded)
+    }
+
     pub(crate) const fn unavailable() -> Self {
         Self::new(RuntimeStoreErrorKind::Unavailable)
     }
@@ -78,6 +83,7 @@ impl RuntimeStoreError {
             Some(ErrorCode::DatabaseCorrupt) | Some(ErrorCode::NotADatabase) => {
                 Self::integrity_failed()
             }
+            Some(ErrorCode::OperationInterrupted) => Self::deadline_exceeded(),
             Some(ErrorCode::DiskFull) | Some(ErrorCode::TooBig) => Self::resource_limit(),
             Some(ErrorCode::ReadOnly) | Some(ErrorCode::PermissionDenied) => {
                 Self::permission_denied()
@@ -93,7 +99,8 @@ impl RuntimeStoreError {
             | RuntimeStoreErrorKind::BusyTimeout
             | RuntimeStoreErrorKind::PermissionDenied
             | RuntimeStoreErrorKind::IntegrityFailed
-            | RuntimeStoreErrorKind::ResourceLimit => classified,
+            | RuntimeStoreErrorKind::ResourceLimit
+            | RuntimeStoreErrorKind::DeadlineExceeded => classified,
             _ => Self::migration_failed(),
         }
     }
@@ -109,6 +116,7 @@ impl RuntimeStoreError {
             | RuntimeStoreErrorKind::MigrationFailed => StorageRuntimeState::MigrationFailed,
             RuntimeStoreErrorKind::IntegrityFailed => StorageRuntimeState::IntegrityFailed,
             RuntimeStoreErrorKind::ResourceLimit => StorageRuntimeState::ResourceLimited,
+            RuntimeStoreErrorKind::DeadlineExceeded => StorageRuntimeState::Unavailable,
             RuntimeStoreErrorKind::PathInvalid
             | RuntimeStoreErrorKind::Unavailable
             | RuntimeStoreErrorKind::Internal => StorageRuntimeState::Unavailable,
@@ -126,6 +134,7 @@ impl RuntimeStoreError {
             RuntimeStoreErrorKind::MigrationFailed => StorageRuntimeErrorCode::MigrationFailed,
             RuntimeStoreErrorKind::IntegrityFailed => StorageRuntimeErrorCode::IntegrityFailed,
             RuntimeStoreErrorKind::ResourceLimit => StorageRuntimeErrorCode::ResourceLimit,
+            RuntimeStoreErrorKind::DeadlineExceeded => StorageRuntimeErrorCode::Internal,
             RuntimeStoreErrorKind::Unavailable | RuntimeStoreErrorKind::Internal => {
                 StorageRuntimeErrorCode::Internal
             }
@@ -143,6 +152,7 @@ impl RuntimeStoreError {
             RuntimeStoreErrorKind::MigrationFailed => "runtime_store_migration_failed",
             RuntimeStoreErrorKind::IntegrityFailed => "runtime_store_integrity_failed",
             RuntimeStoreErrorKind::ResourceLimit => "runtime_store_resource_limit",
+            RuntimeStoreErrorKind::DeadlineExceeded => "runtime_store_deadline_exceeded",
             RuntimeStoreErrorKind::Unavailable => "runtime_store_unavailable",
             RuntimeStoreErrorKind::Internal => "runtime_store_internal",
         }

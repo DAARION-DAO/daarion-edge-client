@@ -167,9 +167,11 @@ Numbers are reservations for planning, not accepted decisions.
   plan and Rust 1.95.0 toolchain unblock are merged on main `eb0d7def…`.
 - Phase 1B implementation: `PARTIALLY_IMPLEMENTED`; only the separately
   authorized Phase 1B.1 storage bootstrap/status vertical-slice candidate exists.
-- Phase 1B.1: `IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY / DRAFT REVIEW GATE`;
-  external exact-head review, merge, fresh-main verification, and desktop target
-  evidence remain pending.
+- Phase 1B.1: `R1 CORRECTION IMPLEMENTED / LOCAL GATE PASS / FRESH REVIEW
+  PENDING`; independent R1 blocked the original head with five Medium and three
+  Low findings. The bounded correction is locally verified but no R1 finding is
+  recorded as closed. Fresh exact-head review, merge, fresh-main verification,
+  and desktop target evidence remain pending.
 - Phase 1B.2: `NOT_AUTHORIZED`; no conversation/message/task/audit API exists.
 - Phase 1C and later: `NO_GO`.
 - Production readiness: `NO_GO`.
@@ -185,7 +187,7 @@ PHASE_1B_IMPLEMENTATION =
 PARTIALLY_IMPLEMENTED
 
 PHASE_1B_1 =
-IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY / DRAFT_REVIEW_GATE
+R1_CORRECTION_IMPLEMENTED / LOCAL_GATE_PASS / FRESH_REVIEW_PENDING
 
 PHASE_1B_2 =
 NOT_AUTHORIZED

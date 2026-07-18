@@ -1,12 +1,17 @@
-use super::config::RuntimeStoreConfig;
-use super::config::STORAGE_QUEUE_CAPACITY;
-use super::connection::RuntimeStoreConnection;
+use super::config::{InitializationTestHook, RuntimeStoreConfig, STORAGE_QUEUE_CAPACITY};
+use super::connection::{RuntimeStoreConnection, REQUIRED_LIMITS};
+use super::deadline::{active_watchdogs, watchdog_counts};
 use super::error::RuntimeStoreErrorKind;
-use super::migrations::{migrate_and_validate, CURRENT_SCHEMA_VERSION};
+use super::lifecycle::RuntimeStoreLifecycle;
+use super::migrations::{
+    migrate_and_validate, schema_fingerprint, CURRENT_SCHEMA_VERSION, EXPECTED_SCHEMA_FINGERPRINT,
+    INITIAL_MIGRATION_CHECKSUM,
+};
+use super::path_policy::{regular_file_identity_for_test, sidecar_path_for_test};
 use super::types::{
     DatabaseHealth, PersistenceState, StorageRuntimeErrorCode, StorageRuntimeState,
 };
-use super::worker::RuntimeStoreManager;
+use super::worker::{RuntimeStoreManager, WorkerExit};
 use rusqlite::{Connection, TransactionBehavior};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -624,7 +629,7 @@ fn locked_database_returns_controlled_status_within_busy_deadline() {
 }
 
 #[test]
-fn status_read_has_a_bounded_deadline_when_worker_is_busy() {
+fn status_read_timeout_returns_fresh_unavailable_instead_of_stale_healthy() {
     let root = TestRoot::new();
     let manager = RuntimeStoreManager::new();
     let mut config = RuntimeStoreConfig::for_test(root.path.clone());
@@ -638,9 +643,11 @@ fn status_read_has_a_bounded_deadline_when_worker_is_busy() {
     });
     thread::sleep(Duration::from_millis(10));
     let started_at = Instant::now();
-    let fallback = manager.read_status();
+    let failure = manager.read_status();
     assert!(started_at.elapsed() < Duration::from_millis(120));
-    assert!(fallback.initialized);
+    assert!(!failure.initialized);
+    assert_eq!(failure.state, StorageRuntimeState::Unavailable);
+    assert_eq!(failure.error_code, Some(StorageRuntimeErrorCode::Internal));
     hold.join().expect("hold thread must not panic");
 }
 
@@ -879,6 +886,598 @@ fn status_read_reapplies_resource_limits_after_database_growth() {
         status.error_code,
         Some(StorageRuntimeErrorCode::ResourceLimit)
     );
+}
+
+#[test]
+fn configured_sqlite_limits_are_all_read_back_exactly() {
+    let root = TestRoot::new();
+    let store = initialized_store(&root);
+    for (limit, expected) in REQUIRED_LIMITS {
+        assert_eq!(
+            store
+                .connection
+                .limit(limit)
+                .expect("configured SQLite limit must be readable"),
+            expected,
+            "effective limit must match the required value for {limit:?}"
+        );
+    }
+}
+
+#[test]
+fn migration_checksum_and_structural_fingerprint_match_exact_final_sql() {
+    let sql = include_str!("../../migrations/runtime_state/0001_runtime_state_initial.sql");
+    assert_eq!(
+        hex::encode(Sha256::digest(sql.as_bytes())),
+        INITIAL_MIGRATION_CHECKSUM
+    );
+    let root = TestRoot::new();
+    let store = initialized_store(&root);
+    assert_eq!(
+        schema_fingerprint(&store.connection).expect("schema fingerprint must calculate"),
+        EXPECTED_SCHEMA_FINGERPRINT
+    );
+}
+
+#[test]
+fn strict_uuid_v4_checks_cover_every_uuid_bearing_column() {
+    let root = TestRoot::new();
+    let store = initialized_store(&root);
+    let valid_conversation_id = Uuid::new_v4().to_string();
+    store
+        .connection
+        .execute(
+            "INSERT INTO conversations (
+                 id, title, status, created_at_ms, updated_at_ms
+             ) VALUES (?1, NULL, 'active', 1, 1)",
+            [&valid_conversation_id],
+        )
+        .expect("valid lowercase UUID v4 conversation must insert");
+
+    let malformed = [
+        "-2345678-1234-4abc-8abc-123456789abc",
+        "12345678--234-4abc-8abc-123456789abc",
+        "12345678-1234-4-bc-8abc-123456789abc",
+        "12345678-1234-4abc-8-bc-123456789abc",
+        "12345678-1234-4abc-8abc--23456789abc",
+        "g2345678-1234-4abc-8abc-123456789abc",
+        "A2345678-1234-4abc-8abc-123456789abc",
+        "12345678-1234-4abc-8abc-123456789ab",
+        "12345678a1234-4abc-8abc-123456789abc",
+        "1234567-81234-4abc-8abc-123456789abc",
+        "12345678-1234-5abc-8abc-123456789abc",
+        "12345678-1234-4abc-7abc-123456789abc",
+    ];
+
+    for value in malformed {
+        assert_check_constraint(
+            store.connection.execute(
+                "INSERT INTO conversations (
+                     id, title, status, created_at_ms, updated_at_ms
+                 ) VALUES (?1, NULL, 'active', 1, 1)",
+                [value],
+            ),
+            "conversations.id",
+        );
+        assert_check_constraint(
+            store.connection.execute(
+                "INSERT INTO messages (
+                     id, conversation_id, sequence_no, role, content, created_at_ms
+                 ) VALUES (?1, ?2, 1, 'user', 'content', 1)",
+                (value, &valid_conversation_id),
+            ),
+            "messages.id",
+        );
+        assert_check_constraint(
+            store.connection.execute(
+                "INSERT INTO messages (
+                     id, conversation_id, sequence_no, role, content, created_at_ms
+                 ) VALUES (?1, ?2, 1, 'user', 'content', 1)",
+                (Uuid::new_v4().to_string(), value),
+            ),
+            "messages.conversation_id",
+        );
+        assert_check_constraint(
+            store.connection.execute(
+                "INSERT INTO tasks (
+                     id, task_kind, state, created_at_ms, updated_at_ms
+                 ) VALUES (?1, 'health', 'created', 1, 1)",
+                [value],
+            ),
+            "tasks.id",
+        );
+        assert_check_constraint(
+            store.connection.execute(
+                "INSERT INTO tasks (
+                     id, conversation_id, task_kind, state, created_at_ms, updated_at_ms
+                 ) VALUES (?1, ?2, 'health', 'created', 1, 1)",
+                (Uuid::new_v4().to_string(), value),
+            ),
+            "tasks.conversation_id",
+        );
+        assert_check_constraint(
+            store.connection.execute(
+                "INSERT INTO audit_events (
+                     event_id, event_type, actor_type, subject_type, outcome, created_at_ms
+                 ) VALUES (?1, 'storage.recovery_required', 'local_runtime',
+                           'storage', 'success', 1)",
+                [value],
+            ),
+            "audit_events.event_id",
+        );
+        assert_check_constraint(
+            store.connection.execute(
+                "INSERT INTO audit_events (
+                     event_id, event_type, actor_type, subject_type, subject_id,
+                     outcome, created_at_ms
+                 ) VALUES (?1, 'storage.recovery_required', 'local_runtime',
+                           'storage', ?2, 'success', 1)",
+                (Uuid::new_v4().to_string(), value),
+            ),
+            "audit_events.subject_id",
+        );
+        assert_check_constraint(
+            store.connection.execute(
+                "INSERT INTO audit_events (
+                     event_id, event_type, actor_type, subject_type, outcome,
+                     correlation_id, created_at_ms
+                 ) VALUES (?1, 'storage.recovery_required', 'local_runtime',
+                           'storage', 'success', ?2, 1)",
+                (Uuid::new_v4().to_string(), value),
+            ),
+            "audit_events.correlation_id",
+        );
+    }
+
+    let valid_message_id = Uuid::new_v4().to_string();
+    store
+        .connection
+        .execute(
+            "INSERT INTO messages (
+                 id, conversation_id, sequence_no, role, content, created_at_ms
+             ) VALUES (?1, ?2, 1, 'user', 'content', 1)",
+            (&valid_message_id, &valid_conversation_id),
+        )
+        .expect("valid lowercase UUID v4 message and foreign key must insert");
+    store
+        .connection
+        .execute(
+            "INSERT INTO tasks (
+                 id, conversation_id, task_kind, state, created_at_ms, updated_at_ms
+             ) VALUES (?1, NULL, 'health', 'created', 1, 1)",
+            [Uuid::new_v4().to_string()],
+        )
+        .expect("nullable task conversation UUID must accept NULL");
+    store
+        .connection
+        .execute(
+            "INSERT INTO audit_events (
+                 event_id, event_type, actor_type, subject_type, subject_id,
+                 outcome, correlation_id, created_at_ms
+             ) VALUES (?1, 'storage.recovery_required', 'local_runtime',
+                       'storage', NULL, 'success', NULL, 1)",
+            [Uuid::new_v4().to_string()],
+        )
+        .expect("nullable audit UUID columns must accept NULL");
+}
+
+#[test]
+fn production_lifecycle_helper_performs_one_idempotent_shutdown() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    assert!(
+        manager
+            .initialize_for_test(RuntimeStoreConfig::for_test(root.path.clone()))
+            .initialized
+    );
+    let lifecycle = RuntimeStoreLifecycle::new();
+    assert_eq!(lifecycle.shutdown_once(&manager), Some(Ok(())));
+    assert_eq!(lifecycle.shutdown_once(&manager), None);
+    assert_eq!(manager.shutdown_for_test(Duration::from_millis(50)), Ok(()));
+    assert_eq!(
+        manager.worker_exit_for_test(),
+        Some(WorkerExit::CleanShutdown)
+    );
+    assert!(manager.joined_after_exit_for_test());
+}
+
+#[test]
+fn tauri_composition_registers_the_explicit_storage_shutdown_lifecycle() {
+    let root = include_str!("../lib.rs");
+    let lifecycle = include_str!("lifecycle.rs");
+    assert!(root.contains("runtime_store::RuntimeStoreLifecycle::new()"));
+    assert!(root.contains("storage_lifecycle.on_run_event"));
+    assert!(root.contains("builder.build(tauri::generate_context!())"));
+    assert!(root.contains("app.run(move |app_handle, event|"));
+    assert!(lifecycle.contains("tauri::RunEvent::ExitRequested"));
+    assert!(lifecycle.contains("tauri::RunEvent::Exit"));
+    assert!(lifecycle.contains("manager.production_shutdown()"));
+}
+
+#[test]
+fn busy_checkpoint_is_bounded_by_the_shutdown_deadline() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    assert!(
+        manager
+            .initialize_for_test(RuntimeStoreConfig::for_test(root.path.clone()))
+            .initialized
+    );
+    let reader = Connection::open(root.database_path()).expect("reader must open");
+    reader
+        .execute_batch("BEGIN; SELECT COUNT(*) FROM schema_migrations;")
+        .expect("reader snapshot must start");
+    let writer = Connection::open(root.database_path()).expect("writer must open");
+    writer
+        .execute(
+            "INSERT INTO conversations (
+                 id, title, status, created_at_ms, updated_at_ms
+             ) VALUES (?1, NULL, 'active', 1, 1)",
+            [Uuid::new_v4().to_string()],
+        )
+        .expect("fixture write must commit to WAL");
+    let started = Instant::now();
+    let error = manager
+        .shutdown_for_test(Duration::from_millis(80))
+        .expect_err("busy checkpoint must fail within the service deadline");
+    assert!(started.elapsed() < Duration::from_millis(350));
+    assert!(matches!(
+        error.kind,
+        RuntimeStoreErrorKind::BusyTimeout | RuntimeStoreErrorKind::Unavailable
+    ));
+    reader
+        .execute_batch("ROLLBACK;")
+        .expect("reader must release");
+}
+
+#[test]
+fn missing_worker_exit_signal_never_causes_an_unbounded_join() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    assert!(
+        manager
+            .initialize_for_test(RuntimeStoreConfig::for_test(root.path.clone()))
+            .initialized
+    );
+    manager.suppress_exit_signal_for_test();
+    let started = Instant::now();
+    let error = manager
+        .shutdown_for_test(Duration::from_millis(60))
+        .expect_err("missing worker-exit proof must fail closed");
+    assert!(started.elapsed() < Duration::from_millis(300));
+    assert_eq!(error.kind, RuntimeStoreErrorKind::Unavailable);
+    assert!(!manager.joined_after_exit_for_test());
+    let status = manager.read_status();
+    let serialized = serde_json::to_string(&status).expect("failure status must serialize");
+    assert!(!status.initialized);
+    assert_eq!(status.error_code, Some(StorageRuntimeErrorCode::Internal));
+    assert!(!serialized.contains(root.path().to_string_lossy().as_ref()));
+    assert!(!serialized.contains("PRAGMA"));
+}
+
+#[test]
+fn worker_panic_after_healthy_disables_intake_and_removes_stale_success() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    assert!(
+        manager
+            .initialize_for_test(RuntimeStoreConfig::for_test(root.path.clone()))
+            .initialized
+    );
+    manager
+        .trigger_worker_panic_for_test()
+        .expect("test panic request must enqueue");
+    assert_eq!(wait_for_worker_exit(&manager), WorkerExit::Panic);
+    let status = manager.read_status();
+    assert!(!status.initialized);
+    assert_eq!(status.state, StorageRuntimeState::Unavailable);
+    assert_eq!(status.error_code, Some(StorageRuntimeErrorCode::Internal));
+    let started = Instant::now();
+    assert!(manager
+        .shutdown_for_test(Duration::from_millis(200))
+        .is_err());
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert!(manager.joined_after_exit_for_test());
+}
+
+#[test]
+fn unexpected_worker_exit_uses_the_same_safe_unavailable_projection() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    assert!(
+        manager
+            .initialize_for_test(RuntimeStoreConfig::for_test(root.path.clone()))
+            .initialized
+    );
+    manager
+        .trigger_unexpected_exit_for_test()
+        .expect("unexpected-exit request must enqueue");
+    assert_eq!(wait_for_worker_exit(&manager), WorkerExit::UnexpectedExit);
+    let status = manager.read_status();
+    assert!(!status.initialized);
+    assert_eq!(status.state, StorageRuntimeState::Unavailable);
+    assert_eq!(status.error_code, Some(StorageRuntimeErrorCode::Internal));
+    assert!(manager
+        .shutdown_for_test(Duration::from_millis(200))
+        .is_err());
+    assert!(manager.joined_after_exit_for_test());
+}
+
+#[test]
+fn real_sqlite_initialization_deadline_interrupts_long_query_without_late_health() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    let mut config = RuntimeStoreConfig::for_test(root.path.clone());
+    config.migration_deadline = Duration::from_millis(50);
+    config.initialization_test_hook = InitializationTestHook::LongQueryBeforeMigration;
+    let started = Instant::now();
+    let status = manager.initialize_for_test(config);
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert!(!status.initialized);
+    assert_eq!(status.state, StorageRuntimeState::Unavailable);
+    thread::sleep(Duration::from_millis(80));
+    let later = manager.read_status();
+    assert!(!later.initialized);
+    assert_ne!(later.state, StorageRuntimeState::Healthy);
+    let shutdown_started = Instant::now();
+    let _controlled_shutdown = manager.shutdown_for_test(Duration::from_millis(300));
+    assert!(shutdown_started.elapsed() < Duration::from_secs(1));
+    assert!(manager.joined_after_exit_for_test());
+}
+
+#[test]
+fn interrupted_initialization_transaction_leaves_no_partial_schema_or_history() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    let mut config = RuntimeStoreConfig::for_test(root.path.clone());
+    config.migration_deadline = Duration::from_millis(50);
+    config.initialization_test_hook = InitializationTestHook::LongQueryInsideMigration;
+    let status = manager.initialize_for_test(config);
+    assert!(!status.initialized);
+    let connection =
+        Connection::open(root.database_path()).expect("interrupted database must open");
+    let tables: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("interrupted schema inventory must read");
+    assert_eq!(tables, 0);
+    let migration_history: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema
+             WHERE type = 'table' AND name = 'schema_migrations'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("migration-history presence must read");
+    assert_eq!(migration_history, 0);
+    let shutdown_started = Instant::now();
+    let _controlled_shutdown = manager.shutdown_for_test(Duration::from_millis(300));
+    assert!(shutdown_started.elapsed() < Duration::from_secs(1));
+    assert!(manager.joined_after_exit_for_test());
+}
+
+#[test]
+fn successful_initialization_disarms_and_joins_every_watchdog() {
+    let before = watchdog_counts();
+    for _ in 0..5 {
+        let root = TestRoot::new();
+        let manager = RuntimeStoreManager::new();
+        assert!(
+            manager
+                .initialize_for_test(RuntimeStoreConfig::for_test(root.path.clone()))
+                .initialized
+        );
+        manager
+            .shutdown_for_test(Duration::from_secs(1))
+            .expect("successful manager must shut down");
+    }
+    let after = watchdog_counts();
+    assert!(after.0 >= before.0 + 10);
+    assert!(after.1 >= before.1 + 10);
+    assert!(active_watchdogs() <= after.0.saturating_sub(after.1));
+}
+
+#[cfg(unix)]
+#[test]
+fn external_hard_link_at_database_path_is_rejected_without_chmod_or_byte_change() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = TestRoot::new();
+    let outside = TestRoot::new();
+    fs::create_dir_all(
+        root.database_path()
+            .parent()
+            .expect("database parent must exist"),
+    )
+    .expect("database parent must be created");
+    let outside_file = outside.path().join("external.sqlite3");
+    let bytes = b"external-file-must-remain-unchanged";
+    fs::write(&outside_file, bytes).expect("external fixture must be written");
+    fs::set_permissions(&outside_file, fs::Permissions::from_mode(0o640))
+        .expect("external fixture mode must be set");
+    fs::hard_link(&outside_file, root.database_path()).expect("hard link must be created");
+    let before_mode = fs::metadata(&outside_file)
+        .expect("external metadata must exist")
+        .permissions()
+        .mode()
+        & 0o777;
+    let result = RuntimeStoreConnection::open(&RuntimeStoreConfig::for_test(root.path.clone()));
+    assert!(result.is_err());
+    assert_eq!(
+        fs::read(&outside_file).expect("external bytes must read"),
+        bytes
+    );
+    assert_eq!(
+        fs::metadata(&outside_file)
+            .expect("external metadata must remain")
+            .permissions()
+            .mode()
+            & 0o777,
+        before_mode
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn hard_link_created_after_healthy_open_is_detected_on_status_read() {
+    let root = TestRoot::new();
+    let outside = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    assert!(
+        manager
+            .initialize_for_test(RuntimeStoreConfig::for_test(root.path.clone()))
+            .initialized
+    );
+    fs::hard_link(root.database_path(), outside.path().join("database-link"))
+        .expect("post-open hard link must be created");
+    let status = manager.read_status();
+    assert!(!status.initialized);
+    assert_eq!(status.state, StorageRuntimeState::Unavailable);
+    assert_eq!(
+        status.error_code,
+        Some(StorageRuntimeErrorCode::PathInvalid)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn hard_linked_wal_and_shm_sidecars_are_rejected() {
+    for suffix in ["-wal", "-shm"] {
+        let root = TestRoot::new();
+        let outside = TestRoot::new();
+        let manager = RuntimeStoreManager::new();
+        assert!(
+            manager
+                .initialize_for_test(RuntimeStoreConfig::for_test(root.path.clone()))
+                .initialized
+        );
+        let sidecar = sidecar_path_for_test(&root.database_path(), suffix);
+        assert!(
+            sidecar.exists(),
+            "{suffix} sidecar must exist while WAL is open"
+        );
+        fs::hard_link(&sidecar, outside.path().join(format!("sidecar{suffix}")))
+            .expect("sidecar hard link must be created");
+        let status = manager.read_status();
+        assert!(!status.initialized);
+        assert_eq!(
+            status.error_code,
+            Some(StorageRuntimeErrorCode::PathInvalid)
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn stable_regular_file_identity_matches_only_the_same_single_link_file() {
+    let root = TestRoot::new();
+    let store = initialized_store(&root);
+    let first = regular_file_identity_for_test(&root.database_path())
+        .expect("first stable identity must read");
+    let second = regular_file_identity_for_test(&root.database_path())
+        .expect("second stable identity must read");
+    assert_eq!(first, second);
+    let replacement = root.path().join("replacement.sqlite3");
+    fs::write(&replacement, b"replacement").expect("replacement must be written");
+    let replacement_identity =
+        regular_file_identity_for_test(&replacement).expect("replacement identity must read");
+    assert_ne!(first, replacement_identity);
+    store.close().expect("store must close");
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_uses_stable_file_identity_and_rejects_multiple_links() {
+    let root = TestRoot::new();
+    let store = initialized_store(&root);
+    let first = regular_file_identity_for_test(&root.database_path())
+        .expect("Windows file identity must read");
+    let second = regular_file_identity_for_test(&root.database_path())
+        .expect("same Windows file identity must reread");
+    assert_eq!(first, second);
+    let replacement = root.path().join("replacement.sqlite3");
+    fs::write(&replacement, b"replacement").expect("replacement must be written");
+    assert_ne!(
+        first,
+        regular_file_identity_for_test(&replacement).expect("replacement identity must read")
+    );
+    fs::hard_link(root.database_path(), root.path().join("database-hard-link"))
+        .expect("Windows hard link must be created");
+    assert!(regular_file_identity_for_test(&root.database_path()).is_err());
+    drop(store);
+}
+
+#[test]
+fn non_unix_identity_policy_contains_no_timestamp_or_length_fallback() {
+    let source = include_str!("path_policy.rs");
+    assert!(!source.contains("metadata.created()"));
+    assert!(!source.contains("metadata.modified()"));
+    assert!(!source.contains("length: metadata.len()"));
+    assert!(source.contains("volume_serial_number"));
+    assert!(source.contains("file_index"));
+    assert!(source.contains("number_of_links"));
+}
+
+#[test]
+fn actual_capacity_128_queue_rejects_the_next_request_and_shuts_down_cleanly() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    assert!(
+        manager
+            .initialize_for_test(RuntimeStoreConfig::for_test(root.path.clone()))
+            .initialized
+    );
+    let release = manager
+        .block_worker_for_test()
+        .expect("worker must enter deterministic block");
+    let mut responses = Vec::with_capacity(STORAGE_QUEUE_CAPACITY);
+    for _ in 0..STORAGE_QUEUE_CAPACITY {
+        responses.push(
+            manager
+                .try_enqueue_status_for_test()
+                .expect("all 128 queue slots must accept work"),
+        );
+    }
+    let overflow = manager
+        .try_enqueue_status_for_test()
+        .expect_err("the 129th queued request must be rejected");
+    assert_eq!(overflow.kind, RuntimeStoreErrorKind::BusyTimeout);
+    release.try_send(()).expect("blocked worker must release");
+    for response in responses {
+        assert!(
+            response
+                .recv_timeout(Duration::from_secs(1))
+                .expect("queued status response must arrive")
+                .initialized
+        );
+    }
+    manager
+        .shutdown_for_test(Duration::from_secs(1))
+        .expect("manager must shut down without a leaked worker");
+    assert!(manager.joined_after_exit_for_test());
+}
+
+fn assert_check_constraint(result: rusqlite::Result<usize>, column: &str) {
+    match result.expect_err(column) {
+        rusqlite::Error::SqliteFailure(error, _) => assert_eq!(
+            error.extended_code,
+            rusqlite::ffi::SQLITE_CONSTRAINT_CHECK,
+            "{column} must fail its lexical CHECK before any foreign-key fallback"
+        ),
+        other => panic!("{column} returned unexpected error: {other}"),
+    }
+}
+
+fn wait_for_worker_exit(manager: &RuntimeStoreManager) -> WorkerExit {
+    for _ in 0..100 {
+        if let Some(exit) = manager.worker_exit_for_test() {
+            return exit;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    panic!("worker exit must be observed within the bounded test window");
 }
 
 fn migration_evidence(database_path: &Path) -> (i64, String, String, i64) {
