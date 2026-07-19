@@ -1,3 +1,4 @@
+use crate::runtime_store::control::{ActiveInitializationRegistration, InitializationAttempt};
 use crate::runtime_store::error::RuntimeStoreError;
 use rusqlite::Connection;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -32,12 +33,30 @@ pub(crate) struct SqliteInterruptGuard {
     cancel: Option<SyncSender<()>>,
     thread: Option<JoinHandle<()>>,
     expired: Arc<AtomicBool>,
+    registration: Option<ActiveInitializationRegistration>,
 }
 
 impl SqliteInterruptGuard {
     pub(crate) fn start(
         connection: &Connection,
         deadline: Instant,
+    ) -> Result<Self, RuntimeStoreError> {
+        Self::start_inner(connection, deadline, None)
+    }
+
+    pub(crate) fn start_initialization(
+        connection: &Connection,
+        deadline: Instant,
+        attempt: &InitializationAttempt,
+    ) -> Result<Self, RuntimeStoreError> {
+        let registration = attempt.register_interrupt(connection)?;
+        Self::start_inner(connection, deadline, Some(registration))
+    }
+
+    fn start_inner(
+        connection: &Connection,
+        deadline: Instant,
+        registration: Option<ActiveInitializationRegistration>,
     ) -> Result<Self, RuntimeStoreError> {
         let wait = remaining(deadline)?;
         let interrupt = connection.get_interrupt_handle();
@@ -67,6 +86,7 @@ impl SqliteInterruptGuard {
             cancel: Some(cancel),
             thread: Some(thread),
             expired,
+            registration,
         })
     }
 
@@ -81,6 +101,9 @@ impl SqliteInterruptGuard {
         }
         if let Some(thread) = self.thread.take() {
             thread.join().map_err(|_| RuntimeStoreError::internal())?;
+        }
+        if let Some(mut registration) = self.registration.take() {
+            registration.clear();
         }
         Ok(())
     }

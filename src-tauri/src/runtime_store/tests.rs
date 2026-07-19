@@ -1,4 +1,6 @@
-use super::config::{InitializationTestHook, RuntimeStoreConfig, STORAGE_QUEUE_CAPACITY};
+use super::config::{
+    InitializationTestHook, InitializationTestStage, RuntimeStoreConfig, STORAGE_QUEUE_CAPACITY,
+};
 use super::connection::{RuntimeStoreConnection, REQUIRED_LIMITS};
 use super::deadline::{active_watchdogs, watchdog_counts};
 use super::error::RuntimeStoreErrorKind;
@@ -11,7 +13,7 @@ use super::path_policy::{regular_file_identity_for_test, sidecar_path_for_test};
 use super::types::{
     DatabaseHealth, PersistenceState, StorageRuntimeErrorCode, StorageRuntimeState,
 };
-use super::worker::{RuntimeStoreManager, WorkerExit};
+use super::worker::{RuntimeStoreManager, WorkerExit, WorkerJoinOwnership};
 use rusqlite::{Connection, TransactionBehavior};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -1260,6 +1262,385 @@ fn interrupted_initialization_transaction_leaves_no_partial_schema_or_history() 
 }
 
 #[test]
+fn shutdown_cancellation_interrupts_active_sqlite_initialization_within_100_ms() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    assert!(wait_until(Duration::from_secs(1), || {
+        manager.active_worker_count_for_test() == 1
+    }));
+    let watchdog_before = watchdog_counts();
+    let mut config = RuntimeStoreConfig::for_test(root.path.clone());
+    config.initialization_test_hook = InitializationTestHook::LongQueryBeforeMigration;
+    let initializing = manager.clone();
+    let initialization = thread::spawn(move || initializing.initialize_for_test(config));
+    assert!(wait_until(Duration::from_secs(1), || {
+        manager.active_initialization_for_test()
+    }));
+
+    let shutdown_budget = Duration::from_millis(100);
+    let started = Instant::now();
+    manager
+        .shutdown_for_test(shutdown_budget)
+        .expect("active SQLite initialization must be interruptible");
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < shutdown_budget,
+        "shutdown used the complete 100 ms budget: {elapsed:?}"
+    );
+    eprintln!(
+        "shutdown_budget_ms=100 elapsed_ms={} margin_ms={}",
+        elapsed.as_millis(),
+        shutdown_budget.saturating_sub(elapsed).as_millis()
+    );
+    let status = initialization
+        .join()
+        .expect("initialization observer must not panic");
+    assert!(!status.initialized);
+    assert!(!manager.read_status().initialized);
+    assert!(!manager.active_initialization_for_test());
+    assert_eq!(manager.active_watchdog_count_for_test(), 0);
+    assert_eq!(
+        manager.worker_join_ownership_for_test(),
+        WorkerJoinOwnership::Completed
+    );
+    assert!(manager.joined_after_exit_for_test());
+    assert_eq!(manager.active_worker_count_for_test(), 0);
+    let watchdog_after = watchdog_counts();
+    assert!(watchdog_after.0 > watchdog_before.0);
+    assert!(watchdog_after.1 > watchdog_before.1);
+    assert_interrupted_database_has_no_schema(&root);
+}
+
+#[test]
+fn shutdown_cancellation_before_interrupt_registration_retains_join_ownership() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    let (hook, entered, release) = InitializationTestHook::blocking(
+        InitializationTestStage::BeforeInterruptRegistration,
+        false,
+    );
+    let mut config = RuntimeStoreConfig::for_test(root.path.clone());
+    config.initialization_test_hook = hook;
+    let initializing = manager.clone();
+    let initialization = thread::spawn(move || initializing.initialize_for_test(config));
+    entered
+        .recv_timeout(Duration::from_secs(1))
+        .expect("initialization must pause before interrupt registration");
+    assert!(!manager.active_initialization_for_test());
+
+    let error = manager
+        .shutdown_for_test(Duration::from_millis(50))
+        .expect_err("noninterruptible test stage must time out closed");
+    assert_eq!(error.kind, RuntimeStoreErrorKind::Unavailable);
+    assert_eq!(
+        manager.worker_join_ownership_for_test(),
+        WorkerJoinOwnership::Reaper
+    );
+    assert_eq!(manager.active_worker_count_for_test(), 1);
+    release
+        .try_send(())
+        .expect("blocked initialization must be released");
+    assert!(
+        !initialization
+            .join()
+            .expect("initialization observer must return")
+            .initialized
+    );
+    assert_reaper_eventually_completes(&manager);
+    assert!(!manager.read_status().initialized);
+}
+
+#[test]
+fn shutdown_cancellation_after_interrupt_registration_prevents_late_health() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    let (hook, entered, release) = InitializationTestHook::blocking(
+        InitializationTestStage::AfterInterruptRegistration,
+        false,
+    );
+    let mut config = RuntimeStoreConfig::for_test(root.path.clone());
+    config.initialization_test_hook = hook;
+    let initializing = manager.clone();
+    let initialization = thread::spawn(move || initializing.initialize_for_test(config));
+    entered
+        .recv_timeout(Duration::from_secs(1))
+        .expect("initialization must pause after interrupt registration");
+    assert!(manager.active_initialization_for_test());
+
+    let error = manager
+        .shutdown_for_test(Duration::from_millis(50))
+        .expect_err("blocked registered initialization must time out closed");
+    assert_eq!(error.kind, RuntimeStoreErrorKind::Unavailable);
+    assert_eq!(
+        manager.worker_join_ownership_for_test(),
+        WorkerJoinOwnership::Reaper
+    );
+    release
+        .try_send(())
+        .expect("blocked initialization must be released");
+    assert!(
+        !initialization
+            .join()
+            .expect("initialization observer must return")
+            .initialized
+    );
+    assert_reaper_eventually_completes(&manager);
+    thread::sleep(Duration::from_millis(25));
+    assert!(!manager.read_status().initialized);
+    assert!(!manager.active_initialization_for_test());
+}
+
+#[test]
+fn shutdown_cancellation_rolls_back_an_interrupted_migration_transaction() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    let mut config = RuntimeStoreConfig::for_test(root.path.clone());
+    config.initialization_test_hook = InitializationTestHook::LongQueryInsideMigration;
+    let initializing = manager.clone();
+    let initialization = thread::spawn(move || initializing.initialize_for_test(config));
+    assert!(wait_until(Duration::from_secs(1), || {
+        manager.active_initialization_for_test()
+    }));
+    let shutdown = manager.shutdown_for_test(Duration::from_millis(100));
+    assert!(
+        shutdown.is_ok()
+            || shutdown
+                .as_ref()
+                .is_err_and(|error| error.kind == RuntimeStoreErrorKind::Unavailable),
+        "interrupted migration must return a bounded shutdown result: {shutdown:?}"
+    );
+    assert!(
+        !initialization
+            .join()
+            .expect("initialization observer must return")
+            .initialized
+    );
+    assert_reaper_eventually_completes(&manager);
+    assert_interrupted_database_has_no_schema(&root);
+}
+
+#[test]
+fn shutdown_cancellation_interrupts_integrity_validation_without_schema_damage() {
+    let root = TestRoot::new();
+    let first = RuntimeStoreManager::new();
+    assert!(
+        first
+            .initialize_for_test(RuntimeStoreConfig::for_test(root.path.clone()))
+            .initialized
+    );
+    let migration_before = migration_evidence(&root.database_path());
+    first
+        .shutdown_for_test(Duration::from_secs(1))
+        .expect("fixture store must close");
+
+    let manager = RuntimeStoreManager::new();
+    let mut config = RuntimeStoreConfig::for_test(root.path.clone());
+    config.initialization_test_hook = InitializationTestHook::LongQueryDuringIntegrity;
+    let initializing = manager.clone();
+    let initialization = thread::spawn(move || initializing.initialize_for_test(config));
+    assert!(wait_until(Duration::from_secs(1), || {
+        manager.active_initialization_for_test()
+    }));
+    manager
+        .shutdown_for_test(Duration::from_millis(100))
+        .expect("integrity query must be interruptible");
+    assert!(
+        !initialization
+            .join()
+            .expect("initialization observer must return")
+            .initialized
+    );
+    assert_eq!(migration_evidence(&root.database_path()), migration_before);
+    assert_eq!(manager.active_worker_count_for_test(), 0);
+}
+
+#[test]
+fn shutdown_cancellation_preempts_status_and_ordinary_queue_work() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    assert!(
+        manager
+            .initialize_for_test(RuntimeStoreConfig::for_test(root.path.clone()))
+            .initialized
+    );
+    let release = manager
+        .block_worker_for_test()
+        .expect("worker must enter deterministic ordinary work");
+    let first = manager
+        .try_enqueue_status_for_test()
+        .expect("status request must queue");
+    let second = manager
+        .try_enqueue_status_for_test()
+        .expect("second status request must queue");
+    let shutting_down = manager.clone();
+    let shutdown =
+        thread::spawn(move || shutting_down.shutdown_for_test(Duration::from_millis(500)));
+    assert!(wait_until(Duration::from_secs(1), || {
+        manager.shutdown_requested_for_test()
+    }));
+    release.try_send(()).expect("ordinary work must release");
+    shutdown
+        .join()
+        .expect("shutdown observer must not panic")
+        .expect("priority shutdown must complete");
+    assert!(first.recv_timeout(Duration::from_millis(100)).is_err());
+    assert!(second.recv_timeout(Duration::from_millis(100)).is_err());
+    assert!(!manager.read_status().initialized);
+    assert_eq!(
+        manager.worker_join_ownership_for_test(),
+        WorkerJoinOwnership::Completed
+    );
+    assert_eq!(manager.active_worker_count_for_test(), 0);
+}
+
+#[test]
+fn shutdown_cancellation_panic_finalization_keeps_worker_accounted() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    let (hook, entered, release) =
+        InitializationTestHook::blocking(InitializationTestStage::AfterInterruptRegistration, true);
+    let mut config = RuntimeStoreConfig::for_test(root.path.clone());
+    config.initialization_test_hook = hook;
+    let initializing = manager.clone();
+    let initialization = thread::spawn(move || initializing.initialize_for_test(config));
+    entered
+        .recv_timeout(Duration::from_secs(1))
+        .expect("initialization must pause before test panic");
+    let shutting_down = manager.clone();
+    let shutdown =
+        thread::spawn(move || shutting_down.shutdown_for_test(Duration::from_millis(500)));
+    assert!(wait_until(Duration::from_secs(1), || {
+        manager.shutdown_requested_for_test()
+    }));
+    release
+        .try_send(())
+        .expect("cancelled initialization must reach the panic hook");
+    assert!(
+        !initialization
+            .join()
+            .expect("initialization observer must return")
+            .initialized
+    );
+    assert!(shutdown
+        .join()
+        .expect("shutdown observer must return")
+        .is_err());
+    assert_eq!(manager.worker_exit_for_test(), Some(WorkerExit::Panic));
+    assert!(manager.joined_after_exit_for_test());
+    assert_eq!(
+        manager.worker_join_ownership_for_test(),
+        WorkerJoinOwnership::Completed
+    );
+    assert_eq!(manager.active_worker_count_for_test(), 0);
+    assert!(!manager.active_initialization_for_test());
+}
+
+#[test]
+fn shutdown_cancellation_missing_reply_still_joins_after_exit_proof() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    assert!(
+        manager
+            .initialize_for_test(RuntimeStoreConfig::for_test(root.path.clone()))
+            .initialized
+    );
+    manager.suppress_shutdown_reply_for_test();
+    let error = manager
+        .shutdown_for_test(Duration::from_millis(200))
+        .expect_err("missing shutdown reply must fail closed");
+    assert_eq!(error.kind, RuntimeStoreErrorKind::Unavailable);
+    assert!(manager.joined_after_exit_for_test());
+    assert_eq!(
+        manager.worker_join_ownership_for_test(),
+        WorkerJoinOwnership::Completed
+    );
+    assert_eq!(manager.active_worker_count_for_test(), 0);
+}
+
+#[test]
+fn shutdown_cancellation_delayed_exit_signal_transfers_to_reaper_then_joins() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    assert!(
+        manager
+            .initialize_for_test(RuntimeStoreConfig::for_test(root.path.clone()))
+            .initialized
+    );
+    manager.delay_exit_signal_for_test(Duration::from_millis(150));
+    let error = manager
+        .shutdown_for_test(Duration::from_millis(50))
+        .expect_err("delayed exit proof must exhaust the caller deadline");
+    assert_eq!(error.kind, RuntimeStoreErrorKind::Unavailable);
+    assert_eq!(
+        manager.worker_join_ownership_for_test(),
+        WorkerJoinOwnership::Reaper
+    );
+    assert_reaper_eventually_completes(&manager);
+}
+
+#[test]
+fn shutdown_cancellation_noninterruptible_preopen_stage_has_one_accounted_worker() {
+    let root = TestRoot::new();
+    let manager = RuntimeStoreManager::new();
+    let (hook, entered, release) =
+        InitializationTestHook::blocking(InitializationTestStage::BeforePathPreparation, false);
+    let mut config = RuntimeStoreConfig::for_test(root.path.clone());
+    config.initialization_test_hook = hook;
+    let initializing = manager.clone();
+    let initialization = thread::spawn(move || initializing.initialize_for_test(config));
+    entered
+        .recv_timeout(Duration::from_secs(1))
+        .expect("initialization must pause before path preparation");
+    assert_eq!(manager.active_worker_count_for_test(), 1);
+    assert!(!manager.active_initialization_for_test());
+    let error = manager
+        .shutdown_for_test(Duration::from_millis(50))
+        .expect_err("pre-open test stage must return a controlled timeout");
+    assert_eq!(error.kind, RuntimeStoreErrorKind::Unavailable);
+    assert_eq!(
+        manager.worker_join_ownership_for_test(),
+        WorkerJoinOwnership::Reaper
+    );
+    assert_eq!(manager.active_worker_count_for_test(), 1);
+    assert!(!root.database_path().exists());
+    release
+        .try_send(())
+        .expect("pre-open test stage must be released");
+    assert!(
+        !initialization
+            .join()
+            .expect("initialization observer must return")
+            .initialized
+    );
+    assert_reaper_eventually_completes(&manager);
+    assert!(!root.database_path().exists());
+}
+
+#[test]
+fn shutdown_cancellation_test_hooks_are_not_tauri_authority() {
+    let root = include_str!("../lib.rs");
+    let commands = include_str!("commands.rs");
+    let config = include_str!("config.rs");
+    assert!(config.contains("#[cfg(test)]"));
+    for forbidden in [
+        "InitializationTestHook",
+        "InitializationTestStage",
+        "shutdown_for_test",
+        "delay_exit_signal_for_test",
+        "suppress_shutdown_reply_for_test",
+    ] {
+        assert!(
+            !root.contains(forbidden),
+            "{forbidden} must not be registered"
+        );
+        assert!(
+            !commands.contains(forbidden),
+            "{forbidden} must not be public IPC"
+        );
+    }
+}
+
+#[test]
 fn successful_initialization_disarms_and_joins_every_watchdog() {
     let before = watchdog_counts();
     for _ in 0..5 {
@@ -1478,6 +1859,41 @@ fn wait_for_worker_exit(manager: &RuntimeStoreManager) -> WorkerExit {
         thread::sleep(Duration::from_millis(5));
     }
     panic!("worker exit must be observed within the bounded test window");
+}
+
+fn wait_until(timeout: Duration, predicate: impl Fn() -> bool) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if predicate() {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
+    predicate()
+}
+
+fn assert_reaper_eventually_completes(manager: &RuntimeStoreManager) {
+    assert!(wait_until(Duration::from_secs(2), || {
+        manager.worker_join_ownership_for_test() == WorkerJoinOwnership::Completed
+            && manager.reaper_completed_for_test()
+            && manager.joined_after_exit_for_test()
+            && manager.active_worker_count_for_test() == 0
+            && manager.active_watchdog_count_for_test() == 0
+    }));
+}
+
+fn assert_interrupted_database_has_no_schema(root: &TestRoot) {
+    let connection =
+        Connection::open(root.database_path()).expect("interrupted database must remain readable");
+    let objects: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema
+             WHERE type IN ('table', 'index', 'trigger', 'view')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("interrupted schema inventory must read");
+    assert_eq!(objects, 0);
 }
 
 fn migration_evidence(database_path: &Path) -> (i64, String, String, i64) {

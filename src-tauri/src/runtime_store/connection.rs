@@ -1,4 +1,5 @@
 use crate::runtime_store::config::RuntimeStoreConfig;
+use crate::runtime_store::control::InitializationAttempt;
 use crate::runtime_store::deadline::{ensure_before, remaining, SqliteInterruptGuard};
 use crate::runtime_store::error::RuntimeStoreError;
 use crate::runtime_store::path_policy::{
@@ -21,7 +22,10 @@ impl RuntimeStoreConnection {
     #[cfg(test)]
     pub(crate) fn open(config: &RuntimeStoreConfig) -> Result<Self, RuntimeStoreError> {
         let deadline = std::time::Instant::now() + config.migration_deadline;
-        let (opened, watchdog) = Self::open_for_initialization(config, deadline)?;
+        let control =
+            std::sync::Arc::new(crate::runtime_store::control::RuntimeStoreControl::new());
+        let attempt = control.begin_initialization()?;
+        let (opened, watchdog) = Self::open_for_initialization(config, deadline, &attempt)?;
         if watchdog.finish()? || std::time::Instant::now() >= deadline {
             return Err(RuntimeStoreError::deadline_exceeded());
         }
@@ -31,13 +35,21 @@ impl RuntimeStoreConnection {
     pub(crate) fn open_for_initialization(
         config: &RuntimeStoreConfig,
         deadline: std::time::Instant,
+        attempt: &InitializationAttempt,
     ) -> Result<(Self, SqliteInterruptGuard), RuntimeStoreError> {
-        ensure_before(deadline)?;
+        ensure_initialization_running(deadline, attempt)?;
+        #[cfg(test)]
+        config
+            .initialization_test_hook
+            .wait_at(crate::runtime_store::config::InitializationTestStage::BeforePathPreparation)
+            .map_err(|_| RuntimeStoreError::internal())?;
+        ensure_initialization_running(deadline, attempt)?;
         let mut paths = prepare_storage_paths_until(&config.app_local_data_root, deadline)?;
-        ensure_before(deadline)?;
+        ensure_initialization_running(deadline, attempt)?;
         if database_total_size(&paths.database_path)? > config.database_hard_limit_bytes {
             return Err(RuntimeStoreError::resource_limit());
         }
+        ensure_initialization_running(deadline, attempt)?;
 
         let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
             | OpenFlags::SQLITE_OPEN_CREATE
@@ -46,18 +58,33 @@ impl RuntimeStoreConnection {
             | OpenFlags::SQLITE_OPEN_EXRESCODE;
         let connection = Connection::open_with_flags(&paths.database_path, flags)
             .map_err(|error| RuntimeStoreError::from_sqlite(&error))?;
-        let watchdog = SqliteInterruptGuard::start(&connection, deadline)?;
-        ensure_before(deadline)?;
+        #[cfg(test)]
+        config
+            .initialization_test_hook
+            .wait_at(
+                crate::runtime_store::config::InitializationTestStage::BeforeInterruptRegistration,
+            )
+            .map_err(|_| RuntimeStoreError::internal())?;
+        ensure_initialization_running(deadline, attempt)?;
+        let watchdog = SqliteInterruptGuard::start_initialization(&connection, deadline, attempt)?;
+        #[cfg(test)]
+        config
+            .initialization_test_hook
+            .wait_at(
+                crate::runtime_store::config::InitializationTestStage::AfterInterruptRegistration,
+            )
+            .map_err(|_| RuntimeStoreError::internal())?;
+        ensure_initialization_running(deadline, attempt)?;
         validate_database_after_open(&mut paths)?;
-        ensure_before(deadline)?;
+        ensure_initialization_running(deadline, attempt)?;
         configure_limits(&connection)?;
-        ensure_before(deadline)?;
+        ensure_initialization_running(deadline, attempt)?;
         configure_pragmas(&connection, config)?;
-        ensure_before(deadline)?;
+        ensure_initialization_running(deadline, attempt)?;
         validate_pragmas(&connection, config)?;
-        ensure_before(deadline)?;
+        ensure_initialization_running(deadline, attempt)?;
         enforce_sidecar_permissions(&paths.database_path)?;
-        ensure_before(deadline)?;
+        ensure_initialization_running(deadline, attempt)?;
 
         let persistence_state = if paths.existed_before_open {
             PersistenceState::ReopenedExisting
@@ -132,6 +159,14 @@ impl RuntimeStoreConnection {
             .close()
             .map_err(|(_, error)| RuntimeStoreError::from_sqlite(&error))
     }
+}
+
+fn ensure_initialization_running(
+    deadline: std::time::Instant,
+    attempt: &InitializationAttempt,
+) -> Result<(), RuntimeStoreError> {
+    ensure_before(deadline)?;
+    attempt.ensure_running()
 }
 
 pub(crate) const REQUIRED_LIMITS: [(Limit, i32); 11] = [

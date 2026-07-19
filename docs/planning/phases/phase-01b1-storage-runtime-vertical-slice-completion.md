@@ -1,10 +1,11 @@
 # Phase 1B.1 — Storage Runtime Vertical Slice Completion
 
-Status: **R1 CORRECTION IMPLEMENTED / LOCAL GATE PASS / FRESH REVIEW PENDING**
+Status: **R2 CORRECTION IMPLEMENTED / LOCAL GATE PASS / R3 REVIEW PENDING**
 
 Starting `main`: `eb0d7def94675e5668f8a061ecc9e74b493c48c3`
 
 Independent R1 reviewed head: `ffcc83d031b4506aebc4e9fb68e6db11590cecde`
+Independent R2 reviewed head: `d1a2617455a844a61652ced82bff7ad5f78ba95d`
 
 Branch: `phase-01b1/storage-runtime-vertical-slice`
 
@@ -12,11 +13,13 @@ Date: 2026-07-17
 
 R1 correction date: 2026-07-18
 
+R2 correction date: 2026-07-19
+
 This completion report covers only the separately authorized Phase 1B.1
 vertical slice. It does not authorize or claim Phase 1B.2, public content CRUD,
 full memory, production readiness, deployment, or live-user-profile execution.
 
-## R1 correction ledger
+## R1/R2 correction ledger
 
 ```text
 INDEPENDENT_REVIEW_R1 =
@@ -24,6 +27,27 @@ REVIEW_BLOCKED_BY_FINDINGS
 
 R1_FINDINGS =
 CRITICAL 0 / HIGH 0 / MEDIUM 5 / LOW 3 / INFO 4
+
+INDEPENDENT_REVIEW_R2 =
+REVIEW_BLOCKED_BY_FINDINGS
+
+R2_FINDINGS =
+CRITICAL 0 / HIGH 0 / MEDIUM 1 / LOW 2 / INFO 4
+
+R2_M_01 =
+CORRECTION_IMPLEMENTED / LOCAL_TESTED / R3_REVIEW_PENDING
+
+R2_M_03_RESIDUAL =
+DOCUMENTATION_BOUNDARY_CORRECTED / R3_REVIEW_PENDING
+
+R2_L_03 =
+STRUCTURAL_VALIDATOR_IMPLEMENTED / LOCAL_TESTED / R3_REVIEW_PENDING
+
+R2_CORRECTION_IMPLEMENTATION =
+IMPLEMENTED / LOCAL_TESTED / R3_REVIEW_PENDING
+
+INDEPENDENT_R3_REVIEW =
+REQUIRED / NOT PERFORMED
 
 CORRECTION_IMPLEMENTATION =
 IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
@@ -135,7 +159,7 @@ is no public repository/service CRUD for them.
 ## 3. Regression test for old behavior
 
 - Phase 1A inference Rust tests: **67 passed / 0 failed**.
-- Full Rust suite: **169 passed / 0 failed** after adding 53 storage tests.
+- Full Rust suite: **180 passed / 0 failed** after adding 64 storage tests.
 - Existing inference TypeScript/Rust contract: **PASS**.
 - TypeScript validation and production Vite build: **PASS**.
 - Existing Dashboard composition, Inference, Messaging, Activation, Genesis,
@@ -146,7 +170,7 @@ is no public repository/service CRUD for them.
 
 ## 4. New feature test
 
-The focused storage suite contains **53 passed / 0 failed** tests covering:
+The focused storage suite contains **64 passed / 0 failed** tests covering:
 
 - fresh bootstrap and truthful `created_new` projection;
 - exact five-table and fourteen-index inventory with no `sqlite_sequence`;
@@ -168,6 +192,13 @@ The focused storage suite contains **53 passed / 0 failed** tests covering:
   projection;
 - one absolute initialization deadline, real SQLite interruption, transactional
   rollback, no late healthy publication, and joined interrupt watchdogs;
+- shutdown cancellation before/after interrupt registration, during a real
+  long SQLite statement, migration transaction, and integrity query;
+- out-of-band shutdown priority over status/FIFO work, deterministic rejection
+  after shutdown, response disconnect, delayed exit proof, and panic cleanup;
+- explicit `MANAGER -> REAPER -> COMPLETED` join ownership, one per-manager
+  worker, eventual reaper join after a blocked pre-open stage, and zero active
+  initialization watchdogs/workers after completion;
 - traversal, symlink, non-regular file, database replacement, and runtime
   directory replacement with a same-inode hard-link refusal;
 - initial/post-open database hard-link refusal, WAL/SHM hard-link refusal,
@@ -182,13 +213,14 @@ The focused storage suite contains **53 passed / 0 failed** tests covering:
   status behavior, post-start resource-limit re-evaluation, and redacted public
   errors.
 
-The deterministic frontend contract validator confirms the command name,
-Rust/TypeScript enum equality and fields, no frontend-deserialized command
-arguments, exact command registration, all required UI states,
-typed-client-only invocation, Dashboard mount, local-only copy, no prohibited
-projection fields, and absence of public content CRUD/generic SQL commands.
-Mutation self-tests prove missing and extra enum variants, a path argument, and
-a missing registration are rejected.
+The deterministic frontend contract validator uses the installed TypeScript
+compiler API for executable imports, constants, calls, exported function
+arguments, and JSX mounting. A comment-aware Rust lexer excludes line and
+nested block comments, normal/raw/byte strings, and character literals before
+checking the command attribute, signature, injected state arguments, exact
+`generate_handler!` registration, and absence of CRUD/generic SQL authority.
+It passes 40 positive assertions and rejects all 14 required mutation fixtures,
+including the exact comment-spoof bypass.
 
 ## 5. Live smoke checklist
 
@@ -227,6 +259,7 @@ Application and contract changes are limited to these exact paths:
 - `src-tauri/src/runtime_store/commands.rs`
 - `src-tauri/src/runtime_store/config.rs`
 - `src-tauri/src/runtime_store/connection.rs`
+- `src-tauri/src/runtime_store/control.rs`
 - `src-tauri/src/runtime_store/deadline.rs`
 - `src-tauri/src/runtime_store/error.rs`
 - `src-tauri/src/runtime_store/lifecycle.rs`
@@ -368,14 +401,23 @@ downgraded.
   it does not reopen, migrate, retry failed initialization, or write content.
 - Tauri `ExitRequested` invokes one idempotent production shutdown primitive;
   `Exit` is a fallback only when that primitive was not already invoked.
-- Production shutdown owns one absolute five-second deadline, stops new intake,
-  drains accepted FIFO work within that budget, protects
-  `wal_checkpoint(TRUNCATE)` with a bounded busy timeout and SQLite interrupt,
-  propagates checkpoint/close failure, and waits for a capacity-one worker-exit
-  signal before joining.
-- Missing exit proof never triggers an unbounded join; the handle is detached
-  and the safe failure is projected. Drop reuses the same state machine with a
-  bounded two-second budget.
+- Production shutdown owns one absolute five-second deadline, atomically stops
+  new intake, publishes cancellation, and uses a separate capacity-one control
+  channel so shutdown does not wait behind accepted ordinary FIFO work.
+- A private generation-scoped registration holds only a safe rusqlite
+  `InterruptHandle`. Shutdown pulses that handle without holding lifecycle locks
+  until the RAII registration clears or the same absolute deadline expires;
+  an old generation cannot interrupt a later attempt.
+- `wal_checkpoint(TRUNCATE)` remains protected by a bounded busy timeout and
+  SQLite interrupt. Checkpoint/close failures are propagated, and clean close
+  removes stale healthy/warning status before acknowledgement.
+- Join ownership is explicit: `MANAGER -> REAPER -> COMPLETED`. A timeout
+  atomically transfers the sole worker `JoinHandle` and exit receiver to one
+  prestarted reaper; no second reaper or worker can be created. The reaper waits
+  for exit evidence, joins after a blocked stage returns, and records completion.
+- Missing or delayed exit proof therefore returns a controlled failure without
+  dropping the active worker handle. Drop reuses the same idempotent state
+  machine with a bounded two-second caller budget.
 - The worker has a panic boundary and unconditional finalization. Panic,
   unexpected exit, request/reply disconnect, and post-health communication
   failure disable intake and replace any cached success with a fresh
@@ -384,6 +426,36 @@ downgraded.
   path preparation, open/configuration, migration, schema/integrity validation,
   and post-open checks. A scoped rusqlite interrupt watchdog is always disarmed
   and joined before the attempt returns.
+- Filesystem/path preparation and individual OS open calls use cooperative
+  before/after deadline checks; in-process Rust does not claim to forcibly
+  cancel every blocking syscall. Once the SQLite handle exists, SQLite work is
+  actively interruptible and shutdown retains join ownership until exit/join
+  accounting completes.
+
+R2 lifecycle evidence classification:
+
+```text
+INITIALIZATION_DEADLINE = ONE ABSOLUTE DEADLINE
+
+FILESYSTEM_AND_OS_OPEN_CALLS =
+COOPERATIVE BOUNDARY CHECKS /
+INDIVIDUAL BLOCKING SYSCALL NOT FORCE-INTERRUPTIBLE IN PROCESS
+
+SQLITE_OPERATIONS =
+ACTIVELY INTERRUPTIBLE THROUGH RUSQLITE INTERRUPT HANDLE
+
+SHUTDOWN_OWNERSHIP =
+PRESERVED UNTIL WORKER EXIT/JOIN ACCOUNTING
+
+ACTIVE_SQLITE_SHUTDOWN_HARNESS =
+100 MS BUDGET / COMPLETED OWNERSHIP / ZERO ACTIVE WORKERS /
+ZERO ACTIVE INITIALIZATION WATCHDOGS / NO LATE HEALTHY STATUS /
+OBSERVED 1 MS ELAPSED / 98 MS INTEGER MARGIN
+
+PREOPEN_BLOCKED_HARNESS =
+CONTROLLED TIMEOUT / REAPER OWNERSHIP / ONE ACCOUNTED WORKER /
+RELEASE -> EXIT PROOF -> EVENTUAL JOIN -> COMPLETED
+```
 
 ### Trusted path policy
 
@@ -503,12 +575,13 @@ unqualified child-process resolution was therefore not accepted as evidence.
 | Active rustup toolchain | `1.95.0-aarch64-apple-darwin` |
 | `rustc --version --verbose` through exact toolchain | `1.95.0` |
 | `cargo --version --verbose` through exact toolchain | `1.95.0` |
-| Focused `runtime_store` tests | 53 passed / 0 failed |
+| First post-resume compile gate | `git diff --check` PASS; `cargo check --all-targets --locked` PASS; 53/53 pre-correction runtime tests PASS |
+| Focused `runtime_store` tests | 64 passed / 0 failed |
 | Phase 1A `inference::` tests | 67 passed / 0 failed |
-| Full Rust tests | 169 passed / 0 failed |
+| Full Rust tests | 180 passed / 0 failed |
 | `cargo check --all-targets --locked` | PASS |
 | `cargo clippy --all-targets --locked` | PASS; no `runtime_store` warning |
-| Storage frontend/Rust contract | PASS |
+| Storage frontend/Rust contract | PASS; 40 structural checks and 14/14 negative fixtures |
 | Inference frontend/Rust contract | PASS |
 | TypeScript + production Vite build | PASS; 1,763 modules |
 | `npm audit --omit=dev` | PASS; 0 vulnerabilities |
@@ -521,11 +594,11 @@ unqualified child-process resolution was therefore not accepted as evidence.
 | Added SQLite-chain advisories | PASS; 0 |
 | Complete RustSec baseline | FAIL; 13 inherited entries, unchanged from starting main |
 | Repository-wide rustfmt | 94 legacy files; no candidate runtime/composition file in debt |
-| Repeated focused race/deadline gate | PASS; 10 runs / 530 test executions |
+| Repeated R2 lifecycle/cancellation gate | PASS; 20 runs x 11 tests = 220 executions; 0 failures; slowest wall run 0.414 s |
 | Real desktop smoke | `BLOCKED_BY_SAFE_PROFILE_REQUIREMENT` |
 
 Existing repository warning debt remains visible: regular Rust compilation
-reports 312 legacy warnings and clippy reports 325/327 warnings. The scoped
+reports 312 legacy warnings and clippy reports 326/328 warnings. The scoped
 warning gate reports no warning in the protected/new hardening modules. This
 task does not perform an unrelated repository cleanup.
 
@@ -539,7 +612,7 @@ CRITICAL 0 / HIGH 0 / MEDIUM 0 / LOW 0 / INFO 4
 The informational boundaries are unchanged inherited RustSec/rustfmt/warning
 debt, missing real desktop restart proof, incomplete cross-platform execution,
 and accepted plaintext-SQLite risk. This local self-review does not close or
-supersede independent R1.
+supersede independent R1 or R2.
 
 ### Critical
 
@@ -563,13 +636,23 @@ supersede independent R1.
 - The bounded correction is implemented and locally tested for all five items,
   but **none is recorded as independently closed**. A fresh exact-head review
   remains mandatory.
+- Independent review R2 reported one Medium lifecycle/ownership finding and two
+  Low/documentation-validator findings. Their bounded corrections are locally
+  implemented, but **none is recorded as independently closed**; exact-head R3
+  remains mandatory.
 - Correction self-review found no new unresolved scoped Medium data-integrity,
   lifecycle, deadline, path-identity, migration, or false-status blocker. This
-  is local evidence only and does not replace R1 closure.
+  is local evidence only and does not replace R1/R2 closure.
 - A pre-final repeated gate exposed an intermittent M-01 result-delivery race:
   the former 100 ms worker-exit reserve could collapse a busy-checkpoint result
   into `Unavailable`. The correction now reserves up to 500 ms inside the same
   absolute shutdown deadline; the subsequent ten full focused runs passed.
+- The first R2 20-run gate exposed a second real race on run 17: a one-shot
+  shutdown interrupt could land after handle registration but before the next
+  SQLite statement became active, leaving the migration watchdog to consume its
+  five-second test deadline. Shutdown now pulses only the registered generation
+  until RAII cleanup or the same caller deadline. The fresh 20-run/220-execution
+  gate passed with no five-second tail or ownership leak.
 
 ### Low / informational
 
@@ -644,7 +727,7 @@ Overall local release classification:
 CORRECTION_LOCAL_GATE = PASS
 SCOPED_PHASE_1B_1_GATE = REVIEW_PENDING
 REPOSITORY_BASELINE_GATE = CONDITIONAL_PASS
-INDEPENDENT_EXACT_HEAD_REVIEW = REQUIRED / NOT_PERFORMED
+INDEPENDENT_R3_REVIEW = REQUIRED / NOT_PERFORMED
 PR_READY_OR_MERGE = NOT_AUTHORIZED
 PHASE_1B_2 = NOT_AUTHORIZED
 ```
@@ -657,8 +740,8 @@ scoped implementation failure and does not convert them into verified claims.
 
 ```text
 PHASE_1B_1 =
-R1_CORRECTION_IMPLEMENTED / LOCAL_TESTED /
-DRAFT_PR_GATE / FRESH_REVIEW_PENDING
+R2_CORRECTION_IMPLEMENTED / LOCAL_TESTED /
+DRAFT_PR_GATE / R3_REVIEW_PENDING
 
 PRODUCT_SLICE =
 VISIBLE IN REPOSITORY / REAL DESKTOP SMOKE NOT CLAIMED

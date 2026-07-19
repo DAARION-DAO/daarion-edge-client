@@ -25,21 +25,29 @@ pub(crate) fn migrate_and_validate_until(
     connection: &mut Connection,
     deadline: Instant,
 ) -> Result<u32, RuntimeStoreError> {
-    migrate_and_validate_inner(connection, deadline, false)
+    migrate_and_validate_inner(connection, deadline, false, false)
 }
 
 #[cfg(test)]
 pub(crate) fn migrate_and_validate_with_test_interrupt(
     connection: &mut Connection,
     deadline: Instant,
+    interrupt_inside_initial_migration: bool,
+    interrupt_during_integrity: bool,
 ) -> Result<u32, RuntimeStoreError> {
-    migrate_and_validate_inner(connection, deadline, true)
+    migrate_and_validate_inner(
+        connection,
+        deadline,
+        interrupt_inside_initial_migration,
+        interrupt_during_integrity,
+    )
 }
 
 fn migrate_and_validate_inner(
     connection: &mut Connection,
     deadline: Instant,
     interrupt_inside_initial_migration: bool,
+    interrupt_during_integrity: bool,
 ) -> Result<u32, RuntimeStoreError> {
     ensure_before(deadline)?;
     verify_embedded_checksum()?;
@@ -52,6 +60,13 @@ fn migrate_and_validate_inner(
     validate_migration_history(connection)?;
     ensure_before(deadline)?;
     validate_schema(connection)?;
+    ensure_before(deadline)?;
+    #[cfg(test)]
+    if interrupt_during_integrity {
+        run_long_query(connection)?;
+    }
+    #[cfg(not(test))]
+    let _ = interrupt_during_integrity;
     ensure_before(deadline)?;
     validate_integrity(connection)?;
     ensure_before(deadline)?;

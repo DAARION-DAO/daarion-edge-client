@@ -1,4 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
+import ts from "typescript";
 
 const paths = {
   client: "src/lib/storageRuntimeClient.ts",
@@ -19,82 +20,477 @@ sources.runtimeStore = readdirSync("src-tauri/src/runtime_store")
   .join("\n");
 
 const command = "get_storage_runtime_status";
+const clientFunction = "getStorageRuntimeStatus";
+const cardComponent = "StorageRuntimeCard";
+const negativeFixtures = [];
 
 function snakeCase(value) {
   return value.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
 }
 
-function rustEnum(source, name) {
-  const body = source.match(new RegExp(`enum\\s+${name}\\s*\\{([\\s\\S]*?)\\}`))?.[1];
-  if (!body) return null;
-  return [...body.matchAll(/^\s*([A-Z][A-Za-z0-9]*)\s*,/gm)].map((match) =>
-    snakeCase(match[1]),
+function sourceFile(name, source, jsx = false) {
+  return ts.createSourceFile(
+    name,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    jsx ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   );
 }
 
-function tsUnion(source, name) {
-  const body = source.match(new RegExp(`export\\s+type\\s+${name}\\s*=([\\s\\S]*?);`))?.[1];
-  if (!body) return null;
-  return [...body.matchAll(/"([a-z0-9_]+)"/g)].map((match) => match[1]);
+function visit(root, predicate) {
+  const matches = [];
+  const walk = (node) => {
+    if (predicate(node)) matches.push(node);
+    ts.forEachChild(node, walk);
+  };
+  walk(root);
+  return matches;
+}
+
+function unwrapExpression(expression) {
+  let current = expression;
+  while (
+    ts.isAsExpression(current) ||
+    ts.isTypeAssertionExpression(current) ||
+    ts.isParenthesizedExpression(current) ||
+    ts.isSatisfiesExpression(current)
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+function importBindings(file, moduleName) {
+  const bindings = new Map();
+  for (const declaration of file.statements.filter(ts.isImportDeclaration)) {
+    if (!ts.isStringLiteral(declaration.moduleSpecifier)) continue;
+    if (declaration.moduleSpecifier.text !== moduleName) continue;
+    const named = declaration.importClause?.namedBindings;
+    if (!named || !ts.isNamedImports(named)) continue;
+    for (const element of named.elements) {
+      bindings.set(element.propertyName?.text ?? element.name.text, element.name.text);
+    }
+  }
+  return bindings;
+}
+
+function exportedVariableInitializer(file, name) {
+  for (const statement of file.statements.filter(ts.isVariableStatement)) {
+    const exported = statement.modifiers?.some(
+      (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+    );
+    if (!exported) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (ts.isIdentifier(declaration.name) && declaration.name.text === name) {
+        return declaration.initializer ?? null;
+      }
+    }
+  }
+  return null;
+}
+
+function exportedFunction(file, name) {
+  return (
+    file.statements.find(
+      (statement) =>
+        ts.isFunctionDeclaration(statement) &&
+        statement.name?.text === name &&
+        statement.modifiers?.some(
+          (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+        ),
+    ) ?? null
+  );
+}
+
+function tsUnion(file, name) {
+  const declaration = file.statements.find(
+    (statement) => ts.isTypeAliasDeclaration(statement) && statement.name.text === name,
+  );
+  if (!declaration || !ts.isTypeAliasDeclaration(declaration)) return null;
+  const members = ts.isUnionTypeNode(declaration.type)
+    ? declaration.type.types
+    : [declaration.type];
+  const values = [];
+  for (const member of members) {
+    if (!ts.isLiteralTypeNode(member) || !ts.isStringLiteral(member.literal)) return null;
+    values.push(member.literal.text);
+  }
+  return values;
+}
+
+function tsInterfaceFields(file, name) {
+  const declaration = file.statements.find(
+    (statement) => ts.isInterfaceDeclaration(statement) && statement.name.text === name,
+  );
+  if (!declaration || !ts.isInterfaceDeclaration(declaration)) return null;
+  return declaration.members
+    .filter(ts.isPropertySignature)
+    .map((member) => member.name?.getText(file))
+    .filter(Boolean);
+}
+
+function objectKeys(file, name) {
+  for (const statement of file.statements.filter(ts.isVariableStatement)) {
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || declaration.name.text !== name) continue;
+      const initializer = declaration.initializer && unwrapExpression(declaration.initializer);
+      if (!initializer || !ts.isObjectLiteralExpression(initializer)) return null;
+      return initializer.properties
+        .filter(ts.isPropertyAssignment)
+        .map((property) => property.name.getText(file).replace(/^['"]|['"]$/g, ""));
+    }
+  }
+  return null;
 }
 
 function sameMembers(left, right) {
+  if (left === null || right === null || left.length !== right.length) return false;
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+  return sortedLeft.every((value, index) => value === sortedRight[index]);
+}
+
+function rawStringEnd(source, index) {
+  let markerStart = -1;
+  if (source[index] === "r") markerStart = index + 1;
+  if (source[index] === "b" && source[index + 1] === "r") markerStart = index + 2;
+  if (source[index] === "c" && source[index + 1] === "r") markerStart = index + 2;
+  if (markerStart < 0) return null;
+  let cursor = markerStart;
+  while (source[cursor] === "#") cursor += 1;
+  if (source[cursor] !== '"') return null;
+  const hashes = source.slice(markerStart, cursor);
+  const terminator = `"${hashes}`;
+  const end = source.indexOf(terminator, cursor + 1);
+  return end < 0 ? source.length : end + terminator.length;
+}
+
+// This lexer deliberately returns only code tokens. Comments and every Rust
+// string/byte/character literal are discarded, so authority cannot be proved by
+// text that the Rust parser would not execute. Nested block comments are handled.
+function rustTokens(source) {
+  const tokens = [];
+  let index = 0;
+  while (index < source.length) {
+    const current = source[index];
+    const next = source[index + 1];
+    if (/\s/.test(current)) {
+      index += 1;
+      continue;
+    }
+    if (current === "/" && next === "/") {
+      index = source.indexOf("\n", index + 2);
+      if (index < 0) break;
+      continue;
+    }
+    if (current === "/" && next === "*") {
+      let depth = 1;
+      index += 2;
+      while (index < source.length && depth > 0) {
+        if (source[index] === "/" && source[index + 1] === "*") {
+          depth += 1;
+          index += 2;
+        } else if (source[index] === "*" && source[index + 1] === "/") {
+          depth -= 1;
+          index += 2;
+        } else {
+          index += 1;
+        }
+      }
+      continue;
+    }
+    const rawEnd = rawStringEnd(source, index);
+    if (rawEnd !== null) {
+      index = rawEnd;
+      continue;
+    }
+    if (
+      current === '"' ||
+      ((current === "b" || current === "c") && next === '"')
+    ) {
+      index += current === '"' ? 1 : 2;
+      while (index < source.length) {
+        if (source[index] === "\\") index += 2;
+        else if (source[index] === '"') {
+          index += 1;
+          break;
+        } else index += 1;
+      }
+      continue;
+    }
+    if (current === "'") {
+      let cursor = index + 1;
+      if (source[cursor] === "\\") cursor += 2;
+      else cursor += 1;
+      if (source[cursor] === "'") {
+        index = cursor + 1;
+        continue;
+      }
+      tokens.push("'");
+      index += 1;
+      continue;
+    }
+    if (/[A-Za-z_]/.test(current)) {
+      let end = index + 1;
+      while (/[A-Za-z0-9_]/.test(source[end] ?? "")) end += 1;
+      tokens.push(source.slice(index, end));
+      index = end;
+      continue;
+    }
+    let compoundMatched = false;
+    for (const compound of ["::", "->", "=>"]) {
+      if (source.startsWith(compound, index)) {
+        tokens.push(compound);
+        index += compound.length;
+        compoundMatched = true;
+        break;
+      }
+    }
+    if (compoundMatched) continue;
+    tokens.push(current);
+    index += 1;
+  }
+  return tokens;
+}
+
+function sequenceAt(tokens, index, sequence) {
+  return sequence.every((token, offset) => tokens[index + offset] === token);
+}
+
+function matchingDelimiter(tokens, start, open, close) {
+  let depth = 0;
+  for (let index = start; index < tokens.length; index += 1) {
+    if (tokens[index] === open) depth += 1;
+    if (tokens[index] === close) {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+}
+
+function rustEnum(tokens, name) {
+  for (let index = 0; index < tokens.length - 2; index += 1) {
+    if (!sequenceAt(tokens, index, ["enum", name, "{"])) continue;
+    const end = matchingDelimiter(tokens, index + 2, "{", "}");
+    if (end < 0) return null;
+    const variants = [];
+    let depth = 0;
+    for (let cursor = index + 3; cursor < end; cursor += 1) {
+      if (["(", "{", "["].includes(tokens[cursor])) depth += 1;
+      if ([")", "}", "]"].includes(tokens[cursor])) depth -= 1;
+      if (
+        depth === 0 &&
+        /^[A-Z][A-Za-z0-9]*$/.test(tokens[cursor]) &&
+        [",", "=", "(", "{"].includes(tokens[cursor + 1])
+      ) {
+        variants.push(snakeCase(tokens[cursor]));
+      }
+    }
+    return variants;
+  }
+  return null;
+}
+
+function rustStructFields(tokens, name) {
+  for (let index = 0; index < tokens.length - 2; index += 1) {
+    if (!sequenceAt(tokens, index, ["struct", name, "{"])) continue;
+    const end = matchingDelimiter(tokens, index + 2, "{", "}");
+    if (end < 0) return null;
+    const fields = [];
+    let depth = 0;
+    for (let cursor = index + 3; cursor < end - 1; cursor += 1) {
+      if (["(", "{", "[", "<"].includes(tokens[cursor])) depth += 1;
+      if ([")", "}", "]", ">"].includes(tokens[cursor])) depth -= 1;
+      if (
+        depth === 0 &&
+        /^[A-Za-z_][A-Za-z0-9_]*$/.test(tokens[cursor]) &&
+        tokens[cursor + 1] === ":"
+      ) {
+        fields.push(tokens[cursor]);
+      }
+    }
+    return fields;
+  }
+  return null;
+}
+
+function tauriCommands(tokens) {
+  const commands = [];
+  const attribute = ["#", "[", "tauri", "::", "command", "]"];
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (!sequenceAt(tokens, index, attribute)) continue;
+    const fnIndex = tokens.indexOf("fn", index + attribute.length);
+    if (fnIndex < 0 || fnIndex > index + attribute.length + 12) continue;
+    const name = tokens[fnIndex + 1];
+    const open = tokens.indexOf("(", fnIndex + 2);
+    const close = open >= 0 ? matchingDelimiter(tokens, open, "(", ")") : -1;
+    if (open < 0 || close < 0) continue;
+    const parameters = [];
+    let start = open + 1;
+    let depth = 0;
+    for (let cursor = open + 1; cursor <= close; cursor += 1) {
+      if (["(", "[", "<"].includes(tokens[cursor])) depth += 1;
+      if ([")", "]", ">"].includes(tokens[cursor])) depth -= 1;
+      if ((tokens[cursor] === "," && depth === 0) || cursor === close) {
+        const parameter = tokens.slice(start, cursor);
+        if (parameter.length) parameters.push(parameter);
+        start = cursor + 1;
+      }
+    }
+    commands.push({ name, parameters });
+  }
+  return commands;
+}
+
+function injectedParameter(parameter) {
+  const colon = parameter.indexOf(":");
+  if (colon < 0) return false;
+  const type = parameter.slice(colon + 1).filter((token) => token !== "&" && token !== "'");
   return (
-    left !== null &&
-    right !== null &&
-    left.length === right.length &&
-    [...left].sort().every((value, index) => value === [...right].sort()[index])
+    sequenceAt(type, 0, ["tauri", "::", "AppHandle"]) ||
+    sequenceAt(type, 0, ["tauri", "::", "State"])
   );
 }
 
-function commandArguments(source) {
-  const match = source.match(
-    new RegExp(`fn\\s+${command}\\s*\\(([\\s\\S]*?)\\)\\s*->`),
-  );
-  if (!match) return null;
-  return match[1]
-    .split(",")
-    .map((argument) => argument.trim())
-    .filter(Boolean);
+function handlerRegistrationCount(tokens, commandPath) {
+  let count = 0;
+  const startSequence = ["tauri", "::", "generate_handler", "!", "["];
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (!sequenceAt(tokens, index, startSequence)) continue;
+    const open = index + startSequence.length - 1;
+    const close = matchingDelimiter(tokens, open, "[", "]");
+    if (close < 0) continue;
+    for (let cursor = open + 1; cursor < close; cursor += 1) {
+      if (sequenceAt(tokens, cursor, commandPath)) count += 1;
+    }
+    index = close;
+  }
+  return count;
 }
 
 function validate(candidate) {
   const errors = [];
+  let checks = 0;
   const require = (condition, message) => {
+    checks += 1;
     if (!condition) errors.push(message);
   };
 
+  const client = sourceFile(paths.client, candidate.client);
+  const card = sourceFile(paths.card, candidate.card, true);
+  const app = sourceFile(paths.app, candidate.app, true);
+  const clientImports = importBindings(client, "@tauri-apps/api/core");
+  const invokeName = clientImports.get("invoke");
+  const commandInitializer = exportedVariableInitializer(client, "storageRuntimeCommand");
+  const literal = commandInitializer && unwrapExpression(commandInitializer);
   require(
-    (candidate.client.match(new RegExp(`"${command}"`, "g")) ?? []).length === 1,
-    "typed client must declare the exact storage command once",
-  );
-  require(
-    candidate.client.includes(
-      "invoke<StorageRuntimeStatus>(storageRuntimeCommand)",
-    ),
-    "typed client must invoke the read-only command through its constant",
+    literal && ts.isStringLiteral(literal) && literal.text === command,
+    "typed client command constant must be the exact executable string literal",
   );
 
-  const argumentsList = commandArguments(candidate.rustCommand);
-  require(argumentsList !== null, "Rust storage status command is missing");
-  if (argumentsList) {
-    const userArguments = argumentsList.filter(
-      (argument) =>
-        !/:\s*tauri::AppHandle(?:<[^>]+>)?$/.test(argument) &&
-        !/:\s*tauri::State(?:<[^>]+>)?$/.test(argument),
-    );
+  const clientExport = exportedFunction(client, clientFunction);
+  require(clientExport !== null, "typed storage client function must be exported");
+  require(
+    clientExport?.parameters.length === 0,
+    "typed storage client must accept no user path or SQL arguments",
+  );
+  const invokeCalls = visit(
+    client,
+    (node) =>
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === invokeName,
+  );
+  require(invokeName !== undefined, "typed client must import the Tauri invoke binding");
+  require(invokeCalls.length === 1, "typed client must have exactly one storage invoke binding");
+  if (invokeCalls.length === 1 && ts.isCallExpression(invokeCalls[0])) {
+    const argument = invokeCalls[0].arguments[0];
     require(
-      userArguments.length === 0,
-      "Rust storage status command must have no frontend-deserialized arguments",
+      argument !== undefined &&
+        ((ts.isIdentifier(argument) && argument.text === "storageRuntimeCommand") ||
+          (ts.isStringLiteral(argument) && argument.text === command)),
+      "typed client invoke must receive the exact command constant or literal",
     );
   }
 
+  const cardImports = importBindings(card, "../lib/storageRuntimeClient");
+  const cardClientName = cardImports.get(clientFunction);
   require(
-    (
-      candidate.rustRoot.match(
-        /runtime_store::commands::get_storage_runtime_status/g,
-      ) ?? []
-    ).length === 1,
+    cardClientName !== undefined,
+    "Dashboard card must import the typed storage client",
+  );
+  require(
+    visit(
+      card,
+      (node) =>
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === cardClientName,
+    ).length >= 1,
+    "Dashboard card must call the typed storage client",
+  );
+  require(
+    visit(
+      card,
+      (node) =>
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "invoke",
+    ).length === 0 &&
+      importBindings(card, "@tauri-apps/api/core").get("invoke") === undefined,
+    "Dashboard card must contain no raw invoke",
+  );
+
+  const appImports = importBindings(app, "./components/StorageRuntimeCard");
+  const mountedName = appImports.get(cardComponent);
+  require(mountedName !== undefined, "Dashboard must import the storage runtime card");
+  require(
+    visit(
+      app,
+      (node) =>
+        (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) &&
+        ts.isIdentifier(node.tagName) &&
+        node.tagName.text === mountedName,
+    ).length >= 1,
+    "existing Dashboard must structurally mount the storage runtime card",
+  );
+
+  const rustCommandTokens = rustTokens(candidate.rustCommand);
+  const rustTypeTokens = rustTokens(candidate.rustTypes);
+  const rustRootTokens = rustTokens(candidate.rustRoot);
+  const runtimeTokens = rustTokens(`${candidate.runtimeStore}\n${candidate.rustCommand}`);
+  const lexicalProbe = rustTokens(`
+    // #[tauri::command] ${command}
+    /* outer /* #[tauri::command] ${command} */ still-commented */
+    const NORMAL: &str = "#[tauri::command] ${command}";
+    const RAW: &str = r###"#[tauri::command] ${command}"###;
+    const BYTES: &[u8] = b"#[tauri::command] ${command}";
+    const CHARACTER: char = 'g';
+  `);
+  require(
+    !lexicalProbe.includes(command) &&
+      !lexicalProbe.some((token, index) =>
+        sequenceAt(lexicalProbe, index, ["#", "[", "tauri", "::", "command", "]"]),
+      ),
+    "Rust lexer must exclude nested comments, strings, raw strings, byte strings, and characters",
+  );
+  const commands = tauriCommands(rustCommandTokens);
+  const exactCommands = commands.filter((item) => item.name === command);
+  require(exactCommands.length === 1, "Rust storage status command is missing or duplicated");
+  require(
+    exactCommands.length === 1 && exactCommands[0].parameters.every(injectedParameter),
+    "Rust storage status command must have no frontend-deserialized arguments",
+  );
+  require(
+    handlerRegistrationCount(rustRootTokens, [
+      "runtime_store",
+      "::",
+      "commands",
+      "::",
+      command,
+    ]) === 1,
     "Rust storage status command must be registered exactly once",
   );
 
@@ -104,14 +500,13 @@ function validate(candidate) {
     "PersistenceState",
   ]) {
     require(
-      sameMembers(
-        rustEnum(candidate.rustTypes, enumName),
-        tsUnion(candidate.client, enumName),
-      ),
+      sameMembers(rustEnum(rustTypeTokens, enumName), tsUnion(client, enumName)),
       `Rust and TypeScript ${enumName} variants must match exactly`,
     );
   }
 
+  const tsFields = tsInterfaceFields(client, "StorageRuntimeStatus");
+  const rustFields = rustStructFields(rustTypeTokens, "StorageRuntimeStatus");
   for (const field of [
     "state",
     "initialized",
@@ -125,11 +520,10 @@ function validate(candidate) {
     "error_code",
   ]) {
     require(
-      candidate.client.includes(`${field}:`) && candidate.rustTypes.includes(field),
+      tsFields?.includes(field) && rustFields?.includes(field),
       `frontend/Rust status field is missing: ${field}`,
     );
   }
-
   for (const forbidden of [
     "database_path",
     "sql_text",
@@ -137,30 +531,28 @@ function validate(candidate) {
     "connection_string",
   ]) {
     require(
-      !candidate.client.includes(forbidden) && !candidate.rustTypes.includes(forbidden),
+      !tsFields?.includes(forbidden) && !rustFields?.includes(forbidden),
       `public status contract leaks forbidden field: ${forbidden}`,
     );
   }
 
-  for (const state of tsUnion(candidate.client, "StorageRuntimeState") ?? []) {
-    require(candidate.card.includes(`${state}:`), `Dashboard does not render state ${state}`);
-  }
-  require(!candidate.card.includes("invoke("), "Dashboard card must not invoke Tauri directly");
+  const cardStates = objectKeys(card, "stateLabels");
   require(
-    candidate.card.includes("getStorageRuntimeStatus"),
-    "Dashboard card must use the typed storage client",
+    sameMembers(cardStates, tsUnion(client, "StorageRuntimeState")),
+    "Dashboard state labels must cover the exact runtime states",
   );
-  require(
-    candidate.app.includes("<StorageRuntimeCard />") &&
-      candidate.app.includes('from "./components/StorageRuntimeCard"'),
-    "existing Dashboard must mount the storage runtime card",
-  );
-
+  const cardText = visit(
+    card,
+    (node) => ts.isStringLiteral(node) || ts.isJsxText(node),
+  ).map((node) => node.text);
   for (const copy of ["Storage Runtime", "SQLite · Local device only", "No cloud sync"]) {
-    require(candidate.card.includes(copy), `required local-only UI copy is missing: ${copy}`);
+    require(
+      cardText.some((text) => text.includes(copy)),
+      `required local-only UI copy is missing: ${copy}`,
+    );
   }
 
-  for (const forbiddenCommand of [
+  const forbiddenCommands = new Set([
     "execute_sql",
     "query_sql",
     "run_sql",
@@ -169,64 +561,131 @@ function validate(candidate) {
     "create_task",
     "append_audit_event",
     "delete_conversation",
-  ]) {
-    require(
-      !candidate.rustRoot.includes(forbiddenCommand) &&
-        !candidate.rustCommand.includes(forbiddenCommand),
-      `unauthorized storage command exists: ${forbiddenCommand}`,
-    );
-  }
+  ]);
+  const runtimeCommands = tauriCommands(runtimeTokens);
   require(
-    !/#\[tauri::command\][\s\S]{0,300}fn\s+\w+\s*\([^)]*\bpath\s*:/i.test(
-      candidate.runtimeStore,
+    runtimeCommands.every((item) => !forbiddenCommands.has(item.name)),
+    "unauthorized storage CRUD or generic SQL command exists",
+  );
+  require(
+    runtimeCommands.every((item) =>
+      item.parameters.every(
+        (parameter) =>
+          injectedParameter(parameter) ||
+          !parameter.slice(0, parameter.indexOf(":")).includes("path"),
+      ),
     ),
     "runtime_store must expose no Tauri command with a path argument",
   );
   require(
-    !candidate.client.includes(": any") && !candidate.card.includes(": any"),
+    visit(client, (node) => node.kind === ts.SyntaxKind.AnyKeyword).length === 0 &&
+      visit(card, (node) => node.kind === ts.SyntaxKind.AnyKeyword).length === 0,
     "storage frontend contract must not use any",
   );
+  let packageManifest = null;
+  try {
+    packageManifest = JSON.parse(candidate.packageManifest);
+  } catch {
+    // The structural package check below reports the failure.
+  }
   require(
-    candidate.packageManifest.includes('"test:storage-runtime-contract"'),
+    typeof packageManifest?.scripts?.["test:storage-runtime-contract"] === "string",
     "required storage runtime contract package script is missing",
   );
-  return errors;
+  return { errors, checks };
 }
 
 function mutationMustFail(label, mutate, expectedFragment) {
   const candidate = { ...sources };
   mutate(candidate);
-  const errors = validate(candidate);
-  if (!errors.some((error) => error.includes(expectedFragment))) {
-    console.error(`FAIL: validator self-test did not reject ${label}`);
-    process.exitCode = 1;
-  }
+  const { errors } = validate(candidate);
+  const rejected = errors.some((error) => error.includes(expectedFragment));
+  negativeFixtures.push({ label, rejected });
+  if (!rejected) console.error(`FAIL: validator self-test did not reject ${label}`);
 }
 
-for (const error of validate(sources)) {
-  console.error(`FAIL: ${error}`);
-  process.exitCode = 1;
-}
+const positive = validate(sources);
+for (const error of positive.errors) console.error(`FAIL: ${error}`);
 
 mutationMustFail(
-  "a missing TypeScript error variant",
-  (candidate) => {
-    candidate.client = candidate.client.replace('  | "internal";\n', ";\n");
-  },
-  "StorageRuntimeErrorCode variants",
-);
-mutationMustFail(
-  "an extra TypeScript error variant",
+  "TypeScript command renamed with old command in a comment",
   (candidate) => {
     candidate.client = candidate.client.replace(
-      '  | "internal";\n',
-      '  | "internal"\n  | "unexpected";\n',
+      `"${command}" as const`,
+      `"renamed_storage_status" as const; // "${command}"`,
     );
   },
-  "StorageRuntimeErrorCode variants",
+  "exact executable string literal",
 );
 mutationMustFail(
-  "a frontend-deserialized Rust path argument",
+  "invoke binding changed with the old string elsewhere",
+  (candidate) => {
+    candidate.client = candidate.client.replace(
+      "invoke<StorageRuntimeStatus>(storageRuntimeCommand)",
+      `invoke<StorageRuntimeStatus>("renamed_storage_status") /* "${command}" */`,
+    );
+  },
+  "exact command constant or literal",
+);
+mutationMustFail(
+  "command constant moved into a comment",
+  (candidate) => {
+    candidate.client = candidate.client.replace(
+      `export const storageRuntimeCommand = "${command}" as const;`,
+      `// export const storageRuntimeCommand = "${command}" as const;`,
+    );
+  },
+  "exact executable string literal",
+);
+mutationMustFail(
+  "raw invoke added to StorageRuntimeCard",
+  (candidate) => {
+    candidate.card += `\nvoid invoke("${command}");\n`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "Rust command renamed with the old name in a line comment",
+  (candidate) => {
+    candidate.rustCommand = candidate.rustCommand.replace(
+      `fn ${command}`,
+      `fn renamed_storage_status // fn ${command}\n`,
+    );
+  },
+  "missing or duplicated",
+);
+mutationMustFail(
+  "Rust registration removed with the old registration in a comment",
+  (candidate) => {
+    candidate.rustRoot = candidate.rustRoot.replace(
+      `runtime_store::commands::${command},`,
+      `// runtime_store::commands::${command},`,
+    );
+  },
+  "registered exactly once",
+);
+mutationMustFail(
+  "Rust registration hidden in a nested block comment",
+  (candidate) => {
+    candidate.rustRoot = candidate.rustRoot.replace(
+      `runtime_store::commands::${command},`,
+      `/* outer /* nested */ runtime_store::commands::${command}, */`,
+    );
+  },
+  "registered exactly once",
+);
+mutationMustFail(
+  "duplicate Rust handler registration",
+  (candidate) => {
+    candidate.rustRoot = candidate.rustRoot.replace(
+      `runtime_store::commands::${command},`,
+      `runtime_store::commands::${command},\n        runtime_store::commands::${command},`,
+    );
+  },
+  "registered exactly once",
+);
+mutationMustFail(
+  "frontend path argument added",
   (candidate) => {
     candidate.rustCommand = candidate.rustCommand.replace(
       "app: tauri::AppHandle",
@@ -236,18 +695,50 @@ mutationMustFail(
   "no frontend-deserialized arguments",
 );
 mutationMustFail(
-  "a missing Tauri registration",
+  "missing Rust state variant",
   (candidate) => {
-    candidate.rustRoot = candidate.rustRoot.replace(
-      "runtime_store::commands::get_storage_runtime_status,",
-      "",
+    candidate.rustTypes = candidate.rustTypes.replace("    Healthy,\n", "");
+  },
+  "StorageRuntimeState variants",
+);
+mutationMustFail(
+  "extra TypeScript error-code variant",
+  (candidate) => {
+    candidate.client = candidate.client.replace(
+      '  | "internal";',
+      '  | "internal"\n  | "unexpected";',
     );
   },
-  "registered exactly once",
+  "StorageRuntimeErrorCode variants",
+);
+mutationMustFail(
+  "persistence-state mismatch",
+  (candidate) => {
+    candidate.client = candidate.client.replace('  | "created_new"\n', "");
+  },
+  "PersistenceState variants",
+);
+mutationMustFail(
+  "storage CRUD command added",
+  (candidate) => {
+    candidate.rustCommand +=
+      "\n#[tauri::command]\npub(crate) fn create_conversation() {}\n";
+  },
+  "CRUD or generic SQL",
+);
+mutationMustFail(
+  "generic SQL command added",
+  (candidate) => {
+    candidate.rustCommand += "\n#[tauri::command]\npub(crate) fn execute_sql() {}\n";
+  },
+  "CRUD or generic SQL",
 );
 
-if (!process.exitCode) {
+const rejected = negativeFixtures.filter((fixture) => fixture.rejected).length;
+if (positive.errors.length || rejected !== negativeFixtures.length) {
+  process.exitCode = 1;
+} else {
   console.log(
-    "PASS: storage runtime command, enums, authority, UI, and validator self-tests are aligned",
+    `PASS: structural storage runtime contract; positive checks=${positive.checks}; negative fixtures=${rejected}/${negativeFixtures.length}`,
   );
 }

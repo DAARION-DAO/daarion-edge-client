@@ -1,6 +1,7 @@
 pub(crate) mod commands;
 mod config;
 mod connection;
+mod control;
 mod deadline;
 mod error;
 mod lifecycle;

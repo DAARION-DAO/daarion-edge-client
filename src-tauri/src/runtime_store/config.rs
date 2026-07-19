@@ -9,12 +9,74 @@ pub(crate) const DATABASE_WARNING_THRESHOLD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 pub(crate) const DATABASE_HARD_LIMIT_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
 #[cfg(test)]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum InitializationTestStage {
+    BeforePathPreparation,
+    BeforeInterruptRegistration,
+    AfterInterruptRegistration,
+}
+
+#[cfg(test)]
+#[derive(Clone, Debug, Default)]
 pub(crate) enum InitializationTestHook {
     #[default]
     None,
     LongQueryBeforeMigration,
     LongQueryInsideMigration,
+    LongQueryDuringIntegrity,
+    Block {
+        stage: InitializationTestStage,
+        entered: std::sync::mpsc::SyncSender<()>,
+        release: std::sync::Arc<std::sync::Mutex<std::sync::mpsc::Receiver<()>>>,
+        panic_after_release: bool,
+    },
+}
+
+#[cfg(test)]
+impl InitializationTestHook {
+    pub(crate) fn blocking(
+        stage: InitializationTestStage,
+        panic_after_release: bool,
+    ) -> (
+        Self,
+        std::sync::mpsc::Receiver<()>,
+        std::sync::mpsc::SyncSender<()>,
+    ) {
+        let (entered, entered_response) = std::sync::mpsc::sync_channel(1);
+        let (release, release_response) = std::sync::mpsc::sync_channel(1);
+        (
+            Self::Block {
+                stage,
+                entered,
+                release: std::sync::Arc::new(std::sync::Mutex::new(release_response)),
+                panic_after_release,
+            },
+            entered_response,
+            release,
+        )
+    }
+
+    pub(crate) fn wait_at(&self, stage: InitializationTestStage) -> Result<(), ()> {
+        let Self::Block {
+            stage: configured,
+            entered,
+            release,
+            panic_after_release,
+        } = self
+        else {
+            return Ok(());
+        };
+        if *configured != stage {
+            return Ok(());
+        }
+        entered.try_send(()).map_err(|_| ())?;
+        release.lock().map_err(|_| ())?.recv().map_err(|_| ())?;
+        assert!(
+            !panic_after_release,
+            "runtime_store_cancelled_initialization_test_panic"
+        );
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
