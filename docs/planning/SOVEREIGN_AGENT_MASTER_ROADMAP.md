@@ -165,13 +165,17 @@ Numbers are reservations for planning, not accepted decisions.
   fresh-main verification passed. No live Ollama smoke is claimed.
 - Phase 1B planning: `APPROVED / HUMAN_DECISIONS_RECORDED`; the docs-only
   plan and Rust 1.95.0 toolchain unblock are merged on main `eb0d7def…`.
-- Phase 1B implementation: `PARTIALLY_IMPLEMENTED`; only the separately
-  authorized Phase 1B.1 storage bootstrap/status vertical-slice candidate exists.
-- Phase 1B.1: `R1 CORRECTION IMPLEMENTED / LOCAL GATE PASS / FRESH REVIEW
-  PENDING`; independent R1 blocked the original head with five Medium and three
-  Low findings. The bounded correction is locally verified but no R1 finding is
-  recorded as closed. Fresh exact-head review, merge, fresh-main verification,
-  and desktop target evidence remain pending.
+- Phase 1B implementation: `PARTIALLY_IMPLEMENTED`; the separately authorized
+  Phase 1B.1 storage bootstrap/status vertical slice is complete in PR #27 but
+  is not merged. Phase 1B.2 content services remain unauthorized.
+- Phase 1B.1: `R3 REVIEW PASS WITH NONBLOCKING FINDINGS / FINAL CLOSEOUT LOCAL
+  GATE PASS / R4 REVIEW PENDING`. Independent R1 and R2 blocked earlier heads;
+  independent local R3 reviewed exact head `86ef384a…`, closed their lifecycle
+  and deadline findings, and reported three Low validator/evidence findings.
+  The final bounded closeout corrects those findings locally with 64 storage,
+  67 inference and 180 full Rust tests plus the 20-run/220-execution lifecycle
+  gate retained. R4 exact-head review, merge, fresh-main verification and real
+  desktop/cross-platform evidence remain pending.
 - Phase 1B.2: `NOT_AUTHORIZED`; no conversation/message/task/audit API exists.
 - Phase 1C and later: `NO_GO`.
 - Production readiness: `NO_GO`.
@@ -187,7 +191,8 @@ PHASE_1B_IMPLEMENTATION =
 PARTIALLY_IMPLEMENTED
 
 PHASE_1B_1 =
-R1_CORRECTION_IMPLEMENTED / LOCAL_GATE_PASS / FRESH_REVIEW_PENDING
+COMPLETE_IN_PR / NOT_MERGED / R3_PASS_WITH_3_LOW /
+FINAL_CLOSEOUT_LOCAL_GATE_PASS / R4_REVIEW_PENDING
 
 PHASE_1B_2 =
 NOT_AUTHORIZED

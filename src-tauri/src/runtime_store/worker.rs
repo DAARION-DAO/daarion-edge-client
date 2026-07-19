@@ -896,7 +896,6 @@ fn run_worker(
                             initialize_connection(&config, deadline, &attempt, last_start_time_ms)
                         })
                         .map(|(opened, status)| (Some(opened), status))
-                        .map_err(|error| error)
                 };
                 if control.shutdown_requested() {
                     drop(status);

@@ -1,6 +1,6 @@
 # ADR 0002: Local Runtime State and SQLite Foundation
 
-- Status: Accepted; Phase 1B.1 R1 correction locally verified, fresh review pending
+- Status: Accepted; Phase 1B.1 complete in PR, R3 passed with three Low findings corrected locally, R4 pending
 - Date: 2026-07-04
 - Scope: first durable Edge runtime-state store
 
@@ -44,8 +44,9 @@ authorized Phase 1B.1 candidate implements only bootstrap and a safe read-only
 status projection: exact `rusqlite` 0.40.1, bundled SQLite 3.53.2, the five-table
 empty schema, one bounded Rust owner, explicit bounded application shutdown,
 deadline-interrupt and hard-link-aware path controls, strict UUID-v4 schema
-constraints, and restart/reopen tests. Independent R1 did not pass the original
-head; its correction is locally tested but still requires fresh exact-head
-review. It does not
-implement public runtime-state CRUD, backup/export, six-level memory, Phase
+constraints, and restart/reopen tests. R1 and R2 blocked earlier heads.
+Independent local R3 passed exact head `86ef384a…` with three nonblocking Low
+validator/evidence findings. The final bounded closeout corrects those locally;
+R4 exact-head review, merge and fresh-main verification remain pending. It does
+not implement public runtime-state CRUD, backup/export, six-level memory, Phase
 1B.2, or production/platform acceptance.

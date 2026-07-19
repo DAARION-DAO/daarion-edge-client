@@ -1,11 +1,12 @@
 # Phase 1B.1 — Storage Runtime Vertical Slice Completion
 
-Status: **R2 CORRECTION IMPLEMENTED / LOCAL GATE PASS / R3 REVIEW PENDING**
+Status: **R3 REVIEW PASS WITH NONBLOCKING FINDINGS / FINAL CLOSEOUT LOCAL GATE PASS / R4 REVIEW PENDING**
 
 Starting `main`: `eb0d7def94675e5668f8a061ecc9e74b493c48c3`
 
 Independent R1 reviewed head: `ffcc83d031b4506aebc4e9fb68e6db11590cecde`
 Independent R2 reviewed head: `d1a2617455a844a61652ced82bff7ad5f78ba95d`
+Independent R3 reviewed head: `86ef384a8820989096c5859e7ea481078a55cb97`
 
 Branch: `phase-01b1/storage-runtime-vertical-slice`
 
@@ -15,11 +16,13 @@ R1 correction date: 2026-07-18
 
 R2 correction date: 2026-07-19
 
+Final closeout date: 2026-07-19
+
 This completion report covers only the separately authorized Phase 1B.1
 vertical slice. It does not authorize or claim Phase 1B.2, public content CRUD,
 full memory, production readiness, deployment, or live-user-profile execution.
 
-## R1/R2 correction ledger
+## R1/R2/R3 review and closeout ledger
 
 ```text
 INDEPENDENT_REVIEW_R1 =
@@ -34,54 +37,44 @@ REVIEW_BLOCKED_BY_FINDINGS
 R2_FINDINGS =
 CRITICAL 0 / HIGH 0 / MEDIUM 1 / LOW 2 / INFO 4
 
-R2_M_01 =
-CORRECTION_IMPLEMENTED / LOCAL_TESTED / R3_REVIEW_PENDING
-
-R2_M_03_RESIDUAL =
-DOCUMENTATION_BOUNDARY_CORRECTED / R3_REVIEW_PENDING
-
-R2_L_03 =
-STRUCTURAL_VALIDATOR_IMPLEMENTED / LOCAL_TESTED / R3_REVIEW_PENDING
-
-R2_CORRECTION_IMPLEMENTATION =
-IMPLEMENTED / LOCAL_TESTED / R3_REVIEW_PENDING
-
 INDEPENDENT_R3_REVIEW =
+R3_REVIEW_PASS_WITH_NONBLOCKING_FINDINGS
+
+R3_FINDINGS =
+CRITICAL 0 / HIGH 0 / MEDIUM 0 / LOW 3 / INFO 4
+
+R2_M_01 = CLOSED
+R2_M_03 = CLOSED
+R2_L_03 = CLOSED
+
+R3_L_01 =
+CORRECTION_IN_PROGRESS -> LOCALLY_CORRECTED / NAMESPACE_RAW_INVOKE_VALIDATOR_GAP / R4_REVIEW_PENDING
+
+R3_L_02 =
+CORRECTION_IN_PROGRESS -> LOCALLY_CORRECTED / RUNTIME_STORE_CLIPPY_MAP_IDENTITY / R4_REVIEW_PENDING
+
+R3_L_03 =
+CORRECTION_IN_PROGRESS -> LOCALLY_CORRECTED / STALE_CANONICAL_EVIDENCE / R4_REVIEW_PENDING
+
+R4_REVIEW =
 REQUIRED / NOT PERFORMED
 
-CORRECTION_IMPLEMENTATION =
-IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
-
-CORRECTION_COMMIT =
+FINAL_CLOSEOUT_COMMIT =
 RECORDED IN PR BODY AND FINAL REPORT AFTER COMMIT
-
-M_01_CORRECTION =
-IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
-
-M_02_CORRECTION =
-IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
-
-M_03_CORRECTION =
-IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
-
-M_04_CORRECTION =
-IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
-
-M_05_CORRECTION =
-IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
-
-L_01_CORRECTION =
-CORRECTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
-
-L_02_CORRECTION =
-CORRECTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
-
-L_03_CORRECTION =
-CORRECTED / LOCAL_TESTED / FRESH_REVIEW_PENDING
-
-INDEPENDENT_REVIEW_CLOSURE =
-PENDING
 ```
+
+The independent local R3 review closed the R2 lifecycle, deadline-boundary and
+comment-spoof findings without regressing the earlier R1 corrections. It also
+reported three new Low findings. This final closeout is intentionally limited
+to those findings: TypeScript AST coverage for named/renamed/namespace/property
+invoke paths, removal of one identity `map_err`, and canonical evidence refresh.
+R4 must review the exact fourth commit before ready or merge.
+
+| R3 finding | Local closeout | Evidence | Residual boundary |
+| --- | --- | --- | --- |
+| R3-L-01 | AST import/call analysis now resolves named, renamed, namespace, property, element, namespace aliases and dynamic namespace access; App rejects raw storage invocation | 42 structural checks; 24/24 mutation fixtures; exact R3 namespace reproduction rejected | R4 exact-head review required |
+| R3-L-02 | Removed identity `.map_err(|error| error)` without changing the surrounding `Result` type or lifecycle control | 64/64 storage tests; full Clippy PASS; zero `runtime_store` Clippy locations | R4 exact-head review required |
+| R3-L-03 | Roadmap, capability matrix, security gates, ADR 0002 and this report now preserve R1/R2 history and record the actual R3/closeout state | Documentation consistency and false-claim review | Phase 1B.1 remains unmerged; desktop/cross-platform evidence remains absent |
 
 | Finding | State before correction | Affected paths and symbols | Root cause | Bounded correction design | Required evidence | Residual boundary |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -94,13 +87,12 @@ PENDING
 | L-02 | `OPEN` | `runtime_store/worker.rs`; `runtime_store/tests.rs::worker_contract_has_one_named_owner_and_bounded_queue` | Queue evidence was source-text/constant-only | Test-only worker hold plus the real capacity-128 sync channel to prove exact saturation and controlled overflow | Behavioral saturation and bounded cleanup test | Test-only authority must remain private to `runtime_store` |
 | L-03 | `OPEN` | `scripts/validate-storage-runtime-contract.mjs` | Validator did not independently compare Rust/TypeScript enums or enforce the no-user-argument command contract | Parse exact enum/command/registration contracts and run deterministic mutation self-tests | Validator PASS plus mutation detection | No frontend testing framework |
 
-No R1 finding is recorded as closed in this correction task. After local
-implementation and verification, each corrected item may advance only to
-`IMPLEMENTED / LOCAL_TESTED / FRESH_REVIEW_PENDING` until a fresh independent
-review examines the exact correction head. A Git commit cannot truthfully embed
-its own SHA, so the exact correction SHA is recorded after commit in the PR
-body, remote readback, and final task report rather than as a self-reference in
-the commit it identifies.
+R1 and R2 remain historical failed reviews and are not rewritten. R3 is the
+first independent local exact-head review to close their remaining scoped
+findings; its three Low findings are only locally corrected until R4 reviews the
+fourth commit. A Git commit cannot truthfully embed its own SHA, so the exact
+closeout SHA is recorded after commit in the PR body, remote readback and final
+task report rather than as a self-reference in the commit it identifies.
 
 ## 1. Existing behavior before task
 
@@ -214,13 +206,15 @@ The focused storage suite contains **64 passed / 0 failed** tests covering:
   errors.
 
 The deterministic frontend contract validator uses the installed TypeScript
-compiler API for executable imports, constants, calls, exported function
-arguments, and JSX mounting. A comment-aware Rust lexer excludes line and
-nested block comments, normal/raw/byte strings, and character literals before
-checking the command attribute, signature, injected state arguments, exact
-`generate_handler!` registration, and absence of CRUD/generic SQL authority.
-It passes 40 positive assertions and rejects all 14 required mutation fixtures,
-including the exact comment-spoof bypass.
+compiler API for executable named, renamed and namespace imports; property,
+element and locally aliased invoke calls; constants; exported function
+arguments; and JSX mounting. It rejects dynamic namespace/member indirection
+that could resolve to the Tauri invoke binding. A comment-aware Rust lexer
+excludes line and nested block comments, normal/raw/byte strings, and character
+literals before checking the command attribute, signature, injected state
+arguments, exact `generate_handler!` registration, and absence of CRUD/generic
+SQL authority. It passes 42 positive assertions and rejects all 24 mutation
+fixtures, including the R2 comment-spoof and exact R3 namespace bypasses.
 
 ## 5. Live smoke checklist
 
@@ -575,13 +569,13 @@ unqualified child-process resolution was therefore not accepted as evidence.
 | Active rustup toolchain | `1.95.0-aarch64-apple-darwin` |
 | `rustc --version --verbose` through exact toolchain | `1.95.0` |
 | `cargo --version --verbose` through exact toolchain | `1.95.0` |
-| First post-resume compile gate | `git diff --check` PASS; `cargo check --all-targets --locked` PASS; 53/53 pre-correction runtime tests PASS |
+| Historical R1 post-resume gate | `git diff --check` PASS; `cargo check --all-targets --locked` PASS; 53/53 tests before the R2/R3 lifecycle additions |
 | Focused `runtime_store` tests | 64 passed / 0 failed |
 | Phase 1A `inference::` tests | 67 passed / 0 failed |
 | Full Rust tests | 180 passed / 0 failed |
 | `cargo check --all-targets --locked` | PASS |
 | `cargo clippy --all-targets --locked` | PASS; no `runtime_store` warning |
-| Storage frontend/Rust contract | PASS; 40 structural checks and 14/14 negative fixtures |
+| Storage frontend/Rust contract | PASS; 42 structural checks and 24/24 negative fixtures, including the exact R3 namespace bypass |
 | Inference frontend/Rust contract | PASS |
 | TypeScript + production Vite build | PASS; 1,763 modules |
 | `npm audit --omit=dev` | PASS; 0 vulnerabilities |
@@ -595,24 +589,25 @@ unqualified child-process resolution was therefore not accepted as evidence.
 | Complete RustSec baseline | FAIL; 13 inherited entries, unchanged from starting main |
 | Repository-wide rustfmt | 94 legacy files; no candidate runtime/composition file in debt |
 | Repeated R2 lifecycle/cancellation gate | PASS; 20 runs x 11 tests = 220 executions; 0 failures; slowest wall run 0.414 s |
+| Final closeout lifecycle regression gate | PASS; 10 runs x 11 tests = 110 executions; 0 failures; slowest wall run 0.278 s |
 | Real desktop smoke | `BLOCKED_BY_SAFE_PROFILE_REQUIREMENT` |
 
 Existing repository warning debt remains visible: regular Rust compilation
-reports 312 legacy warnings and clippy reports 326/328 warnings. The scoped
+reports 312 legacy warnings and Clippy reports 325/327 warnings. The scoped
 warning gate reports no warning in the protected/new hardening modules. This
 task does not perform an unrelated repository cleanup.
 
 ## Security review
 
 ```text
-CORRECTION_SELF_REVIEW =
+FINAL_CLOSEOUT_SELF_REVIEW =
 CRITICAL 0 / HIGH 0 / MEDIUM 0 / LOW 0 / INFO 4
 ```
 
 The informational boundaries are unchanged inherited RustSec/rustfmt/warning
 debt, missing real desktop restart proof, incomplete cross-platform execution,
-and accepted plaintext-SQLite risk. This local self-review does not close or
-supersede independent R1 or R2.
+and accepted plaintext-SQLite risk. This local self-review records the three R3
+Low corrections but does not replace independent exact-head R4.
 
 ### Critical
 
@@ -633,16 +628,15 @@ supersede independent R1 or R2.
   checkpoint propagation, abnormal worker termination/stale success,
   enforceable initialization deadline, stable hard-link-aware file identity,
   and strict UUID-v4 lexical constraints.
-- The bounded correction is implemented and locally tested for all five items,
-  but **none is recorded as independently closed**. A fresh exact-head review
-  remains mandatory.
+- R2 and R3 independently retained the bounded R1 corrections. R3 found no
+  regression in lifecycle, deadline, path-identity, schema or false-status
+  behavior.
 - Independent review R2 reported one Medium lifecycle/ownership finding and two
-  Low/documentation-validator findings. Their bounded corrections are locally
-  implemented, but **none is recorded as independently closed**; exact-head R3
-  remains mandatory.
-- Correction self-review found no new unresolved scoped Medium data-integrity,
-  lifecycle, deadline, path-identity, migration, or false-status blocker. This
-  is local evidence only and does not replace R1/R2 closure.
+  Low documentation/validator findings. R3 independently closed them at exact
+  head `86ef384a…` and reported three new nonblocking Low closeout findings.
+- Final closeout self-review found no unresolved scoped Medium data-integrity,
+  lifecycle, deadline, path-identity, migration or false-status blocker. The
+  three R3 Low findings are locally corrected; R4 closure remains mandatory.
 - A pre-final repeated gate exposed an intermittent M-01 result-delivery race:
   the former 100 ms worker-exit reserve could collapse a busy-checkpoint result
   into `Unavailable`. The correction now reserves up to 500 ms inside the same
@@ -725,9 +719,12 @@ Overall local release classification:
 
 ```text
 CORRECTION_LOCAL_GATE = PASS
-SCOPED_PHASE_1B_1_GATE = REVIEW_PENDING
+SCOPED_PHASE_1B_1_GATE = PASS / R4_REVIEW_PENDING
 REPOSITORY_BASELINE_GATE = CONDITIONAL_PASS
-INDEPENDENT_R3_REVIEW = REQUIRED / NOT_PERFORMED
+INDEPENDENT_R3_REVIEW = R3_REVIEW_PASS_WITH_NONBLOCKING_FINDINGS
+R3_FINDINGS = CRITICAL 0 / HIGH 0 / MEDIUM 0 / LOW 3 / INFO 4
+R3_LOW_CLOSEOUT = LOCALLY_CORRECTED / R4_REVIEW_PENDING
+R4_REVIEW = REQUIRED / NOT_PERFORMED
 PR_READY_OR_MERGE = NOT_AUTHORIZED
 PHASE_1B_2 = NOT_AUTHORIZED
 ```
@@ -740,8 +737,8 @@ scoped implementation failure and does not convert them into verified claims.
 
 ```text
 PHASE_1B_1 =
-R2_CORRECTION_IMPLEMENTED / LOCAL_TESTED /
-DRAFT_PR_GATE / R3_REVIEW_PENDING
+COMPLETE_IN_PR / NOT_MERGED / R3_PASS_WITH_3_LOW /
+FINAL_CLOSEOUT_LOCAL_GATE_PASS / R4_REVIEW_PENDING
 
 PRODUCT_SLICE =
 VISIBLE IN REPOSITORY / REAL DESKTOP SMOKE NOT CLAIMED

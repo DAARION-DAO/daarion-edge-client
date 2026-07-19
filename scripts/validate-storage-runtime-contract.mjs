@@ -54,7 +54,8 @@ function unwrapExpression(expression) {
     ts.isAsExpression(current) ||
     ts.isTypeAssertionExpression(current) ||
     ts.isParenthesizedExpression(current) ||
-    ts.isSatisfiesExpression(current)
+    ts.isSatisfiesExpression(current) ||
+    ts.isAwaitExpression(current)
   ) {
     current = current.expression;
   }
@@ -73,6 +74,158 @@ function importBindings(file, moduleName) {
     }
   }
   return bindings;
+}
+
+function tauriCoreInvokeImports(file) {
+  const named = new Set();
+  const namespaces = new Set();
+  for (const declaration of file.statements.filter(ts.isImportDeclaration)) {
+    if (!ts.isStringLiteral(declaration.moduleSpecifier)) continue;
+    if (declaration.moduleSpecifier.text !== "@tauri-apps/api/core") continue;
+    const bindings = declaration.importClause?.namedBindings;
+    if (!bindings) continue;
+    if (ts.isNamespaceImport(bindings)) {
+      namespaces.add(bindings.name.text);
+      continue;
+    }
+    for (const element of bindings.elements) {
+      if ((element.propertyName?.text ?? element.name.text) === "invoke") {
+        named.add(element.name.text);
+      }
+    }
+  }
+  return { named, namespaces };
+}
+
+function isTauriCoreDynamicImport(expression) {
+  const current = unwrapExpression(expression);
+  return (
+    ts.isCallExpression(current) &&
+    current.expression.kind === ts.SyntaxKind.ImportKeyword &&
+    current.arguments.length === 1 &&
+    ts.isStringLiteral(current.arguments[0]) &&
+    current.arguments[0].text === "@tauri-apps/api/core"
+  );
+}
+
+function isTauriCoreNamespaceReference(expression, imports) {
+  const current = unwrapExpression(expression);
+  return (
+    (ts.isIdentifier(current) && imports.namespaces.has(current.text)) ||
+    isTauriCoreDynamicImport(current)
+  );
+}
+
+function isTauriInvokeReference(expression, imports) {
+  const current = unwrapExpression(expression);
+  if (ts.isIdentifier(current)) return imports.named.has(current.text);
+  if (ts.isPropertyAccessExpression(current)) {
+    const owner = unwrapExpression(current.expression);
+    if (
+      isTauriCoreNamespaceReference(owner, imports) &&
+      current.name.text === "invoke"
+    ) {
+      return true;
+    }
+    return isTauriInvokeReference(current.expression, imports);
+  }
+  if (ts.isElementAccessExpression(current)) {
+    const owner = unwrapExpression(current.expression);
+    if (isTauriCoreNamespaceReference(owner, imports)) {
+      const property =
+        current.argumentExpression && unwrapExpression(current.argumentExpression);
+      if (
+        property &&
+        (ts.isStringLiteral(property) || ts.isNoSubstitutionTemplateLiteral(property))
+      ) {
+        return property.text === "invoke";
+      }
+      // A dynamic namespace member could resolve to the privileged invoke binding.
+      return true;
+    }
+    return isTauriInvokeReference(current.expression, imports);
+  }
+  return false;
+}
+
+function resolveTauriInvokeAliases(file, imported) {
+  const resolved = {
+    named: new Set(imported.named),
+    namespaces: new Set(imported.namespaces),
+  };
+  const declarations = visit(file, ts.isVariableDeclaration);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const declaration of declarations) {
+      const initializer = declaration.initializer && unwrapExpression(declaration.initializer);
+      if (!initializer) continue;
+      if (ts.isIdentifier(declaration.name)) {
+        if (
+          isTauriCoreNamespaceReference(initializer, resolved) &&
+          !resolved.namespaces.has(declaration.name.text)
+        ) {
+          resolved.namespaces.add(declaration.name.text);
+          changed = true;
+          continue;
+        }
+        if (
+          isTauriInvokeReference(initializer, resolved) &&
+          !resolved.named.has(declaration.name.text)
+        ) {
+          resolved.named.add(declaration.name.text);
+          changed = true;
+        }
+        continue;
+      }
+      if (
+        ts.isObjectBindingPattern(declaration.name) &&
+        isTauriCoreNamespaceReference(initializer, resolved)
+      ) {
+        for (const element of declaration.name.elements) {
+          if (!ts.isIdentifier(element.name)) continue;
+          const property = element.propertyName ?? element.name;
+          const couldBeInvoke =
+            (ts.isIdentifier(property) && property.text === "invoke") ||
+            (ts.isStringLiteral(property) && property.text === "invoke") ||
+            ts.isComputedPropertyName(property);
+          if (couldBeInvoke && !resolved.named.has(element.name.text)) {
+            resolved.named.add(element.name.text);
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+  return resolved;
+}
+
+function tauriInvokeCalls(file) {
+  const imports = resolveTauriInvokeAliases(file, tauriCoreInvokeImports(file));
+  const calls = visit(
+    file,
+    (node) => ts.isCallExpression(node) && isTauriInvokeReference(node.expression, imports),
+  );
+  return { imports, calls };
+}
+
+function rawStorageInvokeCalls(file) {
+  return tauriInvokeCalls(file).calls.filter((call) => {
+    const commandArgument = call.arguments[0] && unwrapExpression(call.arguments[0]);
+    if (
+      commandArgument &&
+      (ts.isStringLiteral(commandArgument) ||
+        ts.isNoSubstitutionTemplateLiteral(commandArgument))
+    ) {
+      return commandArgument.text === command;
+    }
+    // A non-static command could resolve to the privileged storage command.
+    return true;
+  });
+}
+
+function containsNode(parent, child) {
+  return child.getStart() >= parent.getStart() && child.getEnd() <= parent.getEnd();
 }
 
 function exportedVariableInitializer(file, name) {
@@ -381,8 +534,7 @@ function validate(candidate) {
   const client = sourceFile(paths.client, candidate.client);
   const card = sourceFile(paths.card, candidate.card, true);
   const app = sourceFile(paths.app, candidate.app, true);
-  const clientImports = importBindings(client, "@tauri-apps/api/core");
-  const invokeName = clientImports.get("invoke");
+  const clientInvoke = tauriInvokeCalls(client);
   const commandInitializer = exportedVariableInitializer(client, "storageRuntimeCommand");
   const literal = commandInitializer && unwrapExpression(commandInitializer);
   require(
@@ -396,22 +548,28 @@ function validate(candidate) {
     clientExport?.parameters.length === 0,
     "typed storage client must accept no user path or SQL arguments",
   );
-  const invokeCalls = visit(
-    client,
-    (node) =>
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === invokeName,
+  require(
+    clientInvoke.imports.named.size + clientInvoke.imports.namespaces.size > 0,
+    "typed client must import the Tauri invoke binding",
   );
-  require(invokeName !== undefined, "typed client must import the Tauri invoke binding");
-  require(invokeCalls.length === 1, "typed client must have exactly one storage invoke binding");
-  if (invokeCalls.length === 1 && ts.isCallExpression(invokeCalls[0])) {
-    const argument = invokeCalls[0].arguments[0];
+  require(
+    clientInvoke.calls.length === 1,
+    "typed client must have exactly one storage invoke binding",
+  );
+  require(
+    clientExport !== null &&
+      clientInvoke.calls.length === 1 &&
+      containsNode(clientExport, clientInvoke.calls[0]),
+    "storage invoke must remain inside the exported typed client",
+  );
+  if (clientInvoke.calls.length === 1 && ts.isCallExpression(clientInvoke.calls[0])) {
+    const argument = clientInvoke.calls[0].arguments[0];
     require(
-      argument !== undefined &&
+      clientInvoke.calls[0].arguments.length === 1 &&
+        argument !== undefined &&
         ((ts.isIdentifier(argument) && argument.text === "storageRuntimeCommand") ||
           (ts.isStringLiteral(argument) && argument.text === command)),
-      "typed client invoke must receive the exact command constant or literal",
+      "typed client invoke must receive only the exact command constant or literal",
     );
   }
 
@@ -432,14 +590,7 @@ function validate(candidate) {
     "Dashboard card must call the typed storage client",
   );
   require(
-    visit(
-      card,
-      (node) =>
-        ts.isCallExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        node.expression.text === "invoke",
-    ).length === 0 &&
-      importBindings(card, "@tauri-apps/api/core").get("invoke") === undefined,
+    tauriInvokeCalls(card).calls.length === 0,
     "Dashboard card must contain no raw invoke",
   );
 
@@ -455,6 +606,10 @@ function validate(candidate) {
         node.tagName.text === mountedName,
     ).length >= 1,
     "existing Dashboard must structurally mount the storage runtime card",
+  );
+  require(
+    rawStorageInvokeCalls(app).length === 0,
+    "App must contain no raw storage invoke",
   );
 
   const rustCommandTokens = rustTokens(candidate.rustCommand);
@@ -640,7 +795,100 @@ mutationMustFail(
 mutationMustFail(
   "raw invoke added to StorageRuntimeCard",
   (candidate) => {
-    candidate.card += `\nvoid invoke("${command}");\n`;
+    candidate.card =
+      `import { invoke } from "@tauri-apps/api/core";\n${candidate.card}` +
+      `\nvoid invoke("${command}");\n`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "namespace invoke added to StorageRuntimeCard",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `\nvoid tauriCore.invoke("${command}");\n`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "renamed named invoke added to StorageRuntimeCard",
+  (candidate) => {
+    candidate.card =
+      `import { invoke as tauriInvoke } from "@tauri-apps/api/core";\n${candidate.card}` +
+      `\nvoid tauriInvoke("${command}");\n`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "namespace element invoke added to StorageRuntimeCard",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `\nvoid tauriCore["invoke"]("${command}");\n`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "namespace invoke added to App",
+  (candidate) => {
+    candidate.app =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.app}` +
+      `\nvoid tauriCore.invoke("${command}");\n`;
+  },
+  "App must contain no raw storage invoke",
+);
+mutationMustFail(
+  "namespace invoke receives a dynamic command",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      "\nconst dynamicStorageCommand = storageRuntimeCommand;\n" +
+      "void tauriCore.invoke(dynamicStorageCommand);\n";
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "raw named invoke added to App",
+  (candidate) => {
+    candidate.app =
+      `import { invoke } from "@tauri-apps/api/core";\n${candidate.app}` +
+      `\nvoid invoke("${command}");\n`;
+  },
+  "App must contain no raw storage invoke",
+);
+mutationMustFail(
+  "additional namespace invoke added to typed client",
+  (candidate) => {
+    candidate.client =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.client}` +
+      `\nvoid tauriCore.invoke("${command}");\n`;
+  },
+  "exactly one storage invoke binding",
+);
+mutationMustFail(
+  "namespace invoke alias added to StorageRuntimeCard",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `\nconst delegatedInvoke = tauriCore.invoke;\n` +
+      `void delegatedInvoke("${command}");\n`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "dynamic core import invoke added to StorageRuntimeCard",
+  (candidate) => {
+    candidate.card +=
+      `\nvoid (await import("@tauri-apps/api/core")).invoke("${command}");\n`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "aliased dynamic core import added to StorageRuntimeCard",
+  (candidate) => {
+    candidate.card +=
+      `\nconst dynamicTauriCore = await import("@tauri-apps/api/core");\n` +
+      `void dynamicTauriCore.invoke("${command}");\n`;
   },
   "no raw invoke",
 );
