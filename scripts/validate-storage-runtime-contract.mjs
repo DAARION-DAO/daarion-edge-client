@@ -22,6 +22,7 @@ sources.runtimeStore = readdirSync("src-tauri/src/runtime_store")
 const command = "get_storage_runtime_status";
 const clientFunction = "getStorageRuntimeStatus";
 const cardComponent = "StorageRuntimeCard";
+const positiveFixtures = [];
 const negativeFixtures = [];
 
 function snakeCase(value) {
@@ -55,6 +56,7 @@ function unwrapExpression(expression) {
     ts.isTypeAssertionExpression(current) ||
     ts.isParenthesizedExpression(current) ||
     ts.isSatisfiesExpression(current) ||
+    ts.isNonNullExpression(current) ||
     ts.isAwaitExpression(current)
   ) {
     current = current.expression;
@@ -76,7 +78,79 @@ function importBindings(file, moduleName) {
   return bindings;
 }
 
-function tauriCoreInvokeImports(file) {
+function typedSource(file) {
+  const fileName = `/storage-contract/${file.fileName}`;
+  const compilerOptions = {
+    target: ts.ScriptTarget.Latest,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    jsx: ts.JsxEmit.ReactJSX,
+    strict: true,
+    noLib: true,
+    noResolve: true,
+  };
+  let programSource = null;
+  const host = {
+    fileExists: (requested) => requested === fileName,
+    readFile: (requested) => (requested === fileName ? file.text : undefined),
+    getSourceFile: (requested, languageVersion) => {
+      if (requested !== fileName) return undefined;
+      programSource ??= ts.createSourceFile(
+        fileName,
+        file.text,
+        languageVersion,
+        true,
+        file.scriptKind,
+      );
+      return programSource;
+    },
+    getDefaultLibFileName: () => "/storage-contract/lib.d.ts",
+    writeFile: () => {},
+    getCurrentDirectory: () => "/storage-contract",
+    getDirectories: () => [],
+    getCanonicalFileName: (name) => name,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => "\n",
+  };
+  const program = ts.createProgram({
+    rootNames: [fileName],
+    options: compilerOptions,
+    host,
+  });
+  return {
+    file: program.getSourceFile(fileName),
+    checker: program.getTypeChecker(),
+  };
+}
+
+function symbolAtReference(expression, checker) {
+  const current = unwrapExpression(expression);
+  if (ts.isPropertyAccessExpression(current)) {
+    return checker.getSymbolAtLocation(current.name) ?? checker.getSymbolAtLocation(current);
+  }
+  if (ts.isElementAccessExpression(current)) {
+    const direct = checker.getSymbolAtLocation(current);
+    if (direct) return direct;
+    const property =
+      current.argumentExpression && unwrapExpression(current.argumentExpression);
+    if (
+      property &&
+      (ts.isStringLiteral(property) || ts.isNoSubstitutionTemplateLiteral(property))
+    ) {
+      return checker
+        .getTypeAtLocation(current.expression)
+        .getProperty(property.text);
+    }
+  }
+  return checker.getSymbolAtLocation(current);
+}
+
+function hasSymbol(symbols, expression, checker) {
+  const symbol = symbolAtReference(expression, checker);
+  return symbol !== undefined && symbols.has(symbol);
+}
+
+function tauriCoreInvokeImports(file, checker) {
   const named = new Set();
   const namespaces = new Set();
   for (const declaration of file.statements.filter(ts.isImportDeclaration)) {
@@ -85,12 +159,14 @@ function tauriCoreInvokeImports(file) {
     const bindings = declaration.importClause?.namedBindings;
     if (!bindings) continue;
     if (ts.isNamespaceImport(bindings)) {
-      namespaces.add(bindings.name.text);
+      const symbol = checker.getSymbolAtLocation(bindings.name);
+      if (symbol) namespaces.add(symbol);
       continue;
     }
     for (const element of bindings.elements) {
       if ((element.propertyName?.text ?? element.name.text) === "invoke") {
-        named.add(element.name.text);
+        const symbol = checker.getSymbolAtLocation(element.name);
+        if (symbol) named.add(symbol);
       }
     }
   }
@@ -108,30 +184,51 @@ function isTauriCoreDynamicImport(expression) {
   );
 }
 
-function isTauriCoreNamespaceReference(expression, imports) {
+function flowExpressions(expression) {
   const current = unwrapExpression(expression);
-  return (
-    (ts.isIdentifier(current) && imports.namespaces.has(current.text)) ||
-    isTauriCoreDynamicImport(current)
+  if (ts.isConditionalExpression(current)) {
+    return [current.whenTrue, current.whenFalse];
+  }
+  if (ts.isBinaryExpression(current)) {
+    const flowOperators = new Set([
+      ts.SyntaxKind.EqualsToken,
+      ts.SyntaxKind.CommaToken,
+      ts.SyntaxKind.BarBarToken,
+      ts.SyntaxKind.AmpersandAmpersandToken,
+      ts.SyntaxKind.QuestionQuestionToken,
+    ]);
+    if (flowOperators.has(current.operatorToken.kind)) {
+      return [current.left, current.right];
+    }
+  }
+  return [];
+}
+
+function isTauriCoreNamespaceReference(expression, imports, checker) {
+  const current = unwrapExpression(expression);
+  if (hasSymbol(imports.namespaces, current, checker)) return true;
+  if (isTauriCoreDynamicImport(current)) return true;
+  return flowExpressions(current).some((part) =>
+    isTauriCoreNamespaceReference(part, imports, checker),
   );
 }
 
-function isTauriInvokeReference(expression, imports) {
+function isTauriInvokeReference(expression, imports, checker) {
   const current = unwrapExpression(expression);
-  if (ts.isIdentifier(current)) return imports.named.has(current.text);
+  if (hasSymbol(imports.named, current, checker)) return true;
   if (ts.isPropertyAccessExpression(current)) {
     const owner = unwrapExpression(current.expression);
     if (
-      isTauriCoreNamespaceReference(owner, imports) &&
+      isTauriCoreNamespaceReference(owner, imports, checker) &&
       current.name.text === "invoke"
     ) {
       return true;
     }
-    return isTauriInvokeReference(current.expression, imports);
+    return isTauriInvokeReference(current.expression, imports, checker);
   }
   if (ts.isElementAccessExpression(current)) {
     const owner = unwrapExpression(current.expression);
-    if (isTauriCoreNamespaceReference(owner, imports)) {
+    if (isTauriCoreNamespaceReference(owner, imports, checker)) {
       const property =
         current.argumentExpression && unwrapExpression(current.argumentExpression);
       if (
@@ -143,17 +240,62 @@ function isTauriInvokeReference(expression, imports) {
       // A dynamic namespace member could resolve to the privileged invoke binding.
       return true;
     }
-    return isTauriInvokeReference(current.expression, imports);
+    return isTauriInvokeReference(current.expression, imports, checker);
   }
-  return false;
+  return flowExpressions(current).some((part) =>
+    isTauriInvokeReference(part, imports, checker),
+  );
 }
 
-function resolveTauriInvokeAliases(file, imported) {
+function targetSymbols(target, checker) {
+  const current = unwrapExpression(target);
+  if (
+    ts.isIdentifier(current) ||
+    ts.isPropertyAccessExpression(current) ||
+    ts.isElementAccessExpression(current)
+  ) {
+    const symbol = symbolAtReference(current, checker);
+    return symbol ? [symbol] : [];
+  }
+  return [];
+}
+
+function destructuredInvokeTargets(target, checker) {
+  const current = unwrapExpression(target);
+  if (!ts.isObjectLiteralExpression(current)) return [];
+  const targets = [];
+  for (const property of current.properties) {
+    if (ts.isShorthandPropertyAssignment(property)) {
+      if (property.name.text === "invoke") {
+        targets.push(...targetSymbols(property.name, checker));
+      }
+      continue;
+    }
+    if (!ts.isPropertyAssignment(property)) continue;
+    const name = property.name;
+    const couldBeInvoke =
+      (ts.isIdentifier(name) && name.text === "invoke") ||
+      (ts.isStringLiteral(name) && name.text === "invoke") ||
+      ts.isComputedPropertyName(name);
+    if (couldBeInvoke) {
+      targets.push(...targetSymbols(property.initializer, checker));
+    }
+  }
+  return targets;
+}
+
+function resolveTauriInvokeAliases(file, checker, imported) {
   const resolved = {
     named: new Set(imported.named),
     namespaces: new Set(imported.namespaces),
   };
   const declarations = visit(file, ts.isVariableDeclaration);
+  const assignments = visit(
+    file,
+    (node) =>
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken,
+  );
   let changed = true;
   while (changed) {
     changed = false;
@@ -161,26 +303,31 @@ function resolveTauriInvokeAliases(file, imported) {
       const initializer = declaration.initializer && unwrapExpression(declaration.initializer);
       if (!initializer) continue;
       if (ts.isIdentifier(declaration.name)) {
+        const targets = targetSymbols(declaration.name, checker);
         if (
-          isTauriCoreNamespaceReference(initializer, resolved) &&
-          !resolved.namespaces.has(declaration.name.text)
+          isTauriCoreNamespaceReference(initializer, resolved, checker)
         ) {
-          resolved.namespaces.add(declaration.name.text);
-          changed = true;
+          for (const target of targets) {
+            if (resolved.namespaces.has(target)) continue;
+            resolved.namespaces.add(target);
+            changed = true;
+          }
           continue;
         }
         if (
-          isTauriInvokeReference(initializer, resolved) &&
-          !resolved.named.has(declaration.name.text)
+          isTauriInvokeReference(initializer, resolved, checker)
         ) {
-          resolved.named.add(declaration.name.text);
-          changed = true;
+          for (const target of targets) {
+            if (resolved.named.has(target)) continue;
+            resolved.named.add(target);
+            changed = true;
+          }
         }
         continue;
       }
       if (
         ts.isObjectBindingPattern(declaration.name) &&
-        isTauriCoreNamespaceReference(initializer, resolved)
+        isTauriCoreNamespaceReference(initializer, resolved, checker)
       ) {
         for (const element of declaration.name.elements) {
           if (!ts.isIdentifier(element.name)) continue;
@@ -189,10 +336,38 @@ function resolveTauriInvokeAliases(file, imported) {
             (ts.isIdentifier(property) && property.text === "invoke") ||
             (ts.isStringLiteral(property) && property.text === "invoke") ||
             ts.isComputedPropertyName(property);
-          if (couldBeInvoke && !resolved.named.has(element.name.text)) {
-            resolved.named.add(element.name.text);
+          const symbol = checker.getSymbolAtLocation(element.name);
+          if (couldBeInvoke && symbol && !resolved.named.has(symbol)) {
+            resolved.named.add(symbol);
             changed = true;
           }
+        }
+      }
+    }
+    for (const assignment of assignments) {
+      const targets = targetSymbols(assignment.left, checker);
+      const assignedNamespace = isTauriCoreNamespaceReference(
+        assignment.right,
+        resolved,
+        checker,
+      );
+      if (assignedNamespace) {
+        for (const target of targets) {
+          if (resolved.namespaces.has(target)) continue;
+          resolved.namespaces.add(target);
+          changed = true;
+        }
+        for (const target of destructuredInvokeTargets(assignment.left, checker)) {
+          if (resolved.named.has(target)) continue;
+          resolved.named.add(target);
+          changed = true;
+        }
+      }
+      if (isTauriInvokeReference(assignment.right, resolved, checker)) {
+        for (const target of targets) {
+          if (resolved.named.has(target)) continue;
+          resolved.named.add(target);
+          changed = true;
         }
       }
     }
@@ -201,10 +376,17 @@ function resolveTauriInvokeAliases(file, imported) {
 }
 
 function tauriInvokeCalls(file) {
-  const imports = resolveTauriInvokeAliases(file, tauriCoreInvokeImports(file));
+  const typed = typedSource(file);
+  const imports = resolveTauriInvokeAliases(
+    typed.file,
+    typed.checker,
+    tauriCoreInvokeImports(typed.file, typed.checker),
+  );
   const calls = visit(
-    file,
-    (node) => ts.isCallExpression(node) && isTauriInvokeReference(node.expression, imports),
+    typed.file,
+    (node) =>
+      ts.isCallExpression(node) &&
+      isTauriInvokeReference(node.expression, imports, typed.checker),
   );
   return { imports, calls };
 }
@@ -759,8 +941,73 @@ function mutationMustFail(label, mutate, expectedFragment) {
   if (!rejected) console.error(`FAIL: validator self-test did not reject ${label}`);
 }
 
+function fixtureMustPass(label, mutate) {
+  const candidate = { ...sources };
+  mutate(candidate);
+  const { errors } = validate(candidate);
+  const accepted = errors.length === 0;
+  positiveFixtures.push({ label, accepted });
+  if (!accepted) {
+    console.error(`FAIL: validator self-test rejected safe fixture ${label}`);
+    for (const error of errors) console.error(`FAIL: ${label}: ${error}`);
+  }
+}
+
 const positive = validate(sources);
 for (const error of positive.errors) console.error(`FAIL: ${error}`);
+
+fixtureMustPass("approved typed storage client", () => {});
+fixtureMustPass("unrelated ordinary function assignment", (candidate) => {
+  candidate.card += `
+function exerciseOrdinaryAssignment() {
+  const ordinaryFunction = () => undefined;
+  let assignedFunction: typeof ordinaryFunction;
+  assignedFunction = ordinaryFunction;
+  assignedFunction();
+}
+void exerciseOrdinaryAssignment;
+`;
+});
+fixtureMustPass("local non-Tauri function named invoke", (candidate) => {
+  candidate.card += `
+function invoke() { return undefined; }
+const localInvokeAlias = invoke;
+void localInvokeAlias();
+`;
+});
+fixtureMustPass("shadowed safe namespace identifier", (candidate) => {
+  candidate.card =
+    `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+    `
+function exerciseSafeShadow() {
+  const tauriCore = { invoke: () => undefined };
+  let safeShadowAlias: typeof tauriCore.invoke;
+  safeShadowAlias = tauriCore.invoke;
+  safeShadowAlias();
+}
+void exerciseSafeShadow;
+`;
+});
+fixtureMustPass("unused Tauri core namespace import", (candidate) => {
+  candidate.card =
+    `import * as unusedTauriCore from "@tauri-apps/api/core";\n${candidate.card}`;
+});
+fixtureMustPass("ordinary type annotations and formatting", (candidate) => {
+  candidate.card += `
+const formattedLocal = (value: string) => value;
+let formattedAlias: typeof formattedLocal;
+formattedAlias = ((formattedLocal as typeof formattedLocal)!);
+void formattedAlias("safe");
+`;
+});
+fixtureMustPass("unrelated object property named invoke", (candidate) => {
+  candidate.card += `
+const unrelatedBridge = { invoke: () => undefined };
+let unrelatedPropertyAlias: typeof unrelatedBridge.invoke;
+unrelatedPropertyAlias = unrelatedBridge.invoke;
+void unrelatedPropertyAlias();
+`;
+});
 
 mutationMustFail(
   "TypeScript command renamed with old command in a comment",
@@ -893,6 +1140,265 @@ mutationMustFail(
   "no raw invoke",
 );
 mutationMustFail(
+  "R4 assignment alias reproduction",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+let rawInvoke: typeof tauriCore.invoke;
+rawInvoke = tauriCore.invoke;
+void rawInvoke("${command}");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "assignment from direct named import",
+  (candidate) => {
+    candidate.card =
+      `import { invoke } from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+let assignedNamedInvoke: typeof invoke;
+assignedNamedInvoke = invoke;
+void assignedNamedInvoke("${command}");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "assignment from renamed named import",
+  (candidate) => {
+    candidate.card =
+      `import { invoke as importedInvoke } from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+let assignedRenamedInvoke: typeof importedInvoke;
+assignedRenamedInvoke = importedInvoke;
+void assignedRenamedInvoke("${command}");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "assignment from namespace element access",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+let assignedElementInvoke: typeof tauriCore.invoke;
+assignedElementInvoke = tauriCore["invoke"];
+void assignedElementInvoke("${command}");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "chained assignment alias",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+let chainedAliasOne: typeof tauriCore.invoke;
+let chainedAliasTwo: typeof tauriCore.invoke;
+chainedAliasTwo = chainedAliasOne = tauriCore.invoke;
+void chainedAliasTwo("${command}");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "two-step assignment alias propagation",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+let firstAssignedAlias: typeof tauriCore.invoke;
+let secondAssignedAlias: typeof tauriCore.invoke;
+firstAssignedAlias = tauriCore.invoke;
+secondAssignedAlias = firstAssignedAlias;
+void secondAssignedAlias("${command}");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "parenthesized assignment right-hand side",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+let parenthesizedAlias: typeof tauriCore.invoke;
+parenthesizedAlias = (tauriCore.invoke);
+void parenthesizedAlias("${command}");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "as-asserted assignment right-hand side",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+let asAssertedAlias: typeof tauriCore.invoke;
+asAssertedAlias = tauriCore.invoke as typeof tauriCore.invoke;
+void asAssertedAlias("${command}");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "non-null assignment right-hand side",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+let nonNullAlias: typeof tauriCore.invoke;
+nonNullAlias = tauriCore.invoke!;
+void nonNullAlias("${command}");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "type-asserted assignment right-hand side",
+  (candidate) => {
+    candidate.client += `
+let typeAssertedAlias: typeof invoke;
+typeAssertedAlias = <typeof invoke>invoke;
+void typeAssertedAlias("${command}");
+`;
+  },
+  "exactly one storage invoke binding",
+);
+mutationMustFail(
+  "assignment alias called inside nested function",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+let nestedFunctionAlias: typeof tauriCore.invoke;
+nestedFunctionAlias = tauriCore.invoke;
+function callAssignedAlias() {
+  return nestedFunctionAlias("${command}");
+}
+void callAssignedAlias;
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "assignment alias called with dynamic command",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+let dynamicCommandAlias: typeof tauriCore.invoke;
+dynamicCommandAlias = tauriCore.invoke;
+const assignedCommand = "${command}";
+void dynamicCommandAlias(assignedCommand);
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "unsafe outer symbol with unrelated shadowed safe identifier",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+let shadowedAlias: typeof tauriCore.invoke;
+shadowedAlias = tauriCore.invoke;
+function useSafeShadow() {
+  const shadowedAlias = () => undefined;
+  shadowedAlias();
+}
+void shadowedAlias("${command}");
+void useSafeShadow;
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "assignment before var declaration",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+beforeDeclarationAlias = tauriCore.invoke;
+var beforeDeclarationAlias: typeof tauriCore.invoke;
+void beforeDeclarationAlias("${command}");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "assignment alias with old command only in comment",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+let commentProofAlias: typeof tauriCore.invoke;
+commentProofAlias = tauriCore.invoke;
+// ${command}
+void commentProofAlias("renamed_storage_status");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "dynamic namespace property assignment",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+const invokePropertyName = "invoke";
+let dynamicPropertyAlias: typeof tauriCore.invoke;
+dynamicPropertyAlias = tauriCore[invokePropertyName];
+void dynamicPropertyAlias("${command}");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "assignment into an object property alias",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+const propertyAliasHolder = { call: () => undefined };
+propertyAliasHolder.call = tauriCore.invoke;
+void propertyAliasHolder.call("${command}");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "assignment into an object element alias",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+const elementAliasHolder = { call: () => undefined };
+elementAliasHolder["call"] = tauriCore.invoke;
+void elementAliasHolder["call"]("${command}");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
+  "destructuring assignment from Tauri core namespace",
+  (candidate) => {
+    candidate.card =
+      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
+      `
+let destructuredAssignmentAlias: typeof tauriCore.invoke;
+({ invoke: destructuredAssignmentAlias } = tauriCore);
+void destructuredAssignmentAlias("${command}");
+`;
+  },
+  "no raw invoke",
+);
+mutationMustFail(
   "Rust command renamed with the old name in a line comment",
   (candidate) => {
     candidate.rustCommand = candidate.rustCommand.replace(
@@ -983,10 +1489,15 @@ mutationMustFail(
 );
 
 const rejected = negativeFixtures.filter((fixture) => fixture.rejected).length;
-if (positive.errors.length || rejected !== negativeFixtures.length) {
+const accepted = positiveFixtures.filter((fixture) => fixture.accepted).length;
+if (
+  positive.errors.length ||
+  accepted !== positiveFixtures.length ||
+  rejected !== negativeFixtures.length
+) {
   process.exitCode = 1;
 } else {
   console.log(
-    `PASS: structural storage runtime contract; positive checks=${positive.checks}; negative fixtures=${rejected}/${negativeFixtures.length}`,
+    `PASS: structural storage runtime contract; positive checks=${positive.checks}; positive fixtures=${accepted}/${positiveFixtures.length}; negative fixtures=${rejected}/${negativeFixtures.length}`,
   );
 }
