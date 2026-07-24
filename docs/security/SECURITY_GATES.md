@@ -7,7 +7,7 @@ No gate is satisfied by documentation or module names alone. “Open” means im
 | Gate | Current state | Required evidence to close | Owner/phase |
 | --- | --- | --- | --- |
 | Local-only inference | REPOSITORY PASS — MERGED / FRESH-MAIN VERIFIED | Phase 1A has only `LocalOnly`; loopback/redirect/proxy controls; mandatory `/api/status` cloud-disabled proof; exact stable `/api/tags` → `/api/show` → `/api/tags` local-model evidence; immediate pre-chat revalidation; post-preparation verification; service-owned probe/chat/preparation deadlines and cancellation; bounded streaming; zero-chat sentinel tests; truthful UI; and no main-webview shell authority. Reviewed head `9e8c5d9…` was merged as `62a1d514…` and verified from fresh main. No real Ollama/model smoke or cryptographic daemon/artifact attestation is claimed. | Edge / 1A |
-| Durable runtime state | OPEN — PHASE 1B.1 CLOSEOUT / R4 REVIEW PENDING | R1 and R2 blocked earlier PR #27 heads. Independent local R3 reviewed exact head `86ef384a…`, closed their lifecycle/deadline findings, and returned `PASS_WITH_NONBLOCKING_FINDINGS` with three Low validator/evidence findings. The final bounded closeout corrects namespace/property raw-invoke validation, the new `runtime_store` Clippy warning, and stale canonical evidence; 64 storage, 67 inference and 180 full Rust tests pass, while the established 20-run/220-execution lifecycle gate remains green. Phase 1B.1 is complete in the PR but not merged. Closure still requires acceptable R4 exact-head review, controlled merge and fresh-main proof; the broader durable-state gate additionally requires later Phase 1B content services, deletion/export/backup, desktop/platform evidence, and the pre-production SQLCipher decision | Edge / 1B |
+| Durable runtime state | OPEN — PHASE 1B.1 ARCHITECTURAL CORRECTION / R6 REVIEW PENDING | R1 and R2 blocked earlier PR #27 heads; R3 passed with nonblocking findings; R4 blocked an assignment-alias false-negative; R5 blocked an object-literal false-negative at exact head `fdbb9c88…`. Accepted ADR 0006 rejects a custom complete data-flow analyzer and replaces the overclaim with a command-scoped module/import/re-export gate plus limited AST defense in depth. The local correction passes 29/29 primary fixtures, 13/13 secondary fixtures, 46 structural checks, 64 storage, 67 inference and 180 full Rust tests. Phase 1B.1 remains draft and unmerged. Closure still requires acceptable exact-head R6, separate ready/merge authorization and fresh-main proof; the broader durable-state gate additionally requires later Phase 1B content services, deletion/export/backup, desktop/platform evidence, and the pre-production SQLCipher decision | Edge / 1B |
 | Inert Supervisor | OPEN | Deterministic IDs, explicit bounded state machine, idempotency, cancellation and crash recovery; no tools/network/scheduling | Edge / 1C |
 | Production pairing | OPEN | Signed purpose-bound invitation, trusted issuer, membership/device binding, expiry, nonce/replay, single use, revocation and downgrade tests | Both / ADR 0004 |
 | Readiness projection | OPEN | Separate signed schema, minimal allowlist, producer identity, expiry/freshness, replay/revocation, cross-repo fixtures and privacy tests | Both / ADR 0005 + Phase 5 |
@@ -121,11 +121,16 @@ no-argument status command, typed client, and Dashboard card. It has no content
 CRUD, backup/export, remote sync, Supervisor, memory extraction, or generic SQL
 authority. Automated tests use generated temporary roots; no real user profile
 or production system is written. R1 and R2 blocked earlier heads. Independent
-local R3 passed exact head `86ef384a…` with three nonblocking Low findings; the
-final closeout corrects them locally and awaits independent exact-head R4.
+local R3 passed exact head `86ef384a…` with three nonblocking Low findings. R4
+and R5 then exposed assignment- and object-literal alias false-negatives in the
+overclaimed validator model. Accepted ADR 0006 makes the command-scoped
+module/import/re-export graph the primary control and limited AST checks
+defense in depth. Arbitrary TypeScript data-flow proof is not claimed. The
+architecture correction is locally green and awaits independent exact-head R6.
 
 SQLCipher remains a separate pre-production decision. The durable-state gate
-stays open through acceptable R4 review, merge/fresh-main verification, later
+stays open through acceptable R6 review, separate merge/fresh-main
+verification, later
 separately authorized Phase 1B slices, desktop target evidence, deletion/export,
 and full recovery/privacy closure. A repository candidate is not production
 readiness.

@@ -1,6 +1,6 @@
 # Phase 1B.1 — Storage Runtime Vertical Slice Completion
 
-Status: **R4 REVIEW BLOCKED / ASSIGNMENT-ALIAS CORRECTION LOCAL GATE PASS / R5 REVIEW PENDING**
+Status: **R5 REVIEW BLOCKED / ARCHITECTURAL CORRECTION LOCAL GATE PASS / R6 REVIEW PENDING**
 
 Starting `main`: `eb0d7def94675e5668f8a061ecc9e74b493c48c3`
 
@@ -8,6 +8,7 @@ Independent R1 reviewed head: `ffcc83d031b4506aebc4e9fb68e6db11590cecde`
 Independent R2 reviewed head: `d1a2617455a844a61652ced82bff7ad5f78ba95d`
 Independent R3 reviewed head: `86ef384a8820989096c5859e7ea481078a55cb97`
 Independent R4 reviewed head: `7465673d0128e850d30f1b8f00c7c102d69b983a`
+Independent R5 reviewed head: `fdbb9c88c2ef8c46f4a2a0abb4defc68c00c361c`
 
 Branch: `phase-01b1/storage-runtime-vertical-slice`
 
@@ -21,11 +22,13 @@ Final closeout date: 2026-07-19
 
 R4 assignment-alias correction date: 2026-07-20
 
+R5 architecture decision date: 2026-07-24
+
 This completion report covers only the separately authorized Phase 1B.1
 vertical slice. It does not authorize or claim Phase 1B.2, public content CRUD,
 full memory, production readiness, deployment, or live-user-profile execution.
 
-## R1/R2/R3/R4 review and closeout ledger
+## R1/R2/R3/R4/R5 review and closeout ledger
 
 ```text
 INDEPENDENT_REVIEW_R1 =
@@ -69,16 +72,28 @@ R4_REVIEWED_HEAD =
 7465673d0128e850d30f1b8f00c7c102d69b983a
 
 R4_ASSIGNMENT_ALIAS_CORRECTION =
-IMPLEMENTED / LOCAL_TESTED / R5_REVIEW_PENDING
+IMPLEMENTED / R5_FOUND_OBJECT_LITERAL_FALSE_NEGATIVE
 
-R5_REVIEW =
+INDEPENDENT_REVIEW_R5 =
+R5_REVIEW_BLOCKED_BY_FINDINGS
+
+R5_BLOCKER =
+OBJECT_LITERAL_INVOKE_ALIAS_FALSE_NEGATIVE
+
+R5_REVIEWED_HEAD =
+fdbb9c88c2ef8c46f4a2a0abb4defc68c00c361c
+
+R5_ROOT_CAUSE =
+CURRENT_VALIDATOR_OVERCLAIMS_ARBITRARY_TYPESCRIPT_DATA_FLOW_ASSURANCE
+
+SIXTH_POINT_CORRECTION =
+REJECTED
+
+ADR_0006 =
+HUMAN_APPROVED / IMPLEMENTATION_IN_PROGRESS
+
+R6_REVIEW =
 REQUIRED / NOT PERFORMED
-
-FINAL_CLOSEOUT_COMMIT =
-7465673d0128e850d30f1b8f00c7c102d69b983a
-
-ASSIGNMENT_ALIAS_CORRECTION_COMMIT =
-RECORDED IN PR BODY AND FINAL REPORT AFTER COMMIT
 ```
 
 The independent local R3 review closed the R2 lifecycle, deadline-boundary and
@@ -86,33 +101,33 @@ comment-spoof findings without regressing the earlier R1 corrections. It also
 reported three new Low findings. This final closeout is intentionally limited
 to those findings: TypeScript AST coverage for named/renamed/namespace/property
 invoke paths, removal of one identity `map_err`, and canonical evidence refresh.
-R4 reviewed the exact fourth commit and found one residual validator
-false-negative: a compiling `rawInvoke = tauriCore.invoke` assignment followed
-by `rawInvoke(...)` passed because alias discovery visited declaration
-initializers but not assignment expressions. The fifth bounded correction uses
-TypeChecker symbol identity, monotonic fixed-point propagation across variable
-declarations and `=` assignments, and conservative namespace/property flow.
-It changes no runtime or product capability. R5 must review the exact fifth
-commit before any separate ready/merge authorization.
+R4 reviewed the exact fourth commit and found a compiling assignment-alias
+false-negative. The fifth commit added fixed-point alias propagation. R5
+reviewed that exact fifth head and found an object-literal carrier that the
+custom flow model did not follow. The accepted ADR 0006 therefore rejects a
+sixth syntax-specific patch and withdraws the overclaimed arbitrary
+TypeScript-flow proof. The authoritative correction is a command-scoped
+module/import/re-export boundary with limited AST checks retained only as
+defense in depth. It changes no storage runtime behavior. Independent R6 must
+verify the exact architectural-correction head before any separate ready/merge
+authorization.
 
 | R3 finding | Local closeout | Evidence | Residual boundary |
 | --- | --- | --- | --- |
-| R3-L-01 | Fourth commit added namespace/property coverage; R4 then found that separate assignment expressions were not propagated | R4 compiling reproduction passed the 42/24 validator at reviewed head `7465673d…` | Fifth correction locally rejects the exact bypass; R5 exact-head review required |
+| R3-L-01 | Fourth commit added namespace/property coverage; R4 then found that separate assignment expressions were not propagated | R4 compiling reproduction passed the prior validator at reviewed head `7465673d…`; R5 then found an object-literal false-negative at `fdbb9c88…` | ADR 0006 replaces the overclaimed flow proof with an authoritative module/import/re-export boundary; R6 exact-head review required |
 | R3-L-02 | Removed identity `.map_err(|error| error)` without changing the surrounding `Result` type or lifecycle control | 64/64 storage tests; full Clippy PASS; zero `runtime_store` Clippy locations | Retained by R4; runtime source is byte-identical in the fifth correction |
 | R3-L-03 | Roadmap, capability matrix, security gates, ADR 0002 and this report preserve R1/R2/R3 history and actual evidence | R4 documentation readback; completion report now also records R4 truth | Phase 1B.1 remains unmerged; desktop/cross-platform evidence remains absent |
 
-The assignment correction constructs an in-memory TypeScript `Program` for
-each analyzed source and uses `TypeChecker` symbols rather than identifier text.
-Imported invoke/namespace symbols seed finite sets. Declaration initializers,
-direct and chained assignments, namespace aliases, static property/element
-targets, and namespace destructuring assignments propagate until no set grows.
-Sets are monotonic, so a later reassignment cannot erase unsafe reachability and
-the loop terminates after at most the finite number of source symbols is added.
-Shadowed identifiers have distinct symbols and remain safe when unrelated to a
-Tauri import. The fifth correction changes exactly
-`scripts/validate-storage-runtime-contract.mjs` and this completion report;
-runtime source, product source, schema, manifests, lockfiles and dependencies
-remain byte-identical to R4-reviewed head `7465673d…`.
+The architectural correction scans every frontend source module, freezes the
+audited Tauri-core importer inventory, resolves local imports and re-exports,
+and enforces one executable owner for `get_storage_runtime_status`. The storage
+adapter keeps its command constant private and exports only the typed API and
+public DTO/error types. The card consumes that typed API and receives no raw
+Tauri binding. Dynamic imports, supported `require()` forms, direct/renamed/
+wildcard re-exports, and local barrel exposure are rejected within this
+module-boundary model. R4 and R5 witnesses in the card are rejected because the
+card cannot import or receive raw Tauri authority; the validator does not claim
+to follow their complete data flow.
 
 | Finding | State before correction | Affected paths and symbols | Root cause | Bounded correction design | Required evidence | Residual boundary |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -125,13 +140,12 @@ remain byte-identical to R4-reviewed head `7465673d…`.
 | L-02 | `OPEN` | `runtime_store/worker.rs`; `runtime_store/tests.rs::worker_contract_has_one_named_owner_and_bounded_queue` | Queue evidence was source-text/constant-only | Test-only worker hold plus the real capacity-128 sync channel to prove exact saturation and controlled overflow | Behavioral saturation and bounded cleanup test | Test-only authority must remain private to `runtime_store` |
 | L-03 | `OPEN` | `scripts/validate-storage-runtime-contract.mjs` | Validator did not independently compare Rust/TypeScript enums or enforce the no-user-argument command contract | Parse exact enum/command/registration contracts and run deterministic mutation self-tests | Validator PASS plus mutation detection | No frontend testing framework |
 
-R1 and R2 remain historical failed reviews and are not rewritten. R3 is the
-first independent local exact-head review to close their remaining scoped
-findings. R4 is preserved as blocked by the assignment-alias false-negative;
-the local fifth correction does not claim independent closure. A Git commit
-cannot truthfully embed its own SHA, so the exact fifth SHA is recorded after
-commit in the PR body, remote readback and final task report rather than as a
-self-reference in the commit it identifies.
+R1 and R2 remain historical failed reviews and are not rewritten. R3 remains a
+pass with nonblocking findings. R4 remains blocked by the assignment-alias
+false-negative, and R5 remains blocked by the object-literal false-negative.
+ADR 0006 accepts a different assurance model; it does not retroactively convert
+R4 or R5 into passing reviews. The architectural disposition closes the root
+cause only if independent R6 confirms the exact correction head.
 
 ## 1. Existing behavior before task
 
@@ -244,21 +258,40 @@ The focused storage suite contains **64 passed / 0 failed** tests covering:
   status behavior, post-start resource-limit re-evaluation, and redacted public
   errors.
 
-The deterministic frontend contract validator uses the installed TypeScript
-compiler API for executable named, renamed and namespace imports; property,
-element and locally aliased invoke calls; constants; exported function
-arguments; and JSX mounting. Its in-memory `Program` and `TypeChecker` assign
-symbol identity to imports, declarations, assignments, property/element
-targets and shadowed identifiers. Monotonic fixed-point propagation covers
-direct, chained, multi-step, parenthesized, asserted, non-null, nested-function,
-dynamic-property and namespace-destructuring flows without allowing a later
-reassignment to erase unsafe reachability. A comment-aware Rust lexer excludes
-line and nested block comments, normal/raw/byte strings, and character literals
-before checking the command attribute, signature, injected state arguments,
-exact `generate_handler!` registration, and absence of CRUD/generic SQL
-authority. It passes 42 positive assertions, accepts 7/7 explicit safe fixtures
-and rejects 43/43 mutation fixtures, including the R2 comment-spoof, R3
-namespace bypass and exact R4 assignment-alias reproduction.
+The deterministic frontend contract validator now separates two assurance
+layers. `PRIMARY_MODULE_BOUNDARY_GATE` enumerates all frontend source files,
+enforces the exact nine-path Tauri-core importer baseline, resolves supported
+relative/path-alias/index imports and named/wildcard re-exports, rejects
+dynamic-import and supported `require()` bypasses, and enforces the adapter,
+card, command-literal and export inventories. `SECONDARY_AST_DEFENSE_IN_DEPTH`
+checks the direct typed call plus the exact Rust command, DTO, registration and
+UI contracts. The current gate passes 29/29 primary fixtures, 13/13 secondary
+fixtures and 46 structural checks. Arbitrary interprocedural or obfuscated
+TypeScript data flow is explicitly not claimed.
+
+Exact audited frontend Tauri-core importer baseline:
+
+- `src/App.tsx`;
+- `src/components/EdgeActivation.tsx`;
+- `src/components/GenesisWizard.tsx`;
+- `src/components/LocalModelsPanel.tsx`;
+- `src/components/MessagingPanel.tsx`;
+- `src/components/PairingGate.tsx`;
+- `src/lib/backendConfig.ts`;
+- `src/lib/inferenceClient.ts`;
+- `src/lib/storageRuntimeClient.ts`.
+
+These nine grandfathered paths may retain their existing commands. They are
+technical debt, not a global adapter-architecture approval. Any new importer
+requires a deliberate baseline change and review. The global adapter migration
+is deferred to a separate phase.
+
+The storage adapter runtime-value export surface is exactly
+`StorageRuntimeClientError` and `getStorageRuntimeStatus`. Its public type
+surface is exactly `DatabaseHealth`, `PersistenceState`,
+`StorageRuntimeErrorCode`, `StorageRuntimeState` and
+`StorageRuntimeStatus`. It exports neither the private command constant nor a
+raw Tauri binding.
 
 ## 5. Live smoke checklist
 
@@ -619,8 +652,10 @@ unqualified child-process resolution was therefore not accepted as evidence.
 | Full Rust tests | 180 passed / 0 failed |
 | `cargo check --all-targets --locked` | PASS |
 | `cargo clippy --all-targets --locked` | PASS; no `runtime_store` warning |
-| Storage frontend/Rust contract | PASS; 42 structural checks, 7/7 safe fixtures and 43/43 negative fixtures, including the exact R4 assignment-alias bypass |
-| Disposable compiling R4 assignment reproduction | PASS; production build succeeds and the validator rejects it with `Dashboard card must contain no raw invoke` |
+| Storage frontend/Rust contract | PASS; primary module-boundary fixtures 29/29, secondary defense-in-depth fixtures 13/13, structural checks 46 |
+| Exact frontend Tauri-core baseline | PASS; 9 exact audited paths, no unallowlisted importer |
+| R4 assignment witness | PASS; rejected by the authoritative module boundary, without a complete data-flow claim |
+| R5 object-literal witness | PASS; rejected by the authoritative module boundary, without a complete data-flow claim |
 | Inference frontend/Rust contract | PASS |
 | TypeScript + production Vite build | PASS; 1,763 modules |
 | `npm audit --omit=dev` | PASS; 0 vulnerabilities |
@@ -645,14 +680,14 @@ task does not perform an unrelated repository cleanup.
 ## Security review
 
 ```text
-R4_ASSIGNMENT_ALIAS_CORRECTION_SELF_REVIEW =
+ARCHITECTURAL_CORRECTION_SELF_REVIEW =
 CRITICAL 0 / HIGH 0 / MEDIUM 0 / LOW 0 / INFO 4
 ```
 
 The informational boundaries are unchanged inherited RustSec/rustfmt/warning
 debt, missing real desktop restart proof, incomplete cross-platform execution,
-and accepted plaintext-SQLite risk. This local self-review records the R4
-assignment-alias correction but does not replace independent exact-head R5.
+and accepted plaintext-SQLite risk. This local self-review records the
+architectural correction but does not replace independent exact-head R6.
 
 ### Critical
 
@@ -680,10 +715,12 @@ assignment-alias correction but does not replace independent exact-head R5.
   Low documentation/validator findings. R3 independently closed them at exact
   head `86ef384a…` and reported three new nonblocking Low closeout findings.
 - R4 reviewed exact head `7465673d…` and blocked it because assignment aliases
-  were absent from the validator flow analysis even though direct namespace
-  calls were rejected. The fifth correction is locally verified against direct,
-  renamed, chained, multi-step, nested, asserted, property/element, dynamic and
-  shadowing cases; independent R5 closure remains mandatory.
+  were absent from the validator flow analysis. R5 reviewed exact head
+  `fdbb9c88…` and blocked it because object-literal carriers remained outside
+  that model. ADR 0006 rejects a custom complete data-flow analyzer. The new
+  primary boundary controls imports, re-exports, command ownership and adapter
+  exports; limited AST checks are defense in depth only. Independent R6 closure
+  remains mandatory.
 - A pre-final repeated gate exposed an intermittent M-01 result-delivery race:
   the former 100 ms worker-exit reserve could collapse a busy-checkpoint result
   into `Unavailable`. The correction now reserves up to 500 ms inside the same
@@ -759,22 +796,31 @@ LOCAL_TEST_WRITES = GENERATED TEMP ROOTS / CARGO TARGET / NODE BUILD ONLY
 
 Local test databases were created only under generated temporary directories
 and removed by the test fixtures. One additional disposable temporary database
-was created for the SQLite table/index inventory. A disposable source copy was
-used to compile and independently reject the exact R4 assignment mutation. No
-real DAARION app-local-data path was used.
+was created for the SQLite table/index inventory. Validator fixtures were
+evaluated only in memory. No real DAARION app-local-data path was used.
 
 Overall local release classification:
 
 ```text
 CORRECTION_LOCAL_GATE = PASS
-SCOPED_PHASE_1B_1_GATE = PASS / R5_REVIEW_PENDING
+SCOPED_PHASE_1B_1_GATE = PASS / R6_REVIEW_PENDING
 REPOSITORY_BASELINE_GATE = CONDITIONAL_PASS
 INDEPENDENT_R3_REVIEW = R3_REVIEW_PASS_WITH_NONBLOCKING_FINDINGS
 R3_FINDINGS = CRITICAL 0 / HIGH 0 / MEDIUM 0 / LOW 3 / INFO 4
 INDEPENDENT_R4_REVIEW = R4_REVIEW_BLOCKED_BY_FINDINGS
 R4_BLOCKER = ASSIGNMENT_ALIAS_FALSE_NEGATIVE
-R4_ASSIGNMENT_ALIAS_CORRECTION = IMPLEMENTED / LOCAL_TESTED / R5_REVIEW_PENDING
-R5_REVIEW = REQUIRED / NOT_PERFORMED
+INDEPENDENT_R5_REVIEW = R5_REVIEW_BLOCKED_BY_FINDINGS
+R5_BLOCKER = OBJECT_LITERAL_INVOKE_ALIAS_FALSE_NEGATIVE
+PRIMARY_CONTROL = COMMAND_SCOPED_MODULE_BOUNDARY_AND_IMPORT_GRAPH_GATE
+SECONDARY_CONTROL = LIMITED_AST_CHECKS / DEFENSE_IN_DEPTH
+ARBITRARY_TYPESCRIPT_DATA_FLOW_PROOF = NOT_CLAIMED
+OPTIONAL_HIGHER_ASSURANCE = DEFERRED_TOOL_EVALUATION
+CUSTOM_FULL_DATA_FLOW_ANALYZER = REJECTED
+GLOBAL_FRONTEND_ADAPTER_MIGRATION = DEFERRED / SEPARATE_PHASE
+R5_BLOCKER_DISPOSITION = ARCHITECTURALLY_RESOLVED_ONLY_AFTER_R6_CONFIRMATION
+R4_ASSIGNMENT_WITNESS = REJECTED_BY_MODULE_BOUNDARY
+R5_OBJECT_LITERAL_WITNESS = REJECTED_BY_MODULE_BOUNDARY
+R6_REVIEW = REQUIRED / NOT_PERFORMED
 PR_READY_OR_MERGE = NOT_AUTHORIZED
 PHASE_1B_2 = NOT_AUTHORIZED
 ```
@@ -787,8 +833,8 @@ scoped implementation failure and does not convert them into verified claims.
 
 ```text
 PHASE_1B_1 =
-COMPLETE_IN_PR / NOT_MERGED / R4_BLOCKED_ASSIGNMENT_ALIAS /
-FIFTH_CORRECTION_LOCAL_GATE_PASS / R5_REVIEW_PENDING
+COMPLETE_IN_PR / NOT_MERGED / R5_BLOCKED_OBJECT_LITERAL /
+ARCHITECTURAL_CORRECTION_LOCAL_GATE_PASS / R6_REVIEW_PENDING
 
 PRODUCT_SLICE =
 VISIBLE IN REPOSITORY / REAL DESKTOP SMOKE NOT CLAIMED

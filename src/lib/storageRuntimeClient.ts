@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export const storageRuntimeCommand = "get_storage_runtime_status" as const;
+const storageRuntimeCommand = "get_storage_runtime_status" as const;
 
 export type StorageRuntimeState =
   | "initializing"

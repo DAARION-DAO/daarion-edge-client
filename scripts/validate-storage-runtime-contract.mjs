@@ -1,4 +1,10 @@
-import { readFileSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+} from "node:fs";
+import path from "node:path";
 import ts from "typescript";
 
 const paths = {
@@ -9,33 +15,128 @@ const paths = {
   rustTypes: "src-tauri/src/runtime_store/types.rs",
   rustRoot: "src-tauri/src/lib.rs",
   packageManifest: "package.json",
+  tsConfig: "tsconfig.json",
 };
 
-const sources = Object.fromEntries(
-  Object.entries(paths).map(([key, path]) => [key, readFileSync(path, "utf8")]),
-);
-sources.runtimeStore = readdirSync("src-tauri/src/runtime_store")
-  .filter((file) => file.endsWith(".rs"))
-  .map((file) => readFileSync(`src-tauri/src/runtime_store/${file}`, "utf8"))
-  .join("\n");
-
 const command = "get_storage_runtime_status";
+const commandConstant = "storageRuntimeCommand";
 const clientFunction = "getStorageRuntimeStatus";
 const cardComponent = "StorageRuntimeCard";
-const positiveFixtures = [];
-const negativeFixtures = [];
+const tauriCoreModule = "@tauri-apps/api/core";
+const frontendExtensions = new Set([".ts", ".tsx", ".js", ".jsx"]);
 
-function snakeCase(value) {
-  return value.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+const approvedTauriCoreImporters = new Set([
+  "src/App.tsx",
+  "src/components/EdgeActivation.tsx",
+  "src/components/GenesisWizard.tsx",
+  "src/components/LocalModelsPanel.tsx",
+  "src/components/MessagingPanel.tsx",
+  "src/components/PairingGate.tsx",
+  "src/lib/backendConfig.ts",
+  "src/lib/inferenceClient.ts",
+  "src/lib/storageRuntimeClient.ts",
+]);
+
+const approvedAdapterRuntimeExports = new Set([
+  "StorageRuntimeClientError",
+  "getStorageRuntimeStatus",
+]);
+
+const approvedAdapterTypeExports = new Set([
+  "DatabaseHealth",
+  "PersistenceState",
+  "StorageRuntimeErrorCode",
+  "StorageRuntimeState",
+  "StorageRuntimeStatus",
+]);
+
+const fixtureResults = {
+  primary: { positive: [], negative: [] },
+  defense: { positive: [], negative: [] },
+};
+
+function normalizeRepoPath(value) {
+  return value.replaceAll(path.sep, "/").replace(/^\.\//, "");
 }
 
-function sourceFile(name, source, jsx = false) {
+function listFrontendFiles(root) {
+  const files = [];
+  const walk = (directory) => {
+    for (const entry of readdirSync(directory).sort()) {
+      const absolute = path.join(directory, entry);
+      if (statSync(absolute).isDirectory()) {
+        walk(absolute);
+        continue;
+      }
+      if (frontendExtensions.has(path.extname(entry))) {
+        files.push(normalizeRepoPath(absolute));
+      }
+    }
+  };
+  walk(root);
+  return files;
+}
+
+function readFrontendSources() {
+  return new Map(
+    listFrontendFiles("src").map((file) => [file, readFileSync(file, "utf8")]),
+  );
+}
+
+function readSources() {
+  return {
+    frontend: readFrontendSources(),
+    rustCommand: readFileSync(paths.rustCommand, "utf8"),
+    rustTypes: readFileSync(paths.rustTypes, "utf8"),
+    rustRoot: readFileSync(paths.rustRoot, "utf8"),
+    runtimeStore: readdirSync("src-tauri/src/runtime_store")
+      .filter((file) => file.endsWith(".rs"))
+      .sort()
+      .map((file) =>
+        readFileSync(`src-tauri/src/runtime_store/${file}`, "utf8"),
+      )
+      .join("\n"),
+    packageManifest: readFileSync(paths.packageManifest, "utf8"),
+  };
+}
+
+const sources = readSources();
+
+function cloneCandidate(candidate = sources) {
+  return {
+    ...candidate,
+    frontend: new Map(candidate.frontend),
+  };
+}
+
+function appendFrontend(candidate, file, source) {
+  candidate.frontend.set(file, `${candidate.frontend.get(file) ?? ""}${source}`);
+}
+
+function replaceFrontend(candidate, file, search, replacement) {
+  const source = candidate.frontend.get(file);
+  if (source === undefined || !source.includes(search)) {
+    throw new Error(`fixture could not find expected source in ${file}`);
+  }
+  candidate.frontend.set(file, source.replace(search, replacement));
+}
+
+function sourceFile(fileName, source) {
+  const extension = path.extname(fileName);
+  const kind =
+    extension === ".tsx"
+      ? ts.ScriptKind.TSX
+      : extension === ".jsx"
+        ? ts.ScriptKind.JSX
+        : extension === ".js"
+          ? ts.ScriptKind.JS
+          : ts.ScriptKind.TS;
   return ts.createSourceFile(
-    name,
+    fileName,
     source,
     ts.ScriptTarget.Latest,
     true,
-    jsx ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+    kind,
   );
 }
 
@@ -64,361 +165,595 @@ function unwrapExpression(expression) {
   return current;
 }
 
-function importBindings(file, moduleName) {
-  const bindings = new Map();
-  for (const declaration of file.statements.filter(ts.isImportDeclaration)) {
-    if (!ts.isStringLiteral(declaration.moduleSpecifier)) continue;
-    if (declaration.moduleSpecifier.text !== moduleName) continue;
-    const named = declaration.importClause?.namedBindings;
-    if (!named || !ts.isNamedImports(named)) continue;
-    for (const element of named.elements) {
-      bindings.set(element.propertyName?.text ?? element.name.text, element.name.text);
-    }
-  }
-  return bindings;
+function hasExportModifier(node) {
+  return Boolean(
+    node.modifiers?.some(
+      (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+    ),
+  );
 }
 
-function typedSource(file) {
-  const fileName = `/storage-contract/${file.fileName}`;
-  const compilerOptions = {
-    target: ts.ScriptTarget.Latest,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-    jsx: ts.JsxEmit.ReactJSX,
-    strict: true,
-    noLib: true,
-    noResolve: true,
-  };
-  let programSource = null;
-  const host = {
-    fileExists: (requested) => requested === fileName,
-    readFile: (requested) => (requested === fileName ? file.text : undefined),
-    getSourceFile: (requested, languageVersion) => {
-      if (requested !== fileName) return undefined;
-      programSource ??= ts.createSourceFile(
-        fileName,
-        file.text,
-        languageVersion,
-        true,
-        file.scriptKind,
+function hasDefaultModifier(node) {
+  return Boolean(
+    node.modifiers?.some(
+      (modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword,
+    ),
+  );
+}
+
+function namedBindingName(name) {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name)) return name.text;
+  return name.getText();
+}
+
+function readTsConfigAliases() {
+  const read = ts.readConfigFile(paths.tsConfig, ts.sys.readFile);
+  if (read.error) {
+    return { baseUrl: ".", aliases: [], error: "tsconfig.json could not be parsed" };
+  }
+  const options = read.config?.compilerOptions ?? {};
+  const baseUrl = normalizeRepoPath(options.baseUrl ?? ".");
+  const aliases = [];
+  for (const [pattern, targets] of Object.entries(options.paths ?? {})) {
+    if (!Array.isArray(targets)) continue;
+    aliases.push({ pattern, targets });
+  }
+  return { baseUrl, aliases, error: null };
+}
+
+const tsConfigAliases = readTsConfigAliases();
+
+function aliasCandidates(specifier) {
+  const candidates = [];
+  for (const { pattern, targets } of tsConfigAliases.aliases) {
+    const starIndex = pattern.indexOf("*");
+    if (starIndex < 0) {
+      if (specifier !== pattern) continue;
+      for (const target of targets) {
+        candidates.push(path.posix.normalize(path.posix.join(tsConfigAliases.baseUrl, target)));
+      }
+      continue;
+    }
+    if (pattern.indexOf("*", starIndex + 1) >= 0) continue;
+    const prefix = pattern.slice(0, starIndex);
+    const suffix = pattern.slice(starIndex + 1);
+    if (!specifier.startsWith(prefix) || !specifier.endsWith(suffix)) continue;
+    const matched = specifier.slice(prefix.length, specifier.length - suffix.length);
+    for (const target of targets) {
+      const targetStar = target.indexOf("*");
+      candidates.push(
+        path.posix.normalize(
+          path.posix.join(
+            tsConfigAliases.baseUrl,
+            targetStar < 0
+              ? target
+              : `${target.slice(0, targetStar)}${matched}${target.slice(targetStar + 1)}`,
+          ),
+        ),
       );
-      return programSource;
-    },
-    getDefaultLibFileName: () => "/storage-contract/lib.d.ts",
-    writeFile: () => {},
-    getCurrentDirectory: () => "/storage-contract",
-    getDirectories: () => [],
-    getCanonicalFileName: (name) => name,
-    useCaseSensitiveFileNames: () => true,
-    getNewLine: () => "\n",
-  };
-  const program = ts.createProgram({
-    rootNames: [fileName],
-    options: compilerOptions,
-    host,
-  });
-  return {
-    file: program.getSourceFile(fileName),
-    checker: program.getTypeChecker(),
-  };
-}
-
-function symbolAtReference(expression, checker) {
-  const current = unwrapExpression(expression);
-  if (ts.isPropertyAccessExpression(current)) {
-    return checker.getSymbolAtLocation(current.name) ?? checker.getSymbolAtLocation(current);
-  }
-  if (ts.isElementAccessExpression(current)) {
-    const direct = checker.getSymbolAtLocation(current);
-    if (direct) return direct;
-    const property =
-      current.argumentExpression && unwrapExpression(current.argumentExpression);
-    if (
-      property &&
-      (ts.isStringLiteral(property) || ts.isNoSubstitutionTemplateLiteral(property))
-    ) {
-      return checker
-        .getTypeAtLocation(current.expression)
-        .getProperty(property.text);
     }
   }
-  return checker.getSymbolAtLocation(current);
+  return candidates;
 }
 
-function hasSymbol(symbols, expression, checker) {
-  const symbol = symbolAtReference(expression, checker);
-  return symbol !== undefined && symbols.has(symbol);
-}
-
-function tauriCoreInvokeImports(file, checker) {
-  const named = new Set();
-  const namespaces = new Set();
-  for (const declaration of file.statements.filter(ts.isImportDeclaration)) {
-    if (!ts.isStringLiteral(declaration.moduleSpecifier)) continue;
-    if (declaration.moduleSpecifier.text !== "@tauri-apps/api/core") continue;
-    const bindings = declaration.importClause?.namedBindings;
-    if (!bindings) continue;
-    if (ts.isNamespaceImport(bindings)) {
-      const symbol = checker.getSymbolAtLocation(bindings.name);
-      if (symbol) namespaces.add(symbol);
-      continue;
+function moduleFileCandidates(base) {
+  const extension = path.posix.extname(base);
+  const withoutRuntimeExtension = [".js", ".jsx", ".mjs", ".cjs"].includes(extension)
+    ? base.slice(0, -extension.length)
+    : base;
+  const candidates = [base, withoutRuntimeExtension];
+  for (const value of [...candidates]) {
+    for (const suffix of [".ts", ".tsx", ".js", ".jsx"]) {
+      candidates.push(`${value}${suffix}`);
     }
-    for (const element of bindings.elements) {
-      if ((element.propertyName?.text ?? element.name.text) === "invoke") {
-        const symbol = checker.getSymbolAtLocation(element.name);
-        if (symbol) named.add(symbol);
-      }
+    for (const suffix of [
+      "/index.ts",
+      "/index.tsx",
+      "/index.js",
+      "/index.jsx",
+    ]) {
+      candidates.push(`${value}${suffix}`);
     }
   }
-  return { named, namespaces };
+  return [...new Set(candidates.map(normalizeRepoPath))];
 }
 
-function isTauriCoreDynamicImport(expression) {
-  const current = unwrapExpression(expression);
-  return (
-    ts.isCallExpression(current) &&
-    current.expression.kind === ts.SyntaxKind.ImportKeyword &&
-    current.arguments.length === 1 &&
-    ts.isStringLiteral(current.arguments[0]) &&
-    current.arguments[0].text === "@tauri-apps/api/core"
-  );
-}
-
-function flowExpressions(expression) {
-  const current = unwrapExpression(expression);
-  if (ts.isConditionalExpression(current)) {
-    return [current.whenTrue, current.whenFalse];
-  }
-  if (ts.isBinaryExpression(current)) {
-    const flowOperators = new Set([
-      ts.SyntaxKind.EqualsToken,
-      ts.SyntaxKind.CommaToken,
-      ts.SyntaxKind.BarBarToken,
-      ts.SyntaxKind.AmpersandAmpersandToken,
-      ts.SyntaxKind.QuestionQuestionToken,
-    ]);
-    if (flowOperators.has(current.operatorToken.kind)) {
-      return [current.left, current.right];
+function resolveLocalModule(importer, specifier, frontend) {
+  const bases = [];
+  let localIntent = false;
+  if (specifier.startsWith(".")) {
+    localIntent = true;
+    bases.push(path.posix.normalize(path.posix.join(path.posix.dirname(importer), specifier)));
+  } else {
+    const aliases = aliasCandidates(specifier);
+    if (aliases.length > 0) {
+      localIntent = true;
+      bases.push(...aliases);
     }
   }
-  return [];
-}
 
-function isTauriCoreNamespaceReference(expression, imports, checker) {
-  const current = unwrapExpression(expression);
-  if (hasSymbol(imports.namespaces, current, checker)) return true;
-  if (isTauriCoreDynamicImport(current)) return true;
-  return flowExpressions(current).some((part) =>
-    isTauriCoreNamespaceReference(part, imports, checker),
-  );
-}
-
-function isTauriInvokeReference(expression, imports, checker) {
-  const current = unwrapExpression(expression);
-  if (hasSymbol(imports.named, current, checker)) return true;
-  if (ts.isPropertyAccessExpression(current)) {
-    const owner = unwrapExpression(current.expression);
-    if (
-      isTauriCoreNamespaceReference(owner, imports, checker) &&
-      current.name.text === "invoke"
-    ) {
-      return true;
+  for (const base of bases) {
+    for (const candidate of moduleFileCandidates(base)) {
+      if (frontend.has(candidate)) return { target: candidate, unresolved: false };
     }
-    return isTauriInvokeReference(current.expression, imports, checker);
-  }
-  if (ts.isElementAccessExpression(current)) {
-    const owner = unwrapExpression(current.expression);
-    if (isTauriCoreNamespaceReference(owner, imports, checker)) {
-      const property =
-        current.argumentExpression && unwrapExpression(current.argumentExpression);
-      if (
-        property &&
-        (ts.isStringLiteral(property) || ts.isNoSubstitutionTemplateLiteral(property))
-      ) {
-        return property.text === "invoke";
-      }
-      // A dynamic namespace member could resolve to the privileged invoke binding.
-      return true;
+    if (existsSync(base) && !frontendExtensions.has(path.extname(base))) {
+      return { target: null, unresolved: false };
     }
-    return isTauriInvokeReference(current.expression, imports, checker);
   }
-  return flowExpressions(current).some((part) =>
-    isTauriInvokeReference(part, imports, checker),
-  );
+
+  return { target: null, unresolved: localIntent };
 }
 
-function targetSymbols(target, checker) {
-  const current = unwrapExpression(target);
+function staticStringArgument(call) {
+  if (call.arguments.length !== 1) return null;
+  const argument = unwrapExpression(call.arguments[0]);
   if (
-    ts.isIdentifier(current) ||
-    ts.isPropertyAccessExpression(current) ||
-    ts.isElementAccessExpression(current)
+    ts.isStringLiteral(argument) ||
+    ts.isNoSubstitutionTemplateLiteral(argument)
   ) {
-    const symbol = symbolAtReference(current, checker);
-    return symbol ? [symbol] : [];
+    return argument.text;
   }
-  return [];
+  return null;
 }
 
-function destructuredInvokeTargets(target, checker) {
-  const current = unwrapExpression(target);
-  if (!ts.isObjectLiteralExpression(current)) return [];
-  const targets = [];
-  for (const property of current.properties) {
-    if (ts.isShorthandPropertyAssignment(property)) {
-      if (property.name.text === "invoke") {
-        targets.push(...targetSymbols(property.name, checker));
+function importIsTypeOnly(declaration, element = null) {
+  return Boolean(
+    declaration.importClause?.isTypeOnly ||
+      (element && ts.isImportSpecifier(element) && element.isTypeOnly),
+  );
+}
+
+function isExecutableCommandLiteral(node) {
+  if (
+    !(
+      ts.isStringLiteral(node) ||
+      ts.isNoSubstitutionTemplateLiteral(node)
+    ) ||
+    node.text !== command
+  ) {
+    return false;
+  }
+  if (ts.isLiteralTypeNode(node.parent)) return false;
+  if (
+    (ts.isImportDeclaration(node.parent) ||
+      ts.isExportDeclaration(node.parent)) &&
+    node.parent.moduleSpecifier === node
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function rawExpression(expression, rawLocals) {
+  const current = unwrapExpression(expression);
+  if (ts.isIdentifier(current)) return rawLocals.has(current.text);
+  if (ts.isPropertyAccessExpression(current)) {
+    const owner = unwrapExpression(current.expression);
+    return ts.isIdentifier(owner) && rawLocals.has(owner.text);
+  }
+  if (ts.isElementAccessExpression(current)) {
+    const owner = unwrapExpression(current.expression);
+    return ts.isIdentifier(owner) && rawLocals.has(owner.text);
+  }
+  if (ts.isConditionalExpression(current)) {
+    return (
+      rawExpression(current.whenTrue, rawLocals) ||
+      rawExpression(current.whenFalse, rawLocals)
+    );
+  }
+  return false;
+}
+
+function collectBindingIdentifiers(name) {
+  if (ts.isIdentifier(name)) return [name.text];
+  const names = [];
+  for (const element of name.elements) {
+    if (ts.isOmittedExpression(element)) continue;
+    names.push(...collectBindingIdentifiers(element.name));
+  }
+  return names;
+}
+
+function parseFrontendModule(fileName, source, frontend) {
+  const file = sourceFile(fileName, source);
+  const meta = {
+    fileName,
+    file,
+    directTauriImport: false,
+    directTauriImportShapeValid: true,
+    dynamicTauriImports: [],
+    requireTauriImports: [],
+    localImports: [],
+    localExports: [],
+    localReexports: [],
+    directRawLocals: new Set(),
+    rawLocals: new Set(),
+    rawExports: new Set(),
+    rawExportAll: false,
+    exportedInitializers: [],
+    exportedFunctions: [],
+    runtimeExports: new Set(),
+    typeExports: new Set(),
+    commandLiterals: visit(file, isExecutableCommandLiteral),
+    resolutionErrors: [],
+    directTauriReexports: [],
+  };
+
+  for (const statement of file.statements) {
+    if (ts.isImportDeclaration(statement)) {
+      const specifier = ts.isStringLiteral(statement.moduleSpecifier)
+        ? statement.moduleSpecifier.text
+        : null;
+      if (!specifier) continue;
+      if (specifier === tauriCoreModule) {
+        if (statement.importClause?.isTypeOnly) continue;
+        meta.directTauriImport = true;
+        const bindings = statement.importClause?.namedBindings;
+        if (
+          !bindings ||
+          !ts.isNamedImports(bindings) ||
+          statement.importClause?.name ||
+          bindings.elements.length !== 1 ||
+          importIsTypeOnly(statement, bindings.elements[0]) ||
+          (bindings.elements[0].propertyName?.text ??
+            bindings.elements[0].name.text) !== "invoke"
+        ) {
+          meta.directTauriImportShapeValid = false;
+        }
+        if (bindings && ts.isNamedImports(bindings)) {
+          for (const element of bindings.elements) {
+            if (
+              !importIsTypeOnly(statement, element) &&
+              (element.propertyName?.text ?? element.name.text) === "invoke"
+            ) {
+              meta.directRawLocals.add(element.name.text);
+            }
+          }
+        } else if (bindings && ts.isNamespaceImport(bindings)) {
+          meta.directRawLocals.add(bindings.name.text);
+        }
+        if (statement.importClause?.name) {
+          meta.directRawLocals.add(statement.importClause.name.text);
+        }
+        continue;
+      }
+
+      const resolved = resolveLocalModule(fileName, specifier, frontend);
+      if (resolved.unresolved) {
+        meta.resolutionErrors.push(specifier);
+        continue;
+      }
+      if (!resolved.target || !statement.importClause) continue;
+      if (statement.importClause.name) {
+        meta.localImports.push({
+          target: resolved.target,
+          importedName: "default",
+          localName: statement.importClause.name.text,
+          namespace: false,
+        });
+      }
+      const bindings = statement.importClause.namedBindings;
+      if (bindings && ts.isNamespaceImport(bindings)) {
+        meta.localImports.push({
+          target: resolved.target,
+          importedName: "*",
+          localName: bindings.name.text,
+          namespace: true,
+        });
+      }
+      if (bindings && ts.isNamedImports(bindings)) {
+        for (const element of bindings.elements) {
+          if (importIsTypeOnly(statement, element)) continue;
+          meta.localImports.push({
+            target: resolved.target,
+            importedName: element.propertyName?.text ?? element.name.text,
+            localName: element.name.text,
+            namespace: false,
+          });
+        }
       }
       continue;
     }
-    if (!ts.isPropertyAssignment(property)) continue;
-    const name = property.name;
-    const couldBeInvoke =
-      (ts.isIdentifier(name) && name.text === "invoke") ||
-      (ts.isStringLiteral(name) && name.text === "invoke") ||
-      ts.isComputedPropertyName(name);
-    if (couldBeInvoke) {
-      targets.push(...targetSymbols(property.initializer, checker));
-    }
-  }
-  return targets;
-}
 
-function resolveTauriInvokeAliases(file, checker, imported) {
-  const resolved = {
-    named: new Set(imported.named),
-    namespaces: new Set(imported.namespaces),
-  };
-  const declarations = visit(file, ts.isVariableDeclaration);
-  const assignments = visit(
-    file,
-    (node) =>
-      ts.isBinaryExpression(node) &&
-      node.operatorToken.kind === ts.SyntaxKind.EqualsToken,
-  );
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const declaration of declarations) {
-      const initializer = declaration.initializer && unwrapExpression(declaration.initializer);
-      if (!initializer) continue;
-      if (ts.isIdentifier(declaration.name)) {
-        const targets = targetSymbols(declaration.name, checker);
-        if (
-          isTauriCoreNamespaceReference(initializer, resolved, checker)
-        ) {
-          for (const target of targets) {
-            if (resolved.namespaces.has(target)) continue;
-            resolved.namespaces.add(target);
-            changed = true;
-          }
-          continue;
-        }
-        if (
-          isTauriInvokeReference(initializer, resolved, checker)
-        ) {
-          for (const target of targets) {
-            if (resolved.named.has(target)) continue;
-            resolved.named.add(target);
-            changed = true;
+    if (ts.isExportDeclaration(statement)) {
+      const specifier =
+        statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)
+          ? statement.moduleSpecifier.text
+          : null;
+      if (!specifier) {
+        if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+          for (const element of statement.exportClause.elements) {
+            const exportedName = element.name.text;
+            const localName = element.propertyName?.text ?? element.name.text;
+            if (statement.isTypeOnly || element.isTypeOnly) {
+              meta.typeExports.add(exportedName);
+            } else {
+              meta.runtimeExports.add(exportedName);
+              meta.localExports.push({ localName, exportedName });
+            }
           }
         }
         continue;
       }
-      if (
-        ts.isObjectBindingPattern(declaration.name) &&
-        isTauriCoreNamespaceReference(initializer, resolved, checker)
-      ) {
-        for (const element of declaration.name.elements) {
-          if (!ts.isIdentifier(element.name)) continue;
-          const property = element.propertyName ?? element.name;
-          const couldBeInvoke =
-            (ts.isIdentifier(property) && property.text === "invoke") ||
-            (ts.isStringLiteral(property) && property.text === "invoke") ||
-            ts.isComputedPropertyName(property);
-          const symbol = checker.getSymbolAtLocation(element.name);
-          if (couldBeInvoke && symbol && !resolved.named.has(symbol)) {
-            resolved.named.add(symbol);
-            changed = true;
+
+      if (specifier === tauriCoreModule) {
+        meta.directTauriReexports.push(statement);
+        if (!statement.exportClause) {
+          meta.rawExportAll = true;
+        } else if (ts.isNamespaceExport(statement.exportClause)) {
+          meta.rawExports.add(statement.exportClause.name.text);
+        } else {
+          for (const element of statement.exportClause.elements) {
+            if (!statement.isTypeOnly && !element.isTypeOnly) {
+              meta.rawExports.add(element.name.text);
+            }
+          }
+        }
+        continue;
+      }
+
+      const resolved = resolveLocalModule(fileName, specifier, frontend);
+      if (resolved.unresolved) {
+        meta.resolutionErrors.push(specifier);
+        continue;
+      }
+      if (!resolved.target) continue;
+      if (!statement.exportClause) {
+        meta.localReexports.push({
+          target: resolved.target,
+          importedName: "*",
+          exportedName: "*",
+          wildcard: true,
+        });
+      } else if (ts.isNamespaceExport(statement.exportClause)) {
+        meta.localReexports.push({
+          target: resolved.target,
+          importedName: "*",
+          exportedName: statement.exportClause.name.text,
+          wildcard: false,
+        });
+      } else {
+        for (const element of statement.exportClause.elements) {
+          if (statement.isTypeOnly || element.isTypeOnly) {
+            meta.typeExports.add(element.name.text);
+            continue;
+          }
+          meta.runtimeExports.add(element.name.text);
+          meta.localReexports.push({
+            target: resolved.target,
+            importedName: element.propertyName?.text ?? element.name.text,
+            exportedName: element.name.text,
+            wildcard: false,
+          });
+        }
+      }
+      continue;
+    }
+
+    if (ts.isExportAssignment(statement)) {
+      meta.runtimeExports.add("default");
+      meta.exportedInitializers.push({
+        exportedName: "default",
+        initializer: statement.expression,
+      });
+      continue;
+    }
+
+    if (ts.isVariableStatement(statement) && hasExportModifier(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        for (const name of collectBindingIdentifiers(declaration.name)) {
+          meta.runtimeExports.add(name);
+          if (declaration.initializer) {
+            meta.exportedInitializers.push({
+              exportedName: name,
+              initializer: declaration.initializer,
+            });
           }
         }
       }
+      continue;
     }
-    for (const assignment of assignments) {
-      const targets = targetSymbols(assignment.left, checker);
-      const assignedNamespace = isTauriCoreNamespaceReference(
-        assignment.right,
-        resolved,
-        checker,
-      );
-      if (assignedNamespace) {
-        for (const target of targets) {
-          if (resolved.namespaces.has(target)) continue;
-          resolved.namespaces.add(target);
-          changed = true;
-        }
-        for (const target of destructuredInvokeTargets(assignment.left, checker)) {
-          if (resolved.named.has(target)) continue;
-          resolved.named.add(target);
+
+    if (
+      (ts.isFunctionDeclaration(statement) ||
+        ts.isClassDeclaration(statement)) &&
+      hasExportModifier(statement)
+    ) {
+      const exportedName = hasDefaultModifier(statement)
+        ? "default"
+        : statement.name?.text;
+      if (exportedName) meta.runtimeExports.add(exportedName);
+      if (ts.isFunctionDeclaration(statement) && exportedName) {
+        meta.exportedFunctions.push({ exportedName, declaration: statement });
+      }
+      continue;
+    }
+
+    if (
+      (ts.isInterfaceDeclaration(statement) ||
+        ts.isTypeAliasDeclaration(statement)) &&
+      hasExportModifier(statement)
+    ) {
+      meta.typeExports.add(statement.name.text);
+    }
+  }
+
+  for (const call of visit(file, ts.isCallExpression)) {
+    const specifier = staticStringArgument(call);
+    if (specifier !== tauriCoreModule) continue;
+    if (call.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      meta.dynamicTauriImports.push(call);
+    } else if (
+      ts.isIdentifier(call.expression) &&
+      call.expression.text === "require"
+    ) {
+      meta.requireTauriImports.push(call);
+    }
+  }
+
+  meta.rawLocals = new Set(meta.directRawLocals);
+  return meta;
+}
+
+function propagateRawExports(modules) {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const meta of modules.values()) {
+      for (const imported of meta.localImports) {
+        const target = modules.get(imported.target);
+        if (!target) continue;
+        const isRaw = imported.namespace
+          ? target.rawExportAll || target.rawExports.size > 0
+          : target.rawExportAll || target.rawExports.has(imported.importedName);
+        if (isRaw && !meta.rawLocals.has(imported.localName)) {
+          meta.rawLocals.add(imported.localName);
           changed = true;
         }
       }
-      if (isTauriInvokeReference(assignment.right, resolved, checker)) {
-        for (const target of targets) {
-          if (resolved.named.has(target)) continue;
-          resolved.named.add(target);
+
+      for (const exported of meta.localExports) {
+        if (
+          meta.rawLocals.has(exported.localName) &&
+          !meta.rawExports.has(exported.exportedName)
+        ) {
+          meta.rawExports.add(exported.exportedName);
+          changed = true;
+        }
+      }
+
+      for (const exported of meta.localReexports) {
+        const target = modules.get(exported.target);
+        if (!target) continue;
+        if (exported.wildcard) {
+          if (target.rawExportAll && !meta.rawExportAll) {
+            meta.rawExportAll = true;
+            changed = true;
+          }
+          for (const rawName of target.rawExports) {
+            if (!meta.rawExports.has(rawName)) {
+              meta.rawExports.add(rawName);
+              changed = true;
+            }
+          }
+          continue;
+        }
+        const isRaw =
+          target.rawExportAll ||
+          (exported.importedName === "*"
+            ? target.rawExports.size > 0
+            : target.rawExports.has(exported.importedName));
+        if (isRaw && !meta.rawExports.has(exported.exportedName)) {
+          meta.rawExports.add(exported.exportedName);
+          changed = true;
+        }
+      }
+
+      for (const exported of meta.exportedInitializers) {
+        if (
+          rawExpression(exported.initializer, meta.rawLocals) &&
+          !meta.rawExports.has(exported.exportedName)
+        ) {
+          meta.rawExports.add(exported.exportedName);
+          changed = true;
+        }
+      }
+
+      for (const exported of meta.exportedFunctions) {
+        const returnsRaw = visit(
+          exported.declaration,
+          (node) =>
+            ts.isReturnStatement(node) &&
+            node.expression !== undefined &&
+            rawExpression(node.expression, meta.rawLocals),
+        ).length;
+        if (returnsRaw > 0 && !meta.rawExports.has(exported.exportedName)) {
+          meta.rawExports.add(exported.exportedName);
           changed = true;
         }
       }
     }
   }
-  return resolved;
 }
 
-function tauriInvokeCalls(file) {
-  const typed = typedSource(file);
-  const imports = resolveTauriInvokeAliases(
-    typed.file,
-    typed.checker,
-    tauriCoreInvokeImports(typed.file, typed.checker),
+function analyzeFrontend(frontend) {
+  const errors = [];
+  const modules = new Map(
+    [...frontend.entries()].map(([fileName, source]) => [
+      fileName,
+      parseFrontendModule(fileName, source, frontend),
+    ]),
   );
-  const calls = visit(
-    typed.file,
-    (node) =>
-      ts.isCallExpression(node) &&
-      isTauriInvokeReference(node.expression, imports, typed.checker),
+  propagateRawExports(modules);
+
+  const actualImporters = new Set(
+    [...modules.values()]
+      .filter((meta) => meta.directTauriImport)
+      .map((meta) => meta.fileName),
   );
-  return { imports, calls };
-}
-
-function rawStorageInvokeCalls(file) {
-  return tauriInvokeCalls(file).calls.filter((call) => {
-    const commandArgument = call.arguments[0] && unwrapExpression(call.arguments[0]);
-    if (
-      commandArgument &&
-      (ts.isStringLiteral(commandArgument) ||
-        ts.isNoSubstitutionTemplateLiteral(commandArgument))
-    ) {
-      return commandArgument.text === command;
-    }
-    // A non-static command could resolve to the privileged storage command.
-    return true;
-  });
-}
-
-function containsNode(parent, child) {
-  return child.getStart() >= parent.getStart() && child.getEnd() <= parent.getEnd();
-}
-
-function exportedVariableInitializer(file, name) {
-  for (const statement of file.statements.filter(ts.isVariableStatement)) {
-    const exported = statement.modifiers?.some(
-      (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+  if (!sameMembers([...actualImporters], [...approvedTauriCoreImporters])) {
+    errors.push(
+      "PRIMARY_MODULE_BOUNDARY_GATE: Tauri core importer baseline mismatch",
     );
-    if (!exported) continue;
+  }
+
+  for (const meta of modules.values()) {
+    if (meta.directTauriImport && !meta.directTauriImportShapeValid) {
+      errors.push(
+        `PRIMARY_MODULE_BOUNDARY_GATE: unsupported Tauri core import shape in ${meta.fileName}`,
+      );
+    }
+    if (meta.dynamicTauriImports.length > 0) {
+      errors.push(
+        `PRIMARY_MODULE_BOUNDARY_GATE: dynamic Tauri core import is forbidden in ${meta.fileName}`,
+      );
+    }
+    if (meta.requireTauriImports.length > 0) {
+      errors.push(
+        `PRIMARY_MODULE_BOUNDARY_GATE: require of Tauri core is forbidden in ${meta.fileName}`,
+      );
+    }
+    if (meta.directTauriReexports.length > 0) {
+      errors.push(
+        `PRIMARY_MODULE_BOUNDARY_GATE: direct Tauri binding re-export is forbidden in ${meta.fileName}`,
+      );
+    }
+    if (meta.rawExportAll || meta.rawExports.size > 0) {
+      errors.push(
+        `PRIMARY_MODULE_BOUNDARY_GATE: Tauri binding re-export is forbidden in ${meta.fileName}`,
+      );
+    }
+    for (const specifier of meta.resolutionErrors) {
+      errors.push(
+        `PRIMARY_MODULE_BOUNDARY_GATE: local import/re-export could not be resolved from ${meta.fileName}: ${specifier}`,
+      );
+    }
+  }
+
+  const commandOwners = [...modules.values()]
+    .filter((meta) => meta.commandLiterals.length > 0)
+    .map((meta) => ({
+      fileName: meta.fileName,
+      count: meta.commandLiterals.length,
+    }));
+  if (
+    commandOwners.length !== 1 ||
+    commandOwners[0].fileName !== paths.client ||
+    commandOwners[0].count !== 1
+  ) {
+    errors.push(
+      "PRIMARY_MODULE_BOUNDARY_GATE: executable storage command must have exactly one approved frontend owner",
+    );
+  }
+
+  return { errors, modules, actualImporters, commandOwners };
+}
+
+function variableDeclaration(file, name) {
+  for (const statement of file.statements.filter(ts.isVariableStatement)) {
     for (const declaration of statement.declarationList.declarations) {
       if (ts.isIdentifier(declaration.name) && declaration.name.text === name) {
-        return declaration.initializer ?? null;
+        return { statement, declaration };
       }
     }
   }
@@ -431,16 +766,46 @@ function exportedFunction(file, name) {
       (statement) =>
         ts.isFunctionDeclaration(statement) &&
         statement.name?.text === name &&
-        statement.modifiers?.some(
-          (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
-        ),
+        hasExportModifier(statement),
     ) ?? null
   );
 }
 
+function directIdentifierCalls(root, name) {
+  return visit(
+    root,
+    (node) =>
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(unwrapExpression(node.expression)) &&
+      unwrapExpression(node.expression).text === name,
+  );
+}
+
+function importBindings(file, moduleName) {
+  const bindings = new Map();
+  for (const declaration of file.statements.filter(ts.isImportDeclaration)) {
+    if (!ts.isStringLiteral(declaration.moduleSpecifier)) continue;
+    if (declaration.moduleSpecifier.text !== moduleName) continue;
+    const named = declaration.importClause?.namedBindings;
+    if (!named || !ts.isNamedImports(named)) continue;
+    for (const element of named.elements) {
+      bindings.set(
+        element.propertyName?.text ?? element.name.text,
+        element.name.text,
+      );
+    }
+  }
+  return bindings;
+}
+
+function containsNode(parent, child) {
+  return child.getStart() >= parent.getStart() && child.getEnd() <= parent.getEnd();
+}
+
 function tsUnion(file, name) {
   const declaration = file.statements.find(
-    (statement) => ts.isTypeAliasDeclaration(statement) && statement.name.text === name,
+    (statement) =>
+      ts.isTypeAliasDeclaration(statement) && statement.name.text === name,
   );
   if (!declaration || !ts.isTypeAliasDeclaration(declaration)) return null;
   const members = ts.isUnionTypeNode(declaration.type)
@@ -448,7 +813,12 @@ function tsUnion(file, name) {
     : [declaration.type];
   const values = [];
   for (const member of members) {
-    if (!ts.isLiteralTypeNode(member) || !ts.isStringLiteral(member.literal)) return null;
+    if (
+      !ts.isLiteralTypeNode(member) ||
+      !ts.isStringLiteral(member.literal)
+    ) {
+      return null;
+    }
     values.push(member.literal.text);
   }
   return values;
@@ -456,7 +826,8 @@ function tsUnion(file, name) {
 
 function tsInterfaceFields(file, name) {
   const declaration = file.statements.find(
-    (statement) => ts.isInterfaceDeclaration(statement) && statement.name.text === name,
+    (statement) =>
+      ts.isInterfaceDeclaration(statement) && statement.name.text === name,
   );
   if (!declaration || !ts.isInterfaceDeclaration(declaration)) return null;
   return declaration.members
@@ -466,17 +837,16 @@ function tsInterfaceFields(file, name) {
 }
 
 function objectKeys(file, name) {
-  for (const statement of file.statements.filter(ts.isVariableStatement)) {
-    for (const declaration of statement.declarationList.declarations) {
-      if (!ts.isIdentifier(declaration.name) || declaration.name.text !== name) continue;
-      const initializer = declaration.initializer && unwrapExpression(declaration.initializer);
-      if (!initializer || !ts.isObjectLiteralExpression(initializer)) return null;
-      return initializer.properties
-        .filter(ts.isPropertyAssignment)
-        .map((property) => property.name.getText(file).replace(/^['"]|['"]$/g, ""));
-    }
-  }
-  return null;
+  const found = variableDeclaration(file, name);
+  const initializer =
+    found?.declaration.initializer &&
+    unwrapExpression(found.declaration.initializer);
+  if (!initializer || !ts.isObjectLiteralExpression(initializer)) return null;
+  return initializer.properties
+    .filter(ts.isPropertyAssignment)
+    .map((property) =>
+      property.name.getText(file).replace(/^['"]|['"]$/g, ""),
+    );
 }
 
 function sameMembers(left, right) {
@@ -501,9 +871,6 @@ function rawStringEnd(source, index) {
   return end < 0 ? source.length : end + terminator.length;
 }
 
-// This lexer deliberately returns only code tokens. Comments and every Rust
-// string/byte/character literal are discarded, so authority cannot be proved by
-// text that the Rust parser would not execute. Nested block comments are handled.
 function rustTokens(source) {
   const tokens = [];
   let index = 0;
@@ -573,16 +940,16 @@ function rustTokens(source) {
       index = end;
       continue;
     }
-    let compoundMatched = false;
+    let matched = false;
     for (const compound of ["::", "->", "=>"]) {
       if (source.startsWith(compound, index)) {
         tokens.push(compound);
         index += compound.length;
-        compoundMatched = true;
+        matched = true;
         break;
       }
     }
-    if (compoundMatched) continue;
+    if (matched) continue;
     tokens.push(current);
     index += 1;
   }
@@ -603,6 +970,10 @@ function matchingDelimiter(tokens, start, open, close) {
     }
   }
   return -1;
+}
+
+function snakeCase(value) {
+  return value.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
 }
 
 function rustEnum(tokens, name) {
@@ -682,7 +1053,9 @@ function tauriCommands(tokens) {
 function injectedParameter(parameter) {
   const colon = parameter.indexOf(":");
   if (colon < 0) return false;
-  const type = parameter.slice(colon + 1).filter((token) => token !== "&" && token !== "'");
+  const type = parameter
+    .slice(colon + 1)
+    .filter((token) => token !== "&" && token !== "'");
   return (
     sequenceAt(type, 0, ["tauri", "::", "AppHandle"]) ||
     sequenceAt(type, 0, ["tauri", "::", "State"])
@@ -713,45 +1086,92 @@ function validate(candidate) {
     if (!condition) errors.push(message);
   };
 
-  const client = sourceFile(paths.client, candidate.client);
-  const card = sourceFile(paths.card, candidate.card, true);
-  const app = sourceFile(paths.app, candidate.app, true);
-  const clientInvoke = tauriInvokeCalls(client);
-  const commandInitializer = exportedVariableInitializer(client, "storageRuntimeCommand");
-  const literal = commandInitializer && unwrapExpression(commandInitializer);
   require(
-    literal && ts.isStringLiteral(literal) && literal.text === command,
-    "typed client command constant must be the exact executable string literal",
+    tsConfigAliases.error === null,
+    "PRIMARY_MODULE_BOUNDARY_GATE: tsconfig aliases could not be loaded",
+  );
+
+  const analysis = analyzeFrontend(candidate.frontend);
+  for (const error of analysis.errors) {
+    checks += 1;
+    errors.push(error);
+  }
+
+  const clientSource = candidate.frontend.get(paths.client);
+  const cardSource = candidate.frontend.get(paths.card);
+  const appSource = candidate.frontend.get(paths.app);
+  require(clientSource !== undefined, "approved storage adapter is missing");
+  require(cardSource !== undefined, "Storage Runtime card is missing");
+  require(appSource !== undefined, "App composition source is missing");
+  if (!clientSource || !cardSource || !appSource) {
+    return { errors, checks, analysis };
+  }
+
+  const client = sourceFile(paths.client, clientSource);
+  const card = sourceFile(paths.card, cardSource);
+  const app = sourceFile(paths.app, appSource);
+  const clientMeta = analysis.modules.get(paths.client);
+  const cardMeta = analysis.modules.get(paths.card);
+
+  const constant = variableDeclaration(client, commandConstant);
+  const constantInitializer =
+    constant?.declaration.initializer &&
+    unwrapExpression(constant.declaration.initializer);
+  require(
+    constant !== null &&
+      !hasExportModifier(constant.statement) &&
+      (constant.statement.declarationList.flags & ts.NodeFlags.Const) !== 0 &&
+      constantInitializer &&
+      ts.isStringLiteral(constantInitializer) &&
+      constantInitializer.text === command,
+    "PRIMARY_MODULE_BOUNDARY_GATE: storage command constant must be private and exact",
+  );
+
+  require(
+    sameMembers(
+      [...(clientMeta?.runtimeExports ?? [])],
+      [...approvedAdapterRuntimeExports],
+    ),
+    "PRIMARY_MODULE_BOUNDARY_GATE: storage adapter runtime export surface changed",
+  );
+  require(
+    sameMembers(
+      [...(clientMeta?.typeExports ?? [])],
+      [...approvedAdapterTypeExports],
+    ),
+    "PRIMARY_MODULE_BOUNDARY_GATE: storage adapter type export surface changed",
   );
 
   const clientExport = exportedFunction(client, clientFunction);
   require(clientExport !== null, "typed storage client function must be exported");
   require(
     clientExport?.parameters.length === 0,
-    "typed storage client must accept no user path or SQL arguments",
+    "typed storage client must accept no frontend path or SQL arguments",
+  );
+  const directInvokeCalls = clientExport
+    ? directIdentifierCalls(clientExport, "invoke")
+    : [];
+  require(
+    directInvokeCalls.length === 1,
+    "SECONDARY_AST_DEFENSE_IN_DEPTH: typed client must contain exactly one direct invoke call",
   );
   require(
-    clientInvoke.imports.named.size + clientInvoke.imports.namespaces.size > 0,
-    "typed client must import the Tauri invoke binding",
+    directIdentifierCalls(client, "invoke").length === 1,
+    "SECONDARY_AST_DEFENSE_IN_DEPTH: imported invoke must be used only by the direct typed client call",
   );
-  require(
-    clientInvoke.calls.length === 1,
-    "typed client must have exactly one storage invoke binding",
-  );
-  require(
-    clientExport !== null &&
-      clientInvoke.calls.length === 1 &&
-      containsNode(clientExport, clientInvoke.calls[0]),
-    "storage invoke must remain inside the exported typed client",
-  );
-  if (clientInvoke.calls.length === 1 && ts.isCallExpression(clientInvoke.calls[0])) {
-    const argument = clientInvoke.calls[0].arguments[0];
+  if (directInvokeCalls.length === 1) {
+    const call = directInvokeCalls[0];
+    const argument = call.arguments[0] && unwrapExpression(call.arguments[0]);
     require(
-      clientInvoke.calls[0].arguments.length === 1 &&
+      call.arguments.length === 1 &&
         argument !== undefined &&
-        ((ts.isIdentifier(argument) && argument.text === "storageRuntimeCommand") ||
+        ((ts.isIdentifier(argument) && argument.text === commandConstant) ||
           (ts.isStringLiteral(argument) && argument.text === command)),
-      "typed client invoke must receive only the exact command constant or literal",
+      "SECONDARY_AST_DEFENSE_IN_DEPTH: typed invoke must use only the private exact command",
+    );
+    require(
+      clientExport !== null && containsNode(clientExport, call),
+      "SECONDARY_AST_DEFENSE_IN_DEPTH: storage invoke must remain inside the typed client",
     );
   }
 
@@ -759,65 +1179,55 @@ function validate(candidate) {
   const cardClientName = cardImports.get(clientFunction);
   require(
     cardClientName !== undefined,
-    "Dashboard card must import the typed storage client",
+    "PRIMARY_MODULE_BOUNDARY_GATE: Storage Runtime card must import the typed adapter",
   );
   require(
-    visit(
-      card,
-      (node) =>
-        ts.isCallExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        node.expression.text === cardClientName,
-    ).length >= 1,
-    "Dashboard card must call the typed storage client",
+    cardClientName !== undefined &&
+      directIdentifierCalls(card, cardClientName).length >= 1,
+    "SECONDARY_AST_DEFENSE_IN_DEPTH: Storage Runtime card must call the typed adapter",
   );
   require(
-    tauriInvokeCalls(card).calls.length === 0,
-    "Dashboard card must contain no raw invoke",
+    !cardMeta?.directTauriImport &&
+      cardMeta?.dynamicTauriImports.length === 0 &&
+      cardMeta?.requireTauriImports.length === 0 &&
+      cardMeta?.commandLiterals.length === 0,
+    "PRIMARY_MODULE_BOUNDARY_GATE: Storage Runtime card bypasses the typed adapter",
   );
 
   const appImports = importBindings(app, "./components/StorageRuntimeCard");
   const mountedName = appImports.get(cardComponent);
-  require(mountedName !== undefined, "Dashboard must import the storage runtime card");
   require(
-    visit(
-      app,
-      (node) =>
-        (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) &&
-        ts.isIdentifier(node.tagName) &&
-        node.tagName.text === mountedName,
-    ).length >= 1,
-    "existing Dashboard must structurally mount the storage runtime card",
+    mountedName !== undefined,
+    "Dashboard must import the Storage Runtime card",
   );
   require(
-    rawStorageInvokeCalls(app).length === 0,
-    "App must contain no raw storage invoke",
+    mountedName !== undefined &&
+      visit(
+        app,
+        (node) =>
+          (ts.isJsxSelfClosingElement(node) ||
+            ts.isJsxOpeningElement(node)) &&
+          ts.isIdentifier(node.tagName) &&
+          node.tagName.text === mountedName,
+      ).length >= 1,
+    "Dashboard must structurally mount the Storage Runtime card",
   );
 
   const rustCommandTokens = rustTokens(candidate.rustCommand);
   const rustTypeTokens = rustTokens(candidate.rustTypes);
   const rustRootTokens = rustTokens(candidate.rustRoot);
-  const runtimeTokens = rustTokens(`${candidate.runtimeStore}\n${candidate.rustCommand}`);
-  const lexicalProbe = rustTokens(`
-    // #[tauri::command] ${command}
-    /* outer /* #[tauri::command] ${command} */ still-commented */
-    const NORMAL: &str = "#[tauri::command] ${command}";
-    const RAW: &str = r###"#[tauri::command] ${command}"###;
-    const BYTES: &[u8] = b"#[tauri::command] ${command}";
-    const CHARACTER: char = 'g';
-  `);
-  require(
-    !lexicalProbe.includes(command) &&
-      !lexicalProbe.some((token, index) =>
-        sequenceAt(lexicalProbe, index, ["#", "[", "tauri", "::", "command", "]"]),
-      ),
-    "Rust lexer must exclude nested comments, strings, raw strings, byte strings, and characters",
+  const runtimeTokens = rustTokens(
+    `${candidate.runtimeStore}\n${candidate.rustCommand}`,
   );
   const commands = tauriCommands(rustCommandTokens);
   const exactCommands = commands.filter((item) => item.name === command);
-  require(exactCommands.length === 1, "Rust storage status command is missing or duplicated");
   require(
-    exactCommands.length === 1 && exactCommands[0].parameters.every(injectedParameter),
+    exactCommands.length === 1,
+    "Rust storage status command is missing or duplicated",
+  );
+  require(
+    exactCommands.length === 1 &&
+      exactCommands[0].parameters.every(injectedParameter),
     "Rust storage status command must have no frontend-deserialized arguments",
   );
   require(
@@ -873,16 +1283,22 @@ function validate(candidate) {
     );
   }
 
-  const cardStates = objectKeys(card, "stateLabels");
   require(
-    sameMembers(cardStates, tsUnion(client, "StorageRuntimeState")),
+    sameMembers(
+      objectKeys(card, "stateLabels"),
+      tsUnion(client, "StorageRuntimeState"),
+    ),
     "Dashboard state labels must cover the exact runtime states",
   );
   const cardText = visit(
     card,
     (node) => ts.isStringLiteral(node) || ts.isJsxText(node),
   ).map((node) => node.text);
-  for (const copy of ["Storage Runtime", "SQLite · Local device only", "No cloud sync"]) {
+  for (const copy of [
+    "Storage Runtime",
+    "SQLite · Local device only",
+    "No cloud sync",
+  ]) {
     require(
       cardText.some((text) => text.includes(copy)),
       `required local-only UI copy is missing: ${copy}`,
@@ -906,14 +1322,18 @@ function validate(candidate) {
   );
   require(
     runtimeCommands.every((item) =>
-      item.parameters.every(
-        (parameter) =>
+      item.parameters.every((parameter) => {
+        const colon = parameter.indexOf(":");
+        return (
           injectedParameter(parameter) ||
-          !parameter.slice(0, parameter.indexOf(":")).includes("path"),
-      ),
+          colon < 0 ||
+          !parameter.slice(0, colon).includes("path")
+        );
+      }),
     ),
     "runtime_store must expose no Tauri command with a path argument",
   );
+
   require(
     visit(client, (node) => node.kind === ts.SyntaxKind.AnyKeyword).length === 0 &&
       visit(card, (node) => node.kind === ts.SyntaxKind.AnyKeyword).length === 0,
@@ -923,523 +1343,290 @@ function validate(candidate) {
   try {
     packageManifest = JSON.parse(candidate.packageManifest);
   } catch {
-    // The structural package check below reports the failure.
+    // The structural assertion below reports the failure.
   }
   require(
-    typeof packageManifest?.scripts?.["test:storage-runtime-contract"] === "string",
+    typeof packageManifest?.scripts?.["test:storage-runtime-contract"] ===
+      "string",
     "required storage runtime contract package script is missing",
   );
-  return { errors, checks };
+
+  return { errors, checks, analysis };
 }
 
-function mutationMustFail(label, mutate, expectedFragment) {
-  const candidate = { ...sources };
+function fixtureMustPass(group, label, mutate = () => {}) {
+  const candidate = cloneCandidate();
   mutate(candidate);
-  const { errors } = validate(candidate);
-  const rejected = errors.some((error) => error.includes(expectedFragment));
-  negativeFixtures.push({ label, rejected });
-  if (!rejected) console.error(`FAIL: validator self-test did not reject ${label}`);
-}
-
-function fixtureMustPass(label, mutate) {
-  const candidate = { ...sources };
-  mutate(candidate);
-  const { errors } = validate(candidate);
-  const accepted = errors.length === 0;
-  positiveFixtures.push({ label, accepted });
+  const result = validate(candidate);
+  const accepted = result.errors.length === 0;
+  fixtureResults[group].positive.push({ label, accepted });
   if (!accepted) {
-    console.error(`FAIL: validator self-test rejected safe fixture ${label}`);
-    for (const error of errors) console.error(`FAIL: ${label}: ${error}`);
+    console.error(`FAIL: ${group} positive fixture rejected: ${label}`);
+    for (const error of result.errors) console.error(`FAIL: ${label}: ${error}`);
+  }
+}
+
+function mutationMustFail(group, label, mutate, expectedFragment) {
+  const candidate = cloneCandidate();
+  mutate(candidate);
+  const result = validate(candidate);
+  const rejected = result.errors.some((error) =>
+    error.includes(expectedFragment),
+  );
+  fixtureResults[group].negative.push({ label, rejected });
+  if (!rejected) {
+    console.error(`FAIL: ${group} negative fixture accepted: ${label}`);
+    for (const error of result.errors) console.error(`FAIL: ${label}: ${error}`);
   }
 }
 
 const positive = validate(sources);
 for (const error of positive.errors) console.error(`FAIL: ${error}`);
 
-fixtureMustPass("approved typed storage client", () => {});
-fixtureMustPass("unrelated ordinary function assignment", (candidate) => {
-  candidate.card += `
-function exerciseOrdinaryAssignment() {
-  const ordinaryFunction = () => undefined;
-  let assignedFunction: typeof ordinaryFunction;
-  assignedFunction = ordinaryFunction;
-  assignedFunction();
-}
-void exerciseOrdinaryAssignment;
-`;
+fixtureMustPass("primary", "exact current repository source");
+fixtureMustPass("primary", "audited legacy Tauri importer paths unchanged");
+fixtureMustPass("primary", "private storage command constant");
+fixtureMustPass("primary", "typed adapter call");
+fixtureMustPass("primary", "normal Storage Runtime card consumption");
+fixtureMustPass("primary", "unrelated local function named invoke", (candidate) => {
+  appendFrontend(
+    candidate,
+    paths.card,
+    "\nfunction invoke() { return undefined; }\nvoid invoke;\n",
+  );
 });
-fixtureMustPass("local non-Tauri function named invoke", (candidate) => {
-  candidate.card += `
-function invoke() { return undefined; }
-const localInvokeAlias = invoke;
-void localInvokeAlias();
-`;
+fixtureMustPass("primary", "ordinary object property named invoke", (candidate) => {
+  appendFrontend(
+    candidate,
+    paths.card,
+    "\nconst unrelatedBridge = { invoke: () => undefined };\nvoid unrelatedBridge.invoke;\n",
+  );
 });
-fixtureMustPass("shadowed safe namespace identifier", (candidate) => {
-  candidate.card =
-    `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-    `
-function exerciseSafeShadow() {
-  const tauriCore = { invoke: () => undefined };
-  let safeShadowAlias: typeof tauriCore.invoke;
-  safeShadowAlias = tauriCore.invoke;
-  safeShadowAlias();
-}
-void exerciseSafeShadow;
-`;
+fixtureMustPass("primary", "unrelated local import and re-export", (candidate) => {
+  candidate.frontend.set(
+    "src/lib/safeValue.ts",
+    "export const safeValue = 1;\n",
+  );
+  candidate.frontend.set(
+    "src/lib/safeValueBarrel.ts",
+    'export { safeValue } from "./safeValue";\n',
+  );
 });
-fixtureMustPass("unused Tauri core namespace import", (candidate) => {
-  candidate.card =
-    `import * as unusedTauriCore from "@tauri-apps/api/core";\n${candidate.card}`;
-});
-fixtureMustPass("ordinary type annotations and formatting", (candidate) => {
-  candidate.card += `
-const formattedLocal = (value: string) => value;
-let formattedAlias: typeof formattedLocal;
-formattedAlias = ((formattedLocal as typeof formattedLocal)!);
-void formattedAlias("safe");
-`;
-});
-fixtureMustPass("unrelated object property named invoke", (candidate) => {
-  candidate.card += `
-const unrelatedBridge = { invoke: () => undefined };
-let unrelatedPropertyAlias: typeof unrelatedBridge.invoke;
-unrelatedPropertyAlias = unrelatedBridge.invoke;
-void unrelatedPropertyAlias();
-`;
+fixtureMustPass("primary", "safe typed application API barrel", (candidate) => {
+  candidate.frontend.set(
+    "src/lib/storageRuntimeBarrel.ts",
+    'export { getStorageRuntimeStatus } from "./storageRuntimeClient";\nexport type { StorageRuntimeStatus } from "./storageRuntimeClient";\n',
+  );
 });
 
 mutationMustFail(
-  "TypeScript command renamed with old command in a comment",
+  "primary",
+  "new direct Tauri core importer",
   (candidate) => {
-    candidate.client = candidate.client.replace(
-      `"${command}" as const`,
-      `"renamed_storage_status" as const; // "${command}"`,
+    candidate.frontend.set(
+      "src/lib/unapprovedTauri.ts",
+      `import { invoke } from "${tauriCoreModule}";\nvoid invoke;\n`,
     );
   },
-  "exact executable string literal",
+  "importer baseline mismatch",
 );
 mutationMustFail(
-  "invoke binding changed with the old string elsewhere",
+  "primary",
+  "direct Tauri core import in Storage Runtime card",
   (candidate) => {
-    candidate.client = candidate.client.replace(
-      "invoke<StorageRuntimeStatus>(storageRuntimeCommand)",
-      `invoke<StorageRuntimeStatus>("renamed_storage_status") /* "${command}" */`,
+    candidate.frontend.set(
+      paths.card,
+      `import { invoke } from "${tauriCoreModule}";\n${candidate.frontend.get(paths.card)}`,
     );
   },
-  "exact command constant or literal",
+  "importer baseline mismatch",
 );
 mutationMustFail(
-  "command constant moved into a comment",
+  "primary",
+  "dynamic Tauri core import in Storage Runtime card",
   (candidate) => {
-    candidate.client = candidate.client.replace(
-      `export const storageRuntimeCommand = "${command}" as const;`,
-      `// export const storageRuntimeCommand = "${command}" as const;`,
+    appendFrontend(
+      candidate,
+      paths.card,
+      `\nvoid import("${tauriCoreModule}");\n`,
     );
   },
-  "exact executable string literal",
+  "dynamic Tauri core import is forbidden",
 );
 mutationMustFail(
-  "raw invoke added to StorageRuntimeCard",
+  "primary",
+  "require of Tauri core in Storage Runtime card",
   (candidate) => {
-    candidate.card =
-      `import { invoke } from "@tauri-apps/api/core";\n${candidate.card}` +
-      `\nvoid invoke("${command}");\n`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "namespace invoke added to StorageRuntimeCard",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `\nvoid tauriCore.invoke("${command}");\n`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "renamed named invoke added to StorageRuntimeCard",
-  (candidate) => {
-    candidate.card =
-      `import { invoke as tauriInvoke } from "@tauri-apps/api/core";\n${candidate.card}` +
-      `\nvoid tauriInvoke("${command}");\n`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "namespace element invoke added to StorageRuntimeCard",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `\nvoid tauriCore["invoke"]("${command}");\n`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "namespace invoke added to App",
-  (candidate) => {
-    candidate.app =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.app}` +
-      `\nvoid tauriCore.invoke("${command}");\n`;
-  },
-  "App must contain no raw storage invoke",
-);
-mutationMustFail(
-  "namespace invoke receives a dynamic command",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      "\nconst dynamicStorageCommand = storageRuntimeCommand;\n" +
-      "void tauriCore.invoke(dynamicStorageCommand);\n";
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "raw named invoke added to App",
-  (candidate) => {
-    candidate.app =
-      `import { invoke } from "@tauri-apps/api/core";\n${candidate.app}` +
-      `\nvoid invoke("${command}");\n`;
-  },
-  "App must contain no raw storage invoke",
-);
-mutationMustFail(
-  "additional namespace invoke added to typed client",
-  (candidate) => {
-    candidate.client =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.client}` +
-      `\nvoid tauriCore.invoke("${command}");\n`;
-  },
-  "exactly one storage invoke binding",
-);
-mutationMustFail(
-  "namespace invoke alias added to StorageRuntimeCard",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `\nconst delegatedInvoke = tauriCore.invoke;\n` +
-      `void delegatedInvoke("${command}");\n`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "dynamic core import invoke added to StorageRuntimeCard",
-  (candidate) => {
-    candidate.card +=
-      `\nvoid (await import("@tauri-apps/api/core")).invoke("${command}");\n`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "aliased dynamic core import added to StorageRuntimeCard",
-  (candidate) => {
-    candidate.card +=
-      `\nconst dynamicTauriCore = await import("@tauri-apps/api/core");\n` +
-      `void dynamicTauriCore.invoke("${command}");\n`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "R4 assignment alias reproduction",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-let rawInvoke: typeof tauriCore.invoke;
-rawInvoke = tauriCore.invoke;
-void rawInvoke("${command}");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "assignment from direct named import",
-  (candidate) => {
-    candidate.card =
-      `import { invoke } from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-let assignedNamedInvoke: typeof invoke;
-assignedNamedInvoke = invoke;
-void assignedNamedInvoke("${command}");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "assignment from renamed named import",
-  (candidate) => {
-    candidate.card =
-      `import { invoke as importedInvoke } from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-let assignedRenamedInvoke: typeof importedInvoke;
-assignedRenamedInvoke = importedInvoke;
-void assignedRenamedInvoke("${command}");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "assignment from namespace element access",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-let assignedElementInvoke: typeof tauriCore.invoke;
-assignedElementInvoke = tauriCore["invoke"];
-void assignedElementInvoke("${command}");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "chained assignment alias",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-let chainedAliasOne: typeof tauriCore.invoke;
-let chainedAliasTwo: typeof tauriCore.invoke;
-chainedAliasTwo = chainedAliasOne = tauriCore.invoke;
-void chainedAliasTwo("${command}");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "two-step assignment alias propagation",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-let firstAssignedAlias: typeof tauriCore.invoke;
-let secondAssignedAlias: typeof tauriCore.invoke;
-firstAssignedAlias = tauriCore.invoke;
-secondAssignedAlias = firstAssignedAlias;
-void secondAssignedAlias("${command}");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "parenthesized assignment right-hand side",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-let parenthesizedAlias: typeof tauriCore.invoke;
-parenthesizedAlias = (tauriCore.invoke);
-void parenthesizedAlias("${command}");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "as-asserted assignment right-hand side",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-let asAssertedAlias: typeof tauriCore.invoke;
-asAssertedAlias = tauriCore.invoke as typeof tauriCore.invoke;
-void asAssertedAlias("${command}");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "non-null assignment right-hand side",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-let nonNullAlias: typeof tauriCore.invoke;
-nonNullAlias = tauriCore.invoke!;
-void nonNullAlias("${command}");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "type-asserted assignment right-hand side",
-  (candidate) => {
-    candidate.client += `
-let typeAssertedAlias: typeof invoke;
-typeAssertedAlias = <typeof invoke>invoke;
-void typeAssertedAlias("${command}");
-`;
-  },
-  "exactly one storage invoke binding",
-);
-mutationMustFail(
-  "assignment alias called inside nested function",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-let nestedFunctionAlias: typeof tauriCore.invoke;
-nestedFunctionAlias = tauriCore.invoke;
-function callAssignedAlias() {
-  return nestedFunctionAlias("${command}");
-}
-void callAssignedAlias;
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "assignment alias called with dynamic command",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-let dynamicCommandAlias: typeof tauriCore.invoke;
-dynamicCommandAlias = tauriCore.invoke;
-const assignedCommand = "${command}";
-void dynamicCommandAlias(assignedCommand);
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "unsafe outer symbol with unrelated shadowed safe identifier",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-let shadowedAlias: typeof tauriCore.invoke;
-shadowedAlias = tauriCore.invoke;
-function useSafeShadow() {
-  const shadowedAlias = () => undefined;
-  shadowedAlias();
-}
-void shadowedAlias("${command}");
-void useSafeShadow;
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "assignment before var declaration",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-beforeDeclarationAlias = tauriCore.invoke;
-var beforeDeclarationAlias: typeof tauriCore.invoke;
-void beforeDeclarationAlias("${command}");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "assignment alias with old command only in comment",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-let commentProofAlias: typeof tauriCore.invoke;
-commentProofAlias = tauriCore.invoke;
-// ${command}
-void commentProofAlias("renamed_storage_status");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "dynamic namespace property assignment",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-const invokePropertyName = "invoke";
-let dynamicPropertyAlias: typeof tauriCore.invoke;
-dynamicPropertyAlias = tauriCore[invokePropertyName];
-void dynamicPropertyAlias("${command}");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "assignment into an object property alias",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-const propertyAliasHolder = { call: () => undefined };
-propertyAliasHolder.call = tauriCore.invoke;
-void propertyAliasHolder.call("${command}");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "assignment into an object element alias",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-const elementAliasHolder = { call: () => undefined };
-elementAliasHolder["call"] = tauriCore.invoke;
-void elementAliasHolder["call"]("${command}");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "destructuring assignment from Tauri core namespace",
-  (candidate) => {
-    candidate.card =
-      `import * as tauriCore from "@tauri-apps/api/core";\n${candidate.card}` +
-      `
-let destructuredAssignmentAlias: typeof tauriCore.invoke;
-({ invoke: destructuredAssignmentAlias } = tauriCore);
-void destructuredAssignmentAlias("${command}");
-`;
-  },
-  "no raw invoke",
-);
-mutationMustFail(
-  "Rust command renamed with the old name in a line comment",
-  (candidate) => {
-    candidate.rustCommand = candidate.rustCommand.replace(
-      `fn ${command}`,
-      `fn renamed_storage_status // fn ${command}\n`,
+    appendFrontend(
+      candidate,
+      paths.card,
+      `\nvoid require("${tauriCoreModule}");\n`,
     );
   },
-  "missing or duplicated",
+  "require of Tauri core is forbidden",
 );
 mutationMustFail(
-  "Rust registration removed with the old registration in a comment",
+  "primary",
+  "storage command literal outside approved adapter",
   (candidate) => {
-    candidate.rustRoot = candidate.rustRoot.replace(
-      `runtime_store::commands::${command},`,
-      `// runtime_store::commands::${command},`,
+    appendFrontend(candidate, paths.card, `\nvoid "${command}";\n`);
+  },
+  "exactly one approved frontend owner",
+);
+mutationMustFail(
+  "primary",
+  "storage adapter exports imported invoke",
+  (candidate) => {
+    appendFrontend(candidate, paths.client, "\nexport { invoke };\n");
+  },
+  "Tauri binding re-export is forbidden",
+);
+mutationMustFail(
+  "primary",
+  "storage adapter exports Tauri namespace",
+  (candidate) => {
+    appendFrontend(
+      candidate,
+      paths.client,
+      `\nimport * as tauriCore from "${tauriCoreModule}";\nexport { tauriCore };\n`,
     );
   },
-  "registered exactly once",
+  "unsupported Tauri core import shape",
 );
 mutationMustFail(
-  "Rust registration hidden in a nested block comment",
+  "primary",
+  "direct invoke re-export from Tauri core",
   (candidate) => {
-    candidate.rustRoot = candidate.rustRoot.replace(
-      `runtime_store::commands::${command},`,
-      `/* outer /* nested */ runtime_store::commands::${command}, */`,
+    candidate.frontend.set(
+      "src/lib/rawBarrel.ts",
+      `export { invoke } from "${tauriCoreModule}";\n`,
     );
   },
-  "registered exactly once",
+  "direct Tauri binding re-export is forbidden",
 );
 mutationMustFail(
-  "duplicate Rust handler registration",
+  "primary",
+  "renamed invoke re-export from Tauri core",
   (candidate) => {
-    candidate.rustRoot = candidate.rustRoot.replace(
-      `runtime_store::commands::${command},`,
-      `runtime_store::commands::${command},\n        runtime_store::commands::${command},`,
+    candidate.frontend.set(
+      "src/lib/rawBarrel.ts",
+      `export { invoke as rawInvoke } from "${tauriCoreModule}";\n`,
     );
   },
-  "registered exactly once",
+  "direct Tauri binding re-export is forbidden",
 );
 mutationMustFail(
-  "frontend path argument added",
+  "primary",
+  "wildcard re-export from Tauri core",
+  (candidate) => {
+    candidate.frontend.set(
+      "src/lib/rawBarrel.ts",
+      `export * from "${tauriCoreModule}";\n`,
+    );
+  },
+  "direct Tauri binding re-export is forbidden",
+);
+mutationMustFail(
+  "primary",
+  "local barrel exposes Tauri binding",
+  (candidate) => {
+    appendFrontend(candidate, paths.client, "\nexport { invoke };\n");
+    candidate.frontend.set(
+      "src/lib/rawBarrel.ts",
+      'export { invoke } from "./storageRuntimeClient";\n',
+    );
+  },
+  "Tauri binding re-export is forbidden",
+);
+mutationMustFail(
+  "primary",
+  "R4 assignment witness in Storage Runtime card",
+  (candidate) => {
+    candidate.frontend.set(
+      paths.card,
+      `import * as tauriCore from "${tauriCoreModule}";\n${candidate.frontend.get(paths.card)}\nlet rawInvoke: typeof tauriCore.invoke;\nrawInvoke = tauriCore.invoke;\nvoid rawInvoke("${command}");\n`,
+    );
+  },
+  "importer baseline mismatch",
+);
+mutationMustFail(
+  "primary",
+  "R5 object-literal witness in Storage Runtime card",
+  (candidate) => {
+    candidate.frontend.set(
+      paths.card,
+      `import * as tauriCore from "${tauriCoreModule}";\n${candidate.frontend.get(paths.card)}\nconst rawInvokeHolder = { call: tauriCore.invoke };\nvoid rawInvokeHolder.call("${command}");\n`,
+    );
+  },
+  "importer baseline mismatch",
+);
+mutationMustFail(
+  "primary",
+  "adapter command constant exported publicly",
+  (candidate) => {
+    replaceFrontend(
+      candidate,
+      paths.client,
+      `const ${commandConstant} =`,
+      `export const ${commandConstant} =`,
+    );
+  },
+  "command constant must be private",
+);
+mutationMustFail(
+  "primary",
+  "typed adapter replaced by generic command execution",
+  (candidate) => {
+    replaceFrontend(
+      candidate,
+      paths.client,
+      "export async function getStorageRuntimeStatus():",
+      "export async function getStorageRuntimeStatus(commandName: string):",
+    );
+    replaceFrontend(
+      candidate,
+      paths.client,
+      `invoke<StorageRuntimeStatus>(${commandConstant})`,
+      "invoke<StorageRuntimeStatus>(commandName)",
+    );
+  },
+  "no frontend path or SQL arguments",
+);
+mutationMustFail(
+  "primary",
+  "frontend path argument added to typed adapter",
+  (candidate) => {
+    replaceFrontend(
+      candidate,
+      paths.client,
+      "export async function getStorageRuntimeStatus():",
+      "export async function getStorageRuntimeStatus(path: string):",
+    );
+  },
+  "no frontend path or SQL arguments",
+);
+mutationMustFail(
+  "primary",
+  "second executable storage command owner",
+  (candidate) => {
+    candidate.frontend.set(
+      "src/lib/secondStorageOwner.ts",
+      `export const duplicateCommand = "${command}";\n`,
+    );
+  },
+  "exactly one approved frontend owner",
+);
+mutationMustFail(
+  "primary",
+  "raw storage invocation in grandfathered importer",
+  (candidate) => {
+    appendFrontend(candidate, paths.app, `\nvoid invoke("${command}");\n`);
+  },
+  "exactly one approved frontend owner",
+);
+mutationMustFail(
+  "primary",
+  "Rust storage command gains user argument",
   (candidate) => {
     candidate.rustCommand = candidate.rustCommand.replace(
       "app: tauri::AppHandle",
@@ -1449,55 +1636,173 @@ mutationMustFail(
   "no frontend-deserialized arguments",
 );
 mutationMustFail(
-  "missing Rust state variant",
+  "primary",
+  "second public storage command registration",
+  (candidate) => {
+    candidate.rustRoot = candidate.rustRoot.replace(
+      `runtime_store::commands::${command},`,
+      `runtime_store::commands::${command},\n        runtime_store::commands::${command},`,
+    );
+  },
+  "registered exactly once",
+);
+
+fixtureMustPass("defense", "ordinary local invoke function remains safe", (candidate) => {
+  appendFrontend(
+    candidate,
+    paths.card,
+    "\nfunction invoke() { return undefined; }\nvoid invoke();\n",
+  );
+});
+fixtureMustPass("defense", "ordinary invoke property remains safe", (candidate) => {
+  appendFrontend(
+    candidate,
+    paths.card,
+    "\nconst safeObject = { invoke: () => undefined };\nvoid safeObject.invoke();\n",
+  );
+});
+fixtureMustPass("defense", "safe typed barrel remains non-authoritative", (candidate) => {
+  candidate.frontend.set(
+    "src/lib/typedStorageBarrel.ts",
+    'export { getStorageRuntimeStatus } from "./storageRuntimeClient";\n',
+  );
+});
+
+mutationMustFail(
+  "defense",
+  "storage command constant renamed",
+  (candidate) => {
+    replaceFrontend(
+      candidate,
+      paths.client,
+      `"${command}" as const`,
+      '"renamed_storage_status" as const',
+    );
+  },
+  "command constant must be private and exact",
+);
+mutationMustFail(
+  "defense",
+  "direct typed invoke removed",
+  (candidate) => {
+    replaceFrontend(
+      candidate,
+      paths.client,
+      `return await invoke<StorageRuntimeStatus>(${commandConstant});`,
+      'throw new Error("not implemented");',
+    );
+  },
+  "exactly one direct invoke call",
+);
+mutationMustFail(
+  "defense",
+  "second direct invoke added to adapter",
+  (candidate) => {
+    appendFrontend(
+      candidate,
+      paths.client,
+      `\nvoid invoke(${commandConstant});\n`,
+    );
+  },
+  "used only by the direct typed client call",
+);
+mutationMustFail(
+  "defense",
+  "Storage Runtime card stops calling adapter",
+  (candidate) => {
+    replaceFrontend(
+      candidate,
+      paths.card,
+      "setStatus(await getStorageRuntimeStatus());",
+      "setStatus(null);",
+    );
+  },
+  "must call the typed adapter",
+);
+mutationMustFail(
+  "defense",
+  "Dashboard unmounts Storage Runtime card",
+  (candidate) => {
+    replaceFrontend(candidate, paths.app, "<StorageRuntimeCard />", "<div />");
+  },
+  "must structurally mount",
+);
+mutationMustFail(
+  "defense",
+  "Rust command renamed",
+  (candidate) => {
+    candidate.rustCommand = candidate.rustCommand.replace(
+      `fn ${command}`,
+      "fn renamed_storage_status",
+    );
+  },
+  "missing or duplicated",
+);
+mutationMustFail(
+  "defense",
+  "Rust registration removed",
+  (candidate) => {
+    candidate.rustRoot = candidate.rustRoot.replace(
+      `runtime_store::commands::${command},`,
+      `// runtime_store::commands::${command},`,
+    );
+  },
+  "registered exactly once",
+);
+mutationMustFail(
+  "defense",
+  "Rust status variant removed",
   (candidate) => {
     candidate.rustTypes = candidate.rustTypes.replace("    Healthy,\n", "");
   },
   "StorageRuntimeState variants",
 );
 mutationMustFail(
-  "extra TypeScript error-code variant",
+  "defense",
+  "frontend status field removed",
   (candidate) => {
-    candidate.client = candidate.client.replace(
-      '  | "internal";',
-      '  | "internal"\n  | "unexpected";',
+    replaceFrontend(
+      candidate,
+      paths.client,
+      "  sqlite_version: string | null;\n",
+      "",
     );
   },
-  "StorageRuntimeErrorCode variants",
+  "status field is missing",
 );
 mutationMustFail(
-  "persistence-state mismatch",
-  (candidate) => {
-    candidate.client = candidate.client.replace('  | "created_new"\n', "");
-  },
-  "PersistenceState variants",
-);
-mutationMustFail(
-  "storage CRUD command added",
+  "defense",
+  "unauthorized storage CRUD command added",
   (candidate) => {
     candidate.rustCommand +=
       "\n#[tauri::command]\npub(crate) fn create_conversation() {}\n";
   },
-  "CRUD or generic SQL",
-);
-mutationMustFail(
-  "generic SQL command added",
-  (candidate) => {
-    candidate.rustCommand += "\n#[tauri::command]\npub(crate) fn execute_sql() {}\n";
-  },
-  "CRUD or generic SQL",
+  "unauthorized storage CRUD",
 );
 
-const rejected = negativeFixtures.filter((fixture) => fixture.rejected).length;
-const accepted = positiveFixtures.filter((fixture) => fixture.accepted).length;
-if (
-  positive.errors.length ||
-  accepted !== positiveFixtures.length ||
-  rejected !== negativeFixtures.length
-) {
+const groupsPass = Object.values(fixtureResults).every(
+  (group) =>
+    group.positive.every((fixture) => fixture.accepted) &&
+    group.negative.every((fixture) => fixture.rejected),
+);
+
+if (positive.errors.length > 0 || !groupsPass) {
   process.exitCode = 1;
 } else {
+  const primary = fixtureResults.primary;
+  const defense = fixtureResults.defense;
+  const primaryPassed =
+    primary.positive.filter((item) => item.accepted).length +
+    primary.negative.filter((item) => item.rejected).length;
+  const primaryTotal = primary.positive.length + primary.negative.length;
+  const defensePassed =
+    defense.positive.filter((item) => item.accepted).length +
+    defense.negative.filter((item) => item.rejected).length;
+  const defenseTotal = defense.positive.length + defense.negative.length;
   console.log(
-    `PASS: structural storage runtime contract; positive checks=${positive.checks}; positive fixtures=${accepted}/${positiveFixtures.length}; negative fixtures=${rejected}/${negativeFixtures.length}`,
+    `PASS: PRIMARY_MODULE_BOUNDARY_GATE fixtures=${primaryPassed}/${primaryTotal} (${primary.positive.length} positive, ${primary.negative.length} negative); SECONDARY_AST_DEFENSE_IN_DEPTH fixtures=${defensePassed}/${defenseTotal} (${defense.positive.length} positive, ${defense.negative.length} negative); structural_checks=${positive.checks}; tauri_core_importers=${positive.analysis.actualImporters.size}; non_guarantees=ADR_0006`,
+  );
+  console.log(
+    `TAURI_CORE_IMPORT_BASELINE: ${[...positive.analysis.actualImporters].sort().join(", ")}`,
   );
 }
