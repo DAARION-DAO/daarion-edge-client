@@ -1,6 +1,6 @@
 # ADR 0002: Local Runtime State and SQLite Foundation
 
-- Status: Accepted; Phase 1B.1 complete in PR, R3 passed with three Low findings corrected locally, R4 pending
+- Status: Accepted; implementation partial; Phase 1B.1 merged and fresh-main verified
 - Date: 2026-07-04
 - Scope: first durable Edge runtime-state store
 
@@ -40,13 +40,52 @@ The audited Edge snapshot has no durable task/conversation/audit store. Messagin
 ## Verification gate
 
 See [Durable runtime state gate](../security/SECURITY_GATES.md). The separately
-authorized Phase 1B.1 candidate implements only bootstrap and a safe read-only
-status projection: exact `rusqlite` 0.40.1, bundled SQLite 3.53.2, the five-table
-empty schema, one bounded Rust owner, explicit bounded application shutdown,
-deadline-interrupt and hard-link-aware path controls, strict UUID-v4 schema
-constraints, and restart/reopen tests. R1 and R2 blocked earlier heads.
-Independent local R3 passed exact head `86ef384a…` with three nonblocking Low
-validator/evidence findings. The final bounded closeout corrects those locally;
-R4 exact-head review, merge and fresh-main verification remain pending. It does
-not implement public runtime-state CRUD, backup/export, six-level memory, Phase
-1B.2, or production/platform acceptance.
+authorized Phase 1B.1 vertical slice is merged and fresh-main verified. It
+implements only bootstrap and a safe read-only status projection: exact
+`rusqlite` 0.40.1, bundled SQLite 3.53.2, the five-table empty schema, one
+bounded Rust owner, explicit bounded application shutdown, deadline-interrupt
+and hard-link-aware path controls, strict UUID-v4 schema constraints, and
+restart/reopen tests.
+
+```text
+PHASE_1B_1 = MERGED / FRESH_MAIN_VERIFIED
+MERGED_REVIEWED_HEAD = 5d894f42a967c9360d86382c1aab9e603472e0c8
+MERGE_COMMIT = cd903fb18d1618bbe0787d2397948622849ef9d4
+MERGED_AT = 2026-07-24T11:44:00Z
+STORAGE_BOOTSTRAP = IMPLEMENTED_AND_VERIFIED
+STORAGE_RUNTIME_PROJECTION = IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY
+DURABLE_RUNTIME_STATE = PARTIALLY_IMPLEMENTED
+PHASE_1B = NOT COMPLETE
+PHASE_1B_2 = NOT AUTHORIZED
+REAL_DESKTOP_RESTART_FLOW = NOT VERIFIED
+CROSS_PLATFORM_RUNTIME = NOT VERIFIED
+REMOTE_CI = NOT PRESENT / NOT CLAIMED
+REMOTE_PRODUCTION_WRITES = 0
+REAL_USER_PROFILE_WRITES = 0
+DEPLOYMENTS = 0
+```
+
+Fresh-main verification passed 64/64 storage, 67/67 inference and 180/180
+full Rust tests with Rust 1.95.0, plus Cargo check/Clippy, 29/29 primary
+boundary fixtures, 13/13 defense-in-depth fixtures, 46 structural checks,
+production build over 1,763 modules, and zero production npm vulnerabilities.
+Runtime-store warning locations were 0. Dev-inclusive npm audit retained 11
+inherited advisories outside the production dependency set. Inherited RustSec,
+warning and rustfmt debt were unchanged. No remote CI was present.
+
+The verified schema invariants are:
+
+```text
+MIGRATION_SHA = 62341c5015e70605bc3d57f9152c9e6a571739beaec33a2a7574b3e9a482575d
+STRUCTURAL_FINGERPRINT = 37f9060cd050c615e2576809266ad9535e05c105f57a0a168bcf488f1f14ed77
+TABLES = 5
+EXPLICIT_INDEXES = 7
+SQLITE_AUTOINDEXES = 7
+SQLITE_SEQUENCE = 0
+MIGRATION_2 = ABSENT
+```
+
+This first slice does not implement public runtime-state CRUD, backup/export,
+retention/deletion services, six-level memory, Phase 1B.2, or
+production/platform acceptance. The full ADR implementation therefore remains
+partial.

@@ -1,14 +1,17 @@
 # Phase 1B — Durable Runtime State Plan
 
-Status: **APPROVED PLAN / PHASE 1B.1 CANDIDATE IMPLEMENTED / PHASE 1B.2 NOT AUTHORIZED**
+Status: **APPROVED PLAN / PHASE 1B.1 MERGED AND FRESH-MAIN VERIFIED / PHASE 1B.2 NOT AUTHORIZED**
 
 Starting `main`: `62a1d514b93925e8b7098c6db19f8751a70a7bf8`
 
 This document records the approved design for bounded implementation slices.
-Phase 1B.1 received separate human authorization from main `eb0d7def…` and now
-has a repository candidate for bootstrap plus a read-only Dashboard projection.
-That candidate does not authorize Phase 1B.2, public content CRUD, or completion
-of the wider Phase 1B contract.
+Phase 1B.1 received separate human authorization from main `eb0d7def…`. Its
+final independently reviewed head
+`5d894f42a967c9360d86382c1aab9e603472e0c8` was merged as
+`cd903fb18d1618bbe0787d2397948622849ef9d4` at
+`2026-07-24T11:44:00Z` and was fresh-main verified. That merge does not
+authorize Phase 1B.2, public content CRUD, or completion of the wider Phase 1B
+contract.
 
 ## 1. Objective
 
@@ -48,10 +51,11 @@ memory.
 Status: **DOCUMENTED ARCHITECTURE / FUTURE STORES OUT OF SCOPE**
 
 This contract defines ownership across future storage classes without widening
-Phase 1B. Only the SQLite transactional foundation is eligible for a future
-Phase 1B implementation authorization. Semantic, graph, artifact, and remote
-stores remain architectural placeholders with no selected engine, dependency,
-schema, runtime, migration, or deployment.
+Phase 1B. The bounded Phase 1B.1 SQLite bootstrap and status projection are
+merged and fresh-main verified; remaining transactional content services need
+separate audit, planning and authorization. Semantic, graph, artifact, and
+remote stores remain architectural placeholders with no selected engine,
+dependency, schema, runtime, migration, or deployment.
 
 ## SQLite — Authoritative Local Transactional State
 
@@ -342,7 +346,7 @@ Phase 1B claims desktop macOS, Windows, and Linux only after their required
 validation passes. Android is a separately authorized validation gate and
 cannot inherit a desktop pass. iOS is unsupported and unclaimed.
 
-### HD-09 — Authorization state
+### HD-09 — Authorization state at plan approval
 
 ```text
 PHASE_1B_PLAN = APPROVED
@@ -351,6 +355,10 @@ PHASE_1B_1 = NOT_AUTHORIZED_BY_THIS_TASK
 ```
 
 Slices 1B.1 through 1B.5 each require separate authorization.
+
+Phase 1B.1 subsequently received that separate authorization and is now merged
+and fresh-main verified. This historical decision record does not authorize
+Phase 1B.2 or any later slice.
 
 ## 3. Current repository inventory
 
@@ -1100,13 +1108,13 @@ an unverified backup, or deletes user content.
 
 `GO / APPROVED PLAN`
 
-This classification applies to the Phase 1B plan. Phase 1B.1 is a separately
-authorized implementation candidate; it does not complete Phase 1B.
+This classification applies to the Phase 1B plan. Phase 1B.1 was separately
+authorized, implemented, independently reviewed, merged and fresh-main
+verified; it does not complete Phase 1B.
 HD-01 through HD-09 close the planning decisions on storage authority,
 integration, encryption risk, retention, limits, SQLite operations, export, and
-platform scope. Phase 1B.1 received separate authorization and now has a bounded
-repository candidate. Phase 1B.2 and every later implementation slice remain
-`NO_GO` until separately authorized after the preceding gate is verified.
+platform scope. Phase 1B.2 and every later implementation slice remain `NO_GO`
+until separately audited, planned and explicitly authorized.
 
 ```text
 PHASE_1A =
@@ -1116,11 +1124,79 @@ PHASE_1B_PLAN =
 APPROVED
 
 PHASE_1B_IMPLEMENTATION =
-PARTIALLY_IMPLEMENTED / PHASE_1B_1 CANDIDATE ONLY
+PARTIALLY_IMPLEMENTED
 
 PHASE_1B_1 =
-IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY / DRAFT_REVIEW_GATE
+MERGED / FRESH_MAIN_VERIFIED
+
+MERGED_REVIEWED_HEAD =
+5d894f42a967c9360d86382c1aab9e603472e0c8
+
+MERGE_COMMIT =
+cd903fb18d1618bbe0787d2397948622849ef9d4
+
+MERGED_AT =
+2026-07-24T11:44:00Z
+
+STORAGE_BOOTSTRAP =
+IMPLEMENTED_AND_VERIFIED
+
+STORAGE_RUNTIME_PROJECTION =
+IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY
+
+DURABLE_RUNTIME_STATE =
+PARTIALLY_IMPLEMENTED
+
+PHASE_1B =
+NOT COMPLETE
 
 PHASE_1B_2 =
-NOT_AUTHORIZED
+NOT AUTHORIZED
+
+NEXT_POTENTIAL_PHASE =
+PHASE_1B_2 / REQUIRES_SEPARATE_AUDIT_PLAN_AND_AUTHORIZATION
+
+REAL_DESKTOP_RESTART_FLOW =
+NOT VERIFIED
+
+CROSS_PLATFORM_RUNTIME =
+NOT VERIFIED
+
+REMOTE_CI =
+NOT PRESENT / NOT CLAIMED
+
+REMOTE_PRODUCTION_WRITES =
+0
+
+REAL_USER_PROFILE_WRITES =
+0
+
+DEPLOYMENTS =
+0
+```
+
+Fresh-main evidence and schema invariants:
+
+```text
+RUST_TOOLCHAIN = 1.95.0 PINNED
+STORAGE_TESTS = 64/64 PASS
+INFERENCE_TESTS = 67/67 PASS
+FULL_RUST_TESTS = 180/180 PASS
+CARGO_CHECK = PASS
+CARGO_CLIPPY = PASS
+RUNTIME_STORE_WARNING_LOCATIONS = 0
+PRIMARY_BOUNDARY_FIXTURES = 29/29 PASS
+DEFENSE_IN_DEPTH_FIXTURES = 13/13 PASS
+STRUCTURAL_CHECKS = 46 PASS
+PRODUCTION_BUILD = PASS / 1,763 MODULES
+PRODUCTION_NPM_AUDIT = 0 VULNERABILITIES
+NPM_DEV_INCLUSIVE_ADVISORIES = 11 INHERITED / OUTSIDE PRODUCTION DEPENDENCY SET
+INHERITED_RUSTSEC_WARNING_RUSTFMT_DEBT = UNCHANGED
+MIGRATION_SHA = 62341c5015e70605bc3d57f9152c9e6a571739beaec33a2a7574b3e9a482575d
+STRUCTURAL_FINGERPRINT = 37f9060cd050c615e2576809266ad9535e05c105f57a0a168bcf488f1f14ed77
+TABLES = 5
+EXPLICIT_INDEXES = 7
+SQLITE_AUTOINDEXES = 7
+SQLITE_SEQUENCE = 0
+MIGRATION_2 = ABSENT
 ```
