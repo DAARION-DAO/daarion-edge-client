@@ -7,7 +7,7 @@ No gate is satisfied by documentation or module names alone. “Open” means im
 | Gate | Current state | Required evidence to close | Owner/phase |
 | --- | --- | --- | --- |
 | Local-only inference | REPOSITORY PASS — MERGED / FRESH-MAIN VERIFIED | Phase 1A has only `LocalOnly`; loopback/redirect/proxy controls; mandatory `/api/status` cloud-disabled proof; exact stable `/api/tags` → `/api/show` → `/api/tags` local-model evidence; immediate pre-chat revalidation; post-preparation verification; service-owned probe/chat/preparation deadlines and cancellation; bounded streaming; zero-chat sentinel tests; truthful UI; and no main-webview shell authority. Reviewed head `9e8c5d9…` was merged as `62a1d514…` and verified from fresh main. No real Ollama/model smoke or cryptographic daemon/artifact attestation is claimed. | Edge / 1A |
-| Durable runtime state | OPEN — PHASE 1B.1 ARCHITECTURAL CORRECTION / R6 REVIEW PENDING | R1 and R2 blocked earlier PR #27 heads; R3 passed with nonblocking findings; R4 blocked an assignment-alias false-negative; R5 blocked an object-literal false-negative at exact head `fdbb9c88…`. Accepted ADR 0006 rejects a custom complete data-flow analyzer and replaces the overclaim with a command-scoped module/import/re-export gate plus limited AST defense in depth. The local correction passes 29/29 primary fixtures, 13/13 secondary fixtures, 46 structural checks, 64 storage, 67 inference and 180 full Rust tests. Phase 1B.1 remains draft and unmerged. Closure still requires acceptable exact-head R6, separate ready/merge authorization and fresh-main proof; the broader durable-state gate additionally requires later Phase 1B content services, deletion/export/backup, desktop/platform evidence, and the pre-production SQLCipher decision | Edge / 1B |
+| Durable runtime state | OPEN — PHASE 1B.1 MERGED / FRESH-MAIN VERIFIED | Reviewed head `5d894f42a967c9360d86382c1aab9e603472e0c8` passed independent R6 with accepted nonblocking findings, merged as `cd903fb18d1618bbe0787d2397948622849ef9d4` at `2026-07-24T11:44:00Z`, and passed fresh-main verification. The verified slice includes the five-table bootstrap and one safe storage-status projection, not content persistence services. Fresh main passed 64/64 storage, 67/67 inference and 180/180 full Rust tests, Cargo check/Clippy, 29/29 primary fixtures, 13/13 defense fixtures, 46 structural checks, production build over 1,763 modules and zero production npm vulnerabilities. Remote CI was absent and is not claimed. The broader gate remains open for public content services, retention/deletion/export/backup, desktop/platform evidence, full recovery/privacy closure and the pre-production SQLCipher decision. Phase 1B.2 is not authorized | Edge / 1B |
 | Inert Supervisor | OPEN | Deterministic IDs, explicit bounded state machine, idempotency, cancellation and crash recovery; no tools/network/scheduling | Edge / 1C |
 | Production pairing | OPEN | Signed purpose-bound invitation, trusted issuer, membership/device binding, expiry, nonce/replay, single use, revocation and downgrade tests | Both / ADR 0004 |
 | Readiness projection | OPEN | Separate signed schema, minimal allowlist, producer identity, expiry/freshness, replay/revocation, cross-repo fixtures and privacy tests | Both / ADR 0005 + Phase 5 |
@@ -115,7 +115,7 @@ queue/backup limits, explicit plaintext export, and desktop macOS/Windows/Linux
 validation are fixed in the plan. Android remains a separately authorized gate;
 iOS is unsupported and unclaimed.
 
-The separately authorized Phase 1B.1 candidate adds only `rusqlite` 0.40.1,
+The merged and fresh-main-verified Phase 1B.1 slice adds only `rusqlite` 0.40.1,
 bundled SQLite 3.53.2, the empty five-table migration, private Rust service, one
 no-argument status command, typed client, and Dashboard card. It has no content
 CRUD, backup/export, remote sync, Supervisor, memory extraction, or generic SQL
@@ -125,12 +125,62 @@ local R3 passed exact head `86ef384a…` with three nonblocking Low findings. R4
 and R5 then exposed assignment- and object-literal alias false-negatives in the
 overclaimed validator model. Accepted ADR 0006 makes the command-scoped
 module/import/re-export graph the primary control and limited AST checks
-defense in depth. Arbitrary TypeScript data-flow proof is not claimed. The
-architecture correction is locally green and awaits independent exact-head R6.
+defense in depth. Arbitrary TypeScript data-flow proof is not claimed.
+Independent exact-head R6 passed with accepted nonblocking findings, followed
+by controlled merge and fresh-main verification.
 
 SQLCipher remains a separate pre-production decision. The durable-state gate
-stays open through acceptable R6 review, separate merge/fresh-main
-verification, later
-separately authorized Phase 1B slices, desktop target evidence, deletion/export,
-and full recovery/privacy closure. A repository candidate is not production
-readiness.
+stays open through later separately authorized Phase 1B slices, desktop target
+evidence, deletion/export, and full recovery/privacy closure. The merged
+Phase 1B.1 repository slice is not production readiness.
+
+```text
+PHASE_1B_1 = MERGED / FRESH_MAIN_VERIFIED
+MERGED_REVIEWED_HEAD = 5d894f42a967c9360d86382c1aab9e603472e0c8
+MERGE_COMMIT = cd903fb18d1618bbe0787d2397948622849ef9d4
+MERGED_AT = 2026-07-24T11:44:00Z
+STORAGE_BOOTSTRAP = IMPLEMENTED_AND_VERIFIED
+STORAGE_RUNTIME_PROJECTION = IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY
+DURABLE_RUNTIME_STATE = PARTIALLY_IMPLEMENTED
+PHASE_1B = NOT COMPLETE
+PHASE_1B_2 = NOT AUTHORIZED
+REAL_DESKTOP_RESTART_FLOW = NOT VERIFIED
+CROSS_PLATFORM_RUNTIME = NOT VERIFIED
+REMOTE_CI = NOT PRESENT / NOT CLAIMED
+REMOTE_PRODUCTION_WRITES = 0
+REAL_USER_PROFILE_WRITES = 0
+DEPLOYMENTS = 0
+```
+
+The frozen nine-path Tauri-core importer baseline is grandfathered technical
+debt, not global adapter approval. `src/lib/storageRuntimeClient.ts` remains
+the sole executable frontend owner of `get_storage_runtime_status`; its command
+constant is private and it exports no raw Tauri binding. Rust exposes one
+read-only status command with no user-deserialized arguments. No Phase 1B.2
+CRUD/API authority exists.
+
+Fresh-main evidence and schema invariants:
+
+```text
+RUST_TOOLCHAIN = 1.95.0 PINNED
+STORAGE_TESTS = 64/64 PASS
+INFERENCE_TESTS = 67/67 PASS
+FULL_RUST_TESTS = 180/180 PASS
+CARGO_CHECK = PASS
+CARGO_CLIPPY = PASS
+RUNTIME_STORE_WARNING_LOCATIONS = 0
+PRIMARY_BOUNDARY_FIXTURES = 29/29 PASS
+DEFENSE_IN_DEPTH_FIXTURES = 13/13 PASS
+STRUCTURAL_CHECKS = 46 PASS
+PRODUCTION_BUILD = PASS / 1,763 MODULES
+PRODUCTION_NPM_AUDIT = 0 VULNERABILITIES
+NPM_DEV_INCLUSIVE_ADVISORIES = 11 INHERITED / OUTSIDE PRODUCTION DEPENDENCY SET
+INHERITED_RUSTSEC_WARNING_RUSTFMT_DEBT = UNCHANGED
+MIGRATION_SHA = 62341c5015e70605bc3d57f9152c9e6a571739beaec33a2a7574b3e9a482575d
+STRUCTURAL_FINGERPRINT = 37f9060cd050c615e2576809266ad9535e05c105f57a0a168bcf488f1f14ed77
+TABLES = 5
+EXPLICIT_INDEXES = 7
+SQLITE_AUTOINDEXES = 7
+SQLITE_SEQUENCE = 0
+MIGRATION_2 = ABSENT
+```

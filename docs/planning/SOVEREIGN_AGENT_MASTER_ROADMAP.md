@@ -164,23 +164,31 @@ Numbers are reservations for planning, not accepted decisions.
   and merged as `62a1d514b93925e8b7098c6db19f8751a70a7bf8`;
   fresh-main verification passed. No live Ollama smoke is claimed.
 - Phase 1B planning: `APPROVED / HUMAN_DECISIONS_RECORDED`; the docs-only
-  plan and Rust 1.95.0 toolchain unblock are merged on main `eb0d7def…`.
-- Phase 1B implementation: `PARTIALLY_IMPLEMENTED`; the separately authorized
-  Phase 1B.1 storage bootstrap/status vertical slice is complete in PR #27 but
-  is not merged. Phase 1B.2 content services remain unauthorized.
-- Phase 1B.1: `R5 REVIEW BLOCKED / ARCHITECTURAL CORRECTION LOCAL GATE PASS /
-  R6 REVIEW PENDING`. Independent R1 and R2 blocked earlier heads; R3 passed
-  with nonblocking findings; R4 found an assignment-alias false-negative; R5
-  found an object-literal false-negative at exact head `fdbb9c88…`. Human-
-  accepted ADR 0006 rejects another syntax-specific patch and a custom complete
-  data-flow analyzer. The primary control is the command-scoped module/import/
-  re-export graph; limited AST checks are defense in depth, and arbitrary
-  TypeScript data-flow proof is not claimed. The correction locally passes
-  29/29 primary fixtures, 13/13 secondary fixtures, 46 structural checks, 64
-  storage, 67 inference and 180 full Rust tests. R6 exact-head review, separate
-  ready/merge authorization, fresh-main verification and real desktop/
-  cross-platform evidence remain pending.
-- Phase 1B.2: `NOT_AUTHORIZED`; no conversation/message/task/audit API exists.
+  plan and Rust 1.95.0 toolchain unblock are merged.
+- Phase 1B implementation: `PARTIALLY_IMPLEMENTED`; Phase 1B.1 is merged and
+  fresh-main verified, while Phase 1B.2 content services remain unauthorized.
+- Phase 1B.1: `MERGED / FRESH_MAIN_VERIFIED`. The final independently reviewed
+  head `5d894f42a967c9360d86382c1aab9e603472e0c8` was merged as
+  `cd903fb18d1618bbe0787d2397948622849ef9d4` at
+  `2026-07-24T11:44:00Z`. The SQLite bootstrap and safe Storage Runtime
+  projection are `IMPLEMENTED_AND_VERIFIED`; the broader durable runtime state
+  remains `PARTIALLY_IMPLEMENTED`. Accepted ADR 0006 defines the command-scoped
+  module boundary and import/re-export graph as the primary control, with
+  limited AST checks as defense in depth. Arbitrary TypeScript data-flow proof
+  is not claimed, a custom full data-flow analyzer is rejected, and global
+  frontend adapter migration is deferred to a separate phase. The verified
+  gate includes 29/29 primary fixtures, 13/13 secondary fixtures, 46 structural
+  checks, 64 storage, 67 inference and 180 full Rust tests; `cargo check`,
+  `cargo clippy --all-targets`, the production build (1,763 modules), and
+  production npm audit (0 findings) passed under Rust 1.95.0. Runtime-store
+  warning locations are 0. Dev-inclusive npm audit still reports 11 inherited
+  findings; inherited RustSec, warning and rustfmt debt are unchanged.
+- Phase 1B.1 limitations: the real desktop restart flow and cross-platform
+  runtime are not verified. Remote CI is not present and is not claimed. Remote
+  production writes, real user-profile writes and deployments were all 0.
+- Phase 1B.2: `NOT AUTHORIZED`; no conversation/message/task/audit API exists.
+  The next possible action is a separate Phase 1B.2 audit, plan and explicit
+  authorization—not implementation under the Phase 1B.1 merge.
 - Phase 1C and later: `NO_GO`.
 - Production readiness: `NO_GO`.
 
@@ -195,9 +203,76 @@ PHASE_1B_IMPLEMENTATION =
 PARTIALLY_IMPLEMENTED
 
 PHASE_1B_1 =
-COMPLETE_IN_PR / NOT_MERGED / R5_BLOCKED_OBJECT_LITERAL /
-ARCHITECTURAL_CORRECTION_LOCAL_GATE_PASS / R6_REVIEW_PENDING
+MERGED / FRESH_MAIN_VERIFIED
+
+MERGED_REVIEWED_HEAD =
+5d894f42a967c9360d86382c1aab9e603472e0c8
+
+MERGE_COMMIT =
+cd903fb18d1618bbe0787d2397948622849ef9d4
+
+MERGED_AT =
+2026-07-24T11:44:00Z
+
+STORAGE_BOOTSTRAP =
+IMPLEMENTED_AND_VERIFIED
+
+STORAGE_RUNTIME_PROJECTION =
+IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY
+
+DURABLE_RUNTIME_STATE =
+PARTIALLY_IMPLEMENTED
+
+PHASE_1B =
+NOT COMPLETE
 
 PHASE_1B_2 =
-NOT_AUTHORIZED
+NOT AUTHORIZED
+
+NEXT_POTENTIAL_PHASE =
+PHASE_1B_2 / REQUIRES_SEPARATE_AUDIT_PLAN_AND_AUTHORIZATION
+
+REAL_DESKTOP_RESTART_FLOW =
+NOT VERIFIED
+
+CROSS_PLATFORM_RUNTIME =
+NOT VERIFIED
+
+REMOTE_CI =
+NOT PRESENT / NOT CLAIMED
+
+REMOTE_PRODUCTION_WRITES =
+0
+
+REAL_USER_PROFILE_WRITES =
+0
+
+DEPLOYMENTS =
+0
+```
+
+Fresh-main evidence and schema invariants:
+
+```text
+RUST_TOOLCHAIN = 1.95.0 PINNED
+STORAGE_TESTS = 64/64 PASS
+INFERENCE_TESTS = 67/67 PASS
+FULL_RUST_TESTS = 180/180 PASS
+CARGO_CHECK = PASS
+CARGO_CLIPPY = PASS
+RUNTIME_STORE_WARNING_LOCATIONS = 0
+PRIMARY_BOUNDARY_FIXTURES = 29/29 PASS
+DEFENSE_IN_DEPTH_FIXTURES = 13/13 PASS
+STRUCTURAL_CHECKS = 46 PASS
+PRODUCTION_BUILD = PASS / 1,763 MODULES
+PRODUCTION_NPM_AUDIT = 0 VULNERABILITIES
+NPM_DEV_INCLUSIVE_ADVISORIES = 11 INHERITED / OUTSIDE PRODUCTION DEPENDENCY SET
+INHERITED_RUSTSEC_WARNING_RUSTFMT_DEBT = UNCHANGED
+MIGRATION_SHA = 62341c5015e70605bc3d57f9152c9e6a571739beaec33a2a7574b3e9a482575d
+STRUCTURAL_FINGERPRINT = 37f9060cd050c615e2576809266ad9535e05c105f57a0a168bcf488f1f14ed77
+TABLES = 5
+EXPLICIT_INDEXES = 7
+SQLITE_AUTOINDEXES = 7
+SQLITE_SEQUENCE = 0
+MIGRATION_2 = ABSENT
 ```

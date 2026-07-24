@@ -5,7 +5,7 @@
 - Human approval date: 2026-07-24
 - Scope: Frontend ownership of the Phase 1B.1 storage status command and the
   assurance claims made by repository validation
-- Implementation verification: Independent exact-head R6 review required
+- Implementation verification: Merged and fresh-main verified after independent exact-head R6
 
 ADR numbers 0004 and 0005 are reserved by the accepted roadmap for signed
 pairing and signed readiness. This ADR therefore uses the next unreserved
@@ -13,7 +13,7 @@ number, 0006.
 
 ## Context
 
-Phase 1B.1 PR #27 remains open, draft and unmerged at
+At ADR decision time, Phase 1B.1 PR #27 was open, draft and unmerged at
 `fdbb9c88c2ef8c46f4a2a0abb4defc68c00c361c`, based on
 `eb0d7def94675e5668f8a061ecc9e74b493c48c3`. Its independent review history is:
 
@@ -25,6 +25,77 @@ INDEPENDENT_REVIEW_R4 = R4_REVIEW_BLOCKED_BY_FINDINGS
 R4_BLOCKER = ASSIGNMENT_ALIAS_FALSE_NEGATIVE
 INDEPENDENT_REVIEW_R5 = R5_REVIEW_BLOCKED_BY_FINDINGS
 R5_BLOCKER = OBJECT_LITERAL_INVOKE_ALIAS_FALSE_NEGATIVE
+```
+
+That block is historical review evidence. The accepted architecture correction
+was subsequently implemented at reviewed head
+`5d894f42a967c9360d86382c1aab9e603472e0c8`, passed independent R6 with
+nonblocking inherited findings, merged as
+`cd903fb18d1618bbe0787d2397948622849ef9d4` at
+`2026-07-24T11:44:00Z`, and passed fresh-main verification.
+
+## Implementation status
+
+```text
+ADR_0006 = ACCEPTED / IMPLEMENTED / MERGED / FRESH_MAIN_VERIFIED
+PHASE_1B_1 = MERGED / FRESH_MAIN_VERIFIED
+MERGED_REVIEWED_HEAD = 5d894f42a967c9360d86382c1aab9e603472e0c8
+MERGE_COMMIT = cd903fb18d1618bbe0787d2397948622849ef9d4
+MERGED_AT = 2026-07-24T11:44:00Z
+PRIMARY_CONTROL = COMMAND_SCOPED_MODULE_BOUNDARY_AND_IMPORT_GRAPH_GATE
+SECONDARY_CONTROL = LIMITED_AST_CHECKS / DEFENSE_IN_DEPTH
+ARBITRARY_TYPESCRIPT_DATA_FLOW_PROOF = NOT_CLAIMED
+CUSTOM_FULL_DATA_FLOW_ANALYZER = REJECTED
+GLOBAL_FRONTEND_ADAPTER_MIGRATION = DEFERRED / SEPARATE_PHASE
+STORAGE_BOOTSTRAP = IMPLEMENTED_AND_VERIFIED
+STORAGE_RUNTIME_PROJECTION = IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY
+DURABLE_RUNTIME_STATE = PARTIALLY_IMPLEMENTED
+PHASE_1B = NOT COMPLETE
+PHASE_1B_2 = NOT AUTHORIZED
+REAL_DESKTOP_RESTART_FLOW = NOT VERIFIED
+CROSS_PLATFORM_RUNTIME = NOT VERIFIED
+REMOTE_CI = NOT PRESENT / NOT CLAIMED
+REMOTE_PRODUCTION_WRITES = 0
+REAL_USER_PROFILE_WRITES = 0
+DEPLOYMENTS = 0
+```
+
+The frozen grandfathered Tauri-core importer baseline is exactly:
+
+- `src/App.tsx`;
+- `src/components/EdgeActivation.tsx`;
+- `src/components/GenesisWizard.tsx`;
+- `src/components/LocalModelsPanel.tsx`;
+- `src/components/MessagingPanel.tsx`;
+- `src/components/PairingGate.tsx`;
+- `src/lib/backendConfig.ts`;
+- `src/lib/inferenceClient.ts`;
+- `src/lib/storageRuntimeClient.ts`.
+
+These paths are not global adapter approval. `storageRuntimeClient.ts` remains
+the sole executable frontend owner of `get_storage_runtime_status`, its command
+constant is private, and it exports no raw Tauri binding. Rust retains one
+read-only status command with no user-deserialized argument. No Phase 1B.2
+CRUD/API authority exists.
+
+Fresh-main verification used pinned Rust 1.95.0 and passed 64/64 storage,
+67/67 inference and 180/180 full Rust tests, Cargo check, Cargo Clippy, 29/29
+primary boundary fixtures, 13/13 defense-in-depth fixtures, 46 structural
+checks, a production build over 1,763 modules, and production npm audit with
+zero vulnerabilities. Runtime-store warning locations were 0. Dev-inclusive
+npm audit retained 11 inherited advisories outside the production dependency
+set; inherited RustSec, warning and rustfmt debt were unchanged.
+
+The implementation preserved:
+
+```text
+MIGRATION_SHA = 62341c5015e70605bc3d57f9152c9e6a571739beaec33a2a7574b3e9a482575d
+STRUCTURAL_FINGERPRINT = 37f9060cd050c615e2576809266ad9535e05c105f57a0a168bcf488f1f14ed77
+TABLES = 5
+EXPLICIT_INDEXES = 7
+SQLITE_AUTOINDEXES = 7
+SQLITE_SEQUENCE = 0
+MIGRATION_2 = ABSENT
 ```
 
 R4 showed that a Tauri `invoke` binding assigned after declaration could reach
@@ -303,9 +374,9 @@ Four dispositions were considered:
    proves.
 
 Human approval on 2026-07-24 selected disposition 1 and authorized one bounded
-architecture-correction package in PR #27. The accepted decision does not make
-that implementation independently verified. PR #27 remains draft and blocked
-until exact-head R6 review and a later, separate ready/merge authorization.
+architecture-correction package in PR #27. That decision did not itself verify
+the implementation; independent exact-head R6, controlled merge and fresh-main
+verification subsequently supplied the required evidence recorded above.
 
 ## Migration plan
 
@@ -377,18 +448,21 @@ trust root.
 
 ## Implementation verification gate
 
-The architecture decision is accepted. The implementation must still pass the
-complete local gate and an independent exact-head R6 review. Until that review:
+The architecture decision is Accepted and its Phase 1B.1 implementation has
+passed the complete local gate, independent exact-head R6, controlled merge,
+and fresh-main verification:
 
 ```text
-R5_REVIEW = R5_REVIEW_BLOCKED_BY_FINDINGS
+R5_REVIEW = R5_REVIEW_BLOCKED_BY_FINDINGS / HISTORICAL
 SIXTH_POINT_CORRECTION = REJECTED
-ARCHITECTURAL_CORRECTION = AUTHORIZED / IMPLEMENTATION_IN_PROGRESS
-R5_BLOCKER = ARCHITECTURALLY_RESOLVED_ONLY_AFTER_R6_CONFIRMATION
-R6_REVIEW = REQUIRED / NOT_PERFORMED
-PR_27_READY = NOT_AUTHORIZED
-PR_27_MERGE = NOT_AUTHORIZED
-PHASE_1B_2 = NOT_AUTHORIZED
+ARCHITECTURAL_CORRECTION = IMPLEMENTED / MERGED / FRESH_MAIN_VERIFIED
+R5_BLOCKER_DISPOSITION = CLOSED_BY_ARCHITECTURAL_BOUNDARY_AFTER_R6_CONFIRMATION
+R6_REVIEW = R6_REVIEW_PASS_WITH_NONBLOCKING_FINDINGS
+PR_27 = MERGED
+MERGED_REVIEWED_HEAD = 5d894f42a967c9360d86382c1aab9e603472e0c8
+MERGE_COMMIT = cd903fb18d1618bbe0787d2397948622849ef9d4
+MERGED_AT = 2026-07-24T11:44:00Z
+PHASE_1B_2 = NOT AUTHORIZED
 ```
 
 ## References
