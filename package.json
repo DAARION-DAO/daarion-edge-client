@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "test:inference-contract": "node scripts/validate-inference-contract.mjs",
+    "test:storage-runtime-contract": "node scripts/validate-storage-runtime-contract.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

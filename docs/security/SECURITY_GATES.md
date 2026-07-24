@@ -7,7 +7,7 @@ No gate is satisfied by documentation or module names alone. “Open” means im
 | Gate | Current state | Required evidence to close | Owner/phase |
 | --- | --- | --- | --- |
 | Local-only inference | REPOSITORY PASS — MERGED / FRESH-MAIN VERIFIED | Phase 1A has only `LocalOnly`; loopback/redirect/proxy controls; mandatory `/api/status` cloud-disabled proof; exact stable `/api/tags` → `/api/show` → `/api/tags` local-model evidence; immediate pre-chat revalidation; post-preparation verification; service-owned probe/chat/preparation deadlines and cancellation; bounded streaming; zero-chat sentinel tests; truthful UI; and no main-webview shell authority. Reviewed head `9e8c5d9…` was merged as `62a1d514…` and verified from fresh main. No real Ollama/model smoke or cryptographic daemon/artifact attestation is claimed. | Edge / 1A |
-| Durable runtime state | OPEN — PLAN `HUMAN_DECISIONS_RECORDED` / FINAL REVIEW PENDING / IMPLEMENTATION `NO_GO` | HD-01 through HD-09 accept standard plaintext SQLite risk, Rust-owned `rusqlite`, retention/limits/export/pragma/desktop-platform rules; closure still requires separately authorized migrations, transactions, restart recovery, deletion/export, permissions, corruption/migration tests, and the pre-production SQLCipher decision | Edge / 1B |
+| Durable runtime state | OPEN — PHASE 1B.1 ARCHITECTURAL CORRECTION / R6 REVIEW PENDING | R1 and R2 blocked earlier PR #27 heads; R3 passed with nonblocking findings; R4 blocked an assignment-alias false-negative; R5 blocked an object-literal false-negative at exact head `fdbb9c88…`. Accepted ADR 0006 rejects a custom complete data-flow analyzer and replaces the overclaim with a command-scoped module/import/re-export gate plus limited AST defense in depth. The local correction passes 29/29 primary fixtures, 13/13 secondary fixtures, 46 structural checks, 64 storage, 67 inference and 180 full Rust tests. Phase 1B.1 remains draft and unmerged. Closure still requires acceptable exact-head R6, separate ready/merge authorization and fresh-main proof; the broader durable-state gate additionally requires later Phase 1B content services, deletion/export/backup, desktop/platform evidence, and the pre-production SQLCipher decision | Edge / 1B |
 | Inert Supervisor | OPEN | Deterministic IDs, explicit bounded state machine, idempotency, cancellation and crash recovery; no tools/network/scheduling | Edge / 1C |
 | Production pairing | OPEN | Signed purpose-bound invitation, trusted issuer, membership/device binding, expiry, nonce/replay, single use, revocation and downgrade tests | Both / ADR 0004 |
 | Readiness projection | OPEN | Separate signed schema, minimal allowlist, producer identity, expiry/freshness, replay/revocation, cross-repo fixtures and privacy tests | Both / ADR 0005 + Phase 5 |
@@ -98,7 +98,7 @@ authorize production operations or Phase 1B implementation. The exact commands,
 formatting amendment and known baseline limitations are recorded in the Phase
 1A completion report.
 
-## Phase 1B planning status
+## Phase 1B implementation status
 
 The docs-only Phase 1B plan now records human acceptance of a Rust-owned
 `rusqlite` service (`bundled`, `limits`, `backup`) and standard plaintext SQLite
@@ -115,9 +115,22 @@ queue/backup limits, explicit plaintext export, and desktop macOS/Windows/Linux
 validation are fixed in the plan. Android remains a separately authorized gate;
 iOS is unsupported and unclaimed.
 
-This recording adds no dependency, schema, migration, IPC command, or runtime
-behavior. SQLCipher is a separate pre-production decision; production readiness
-remains blocked until it is closed. The durable-state gate stays open until the
-plan receives a fresh exact-head review and merge, each slice is separately
-authorized, and all required migration, restart, deletion/export, permission,
-corruption, privacy, and platform tests pass.
+The separately authorized Phase 1B.1 candidate adds only `rusqlite` 0.40.1,
+bundled SQLite 3.53.2, the empty five-table migration, private Rust service, one
+no-argument status command, typed client, and Dashboard card. It has no content
+CRUD, backup/export, remote sync, Supervisor, memory extraction, or generic SQL
+authority. Automated tests use generated temporary roots; no real user profile
+or production system is written. R1 and R2 blocked earlier heads. Independent
+local R3 passed exact head `86ef384a…` with three nonblocking Low findings. R4
+and R5 then exposed assignment- and object-literal alias false-negatives in the
+overclaimed validator model. Accepted ADR 0006 makes the command-scoped
+module/import/re-export graph the primary control and limited AST checks
+defense in depth. Arbitrary TypeScript data-flow proof is not claimed. The
+architecture correction is locally green and awaits independent exact-head R6.
+
+SQLCipher remains a separate pre-production decision. The durable-state gate
+stays open through acceptable R6 review, separate merge/fresh-main
+verification, later
+separately authorized Phase 1B slices, desktop target evidence, deletion/export,
+and full recovery/privacy closure. A repository candidate is not production
+readiness.

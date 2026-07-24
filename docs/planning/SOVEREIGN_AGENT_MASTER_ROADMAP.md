@@ -164,10 +164,23 @@ Numbers are reservations for planning, not accepted decisions.
   and merged as `62a1d514b93925e8b7098c6db19f8751a70a7bf8`;
   fresh-main verification passed. No live Ollama smoke is claimed.
 - Phase 1B planning: `APPROVED / HUMAN_DECISIONS_RECORDED`; the docs-only
-  finalization awaits a fresh exact-head review and merge gate.
-- Phase 1B implementation: `NO_GO`.
-- Phase 1B.1: `NOT_AUTHORIZED_BY_THIS_TASK`; every slice remains separately
-  authorized.
+  plan and Rust 1.95.0 toolchain unblock are merged on main `eb0d7def…`.
+- Phase 1B implementation: `PARTIALLY_IMPLEMENTED`; the separately authorized
+  Phase 1B.1 storage bootstrap/status vertical slice is complete in PR #27 but
+  is not merged. Phase 1B.2 content services remain unauthorized.
+- Phase 1B.1: `R5 REVIEW BLOCKED / ARCHITECTURAL CORRECTION LOCAL GATE PASS /
+  R6 REVIEW PENDING`. Independent R1 and R2 blocked earlier heads; R3 passed
+  with nonblocking findings; R4 found an assignment-alias false-negative; R5
+  found an object-literal false-negative at exact head `fdbb9c88…`. Human-
+  accepted ADR 0006 rejects another syntax-specific patch and a custom complete
+  data-flow analyzer. The primary control is the command-scoped module/import/
+  re-export graph; limited AST checks are defense in depth, and arbitrary
+  TypeScript data-flow proof is not claimed. The correction locally passes
+  29/29 primary fixtures, 13/13 secondary fixtures, 46 structural checks, 64
+  storage, 67 inference and 180 full Rust tests. R6 exact-head review, separate
+  ready/merge authorization, fresh-main verification and real desktop/
+  cross-platform evidence remain pending.
+- Phase 1B.2: `NOT_AUTHORIZED`; no conversation/message/task/audit API exists.
 - Phase 1C and later: `NO_GO`.
 - Production readiness: `NO_GO`.
 
@@ -176,11 +189,15 @@ PHASE_1A =
 MERGED / FRESH-MAIN VERIFIED / PASS
 
 PHASE_1B_PLANNING =
-APPROVED / HUMAN_DECISIONS_RECORDED / FRESH_REVIEW_PENDING
+APPROVED / MERGED
 
 PHASE_1B_IMPLEMENTATION =
-NO_GO
+PARTIALLY_IMPLEMENTED
 
 PHASE_1B_1 =
-NOT_AUTHORIZED_BY_THIS_TASK
+COMPLETE_IN_PR / NOT_MERGED / R5_BLOCKED_OBJECT_LITERAL /
+ARCHITECTURAL_CORRECTION_LOCAL_GATE_PASS / R6_REVIEW_PENDING
+
+PHASE_1B_2 =
+NOT_AUTHORIZED
 ```

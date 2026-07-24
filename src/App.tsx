@@ -5,6 +5,7 @@ import { Shield, Activity, XCircle, Zap, Terminal, Globe, Monitor, MessageSquare
 import { MessagingPanel } from "./components/MessagingPanel";
 import { EdgeActivation } from "./components/EdgeActivation";
 import { LocalInferencePanel } from "./components/LocalInferencePanel";
+import { StorageRuntimeCard } from "./components/StorageRuntimeCard";
 import { GenesisWizard } from "./components/GenesisWizard";
 import { PairingGate, type PairingState } from "./components/PairingGate";
 import {
@@ -684,6 +685,7 @@ function App() {
 
           {/* Sidebar Telemetry & Diagnostics (5 cols) */}
           <div className="lg:col-span-5 space-y-6">
+            <StorageRuntimeCard />
             
             {/* Live Data Link Section */}
             <section className="glass p-6 space-y-6 relative overflow-hidden group">
