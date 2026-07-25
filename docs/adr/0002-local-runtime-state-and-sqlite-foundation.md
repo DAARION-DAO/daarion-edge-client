@@ -73,7 +73,9 @@ STORAGE_STATUS_TAURI_COMMANDS = 1
 FRONTEND_CONTENT_AUTHORITY = 0
 DURABLE_RUNTIME_STATE = PARTIALLY_IMPLEMENTED
 PHASE_1B = NOT COMPLETE
-PHASE_1B3 = NOT AUTHORIZED
+PHASE_1B3 = IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
+PHASE_1B3_IMPLEMENTATION = NOT MERGED
+PHASE_1B4 = NOT AUTHORIZED
 REAL_DESKTOP_RESTART = NOT VERIFIED
 CROSS_PLATFORM_RUNTIME = NOT VERIFIED
 REMOTE_CI = NOT PRESENT / NOT CLAIMED
@@ -106,7 +108,14 @@ SQLITE_SEQUENCE = 0
 MIGRATION_2 = ABSENT
 ```
 
-These slices do not implement public content CRUD, task services, backup/export,
-retention/deletion services, six-level memory, Phase 1B.3, or
+The Phase 1B.3 draft candidate adds exactly five crate-private Rust operations:
+one atomic inert-task record mutation, two task reads, and two typed audit
+reads. It retains `created` as data-only state, writes `task.recorded`, leaves
+`tasks.idempotency_key` NULL, and closes the previously accepted stringly audit
+writer boundary. Local evidence is complete, but independent exact-head review
+and merge have not occurred.
+
+These slices do not implement public content CRUD, executable task semantics,
+backup/export, retention/deletion services, six-level memory, Phase 1B.4, or
 production/platform acceptance. The full ADR implementation therefore remains
 partial.

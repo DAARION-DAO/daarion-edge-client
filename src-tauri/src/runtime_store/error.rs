@@ -171,6 +171,8 @@ impl std::error::Error for RuntimeStoreError {}
 pub(crate) enum ContentOperationErrorCode {
     InvalidInput,
     ConversationNotFound,
+    TaskNotFound,
+    AuditEventNotFound,
     IdempotencyConflict,
     IdempotencyRecordInconsistent,
     CapacityExceeded,
@@ -197,6 +199,14 @@ impl ContentOperationError {
 
     pub(crate) const fn conversation_not_found() -> Self {
         Self::new(ContentOperationErrorCode::ConversationNotFound)
+    }
+
+    pub(crate) const fn task_not_found() -> Self {
+        Self::new(ContentOperationErrorCode::TaskNotFound)
+    }
+
+    pub(crate) const fn audit_event_not_found() -> Self {
+        Self::new(ContentOperationErrorCode::AuditEventNotFound)
     }
 
     pub(crate) const fn idempotency_conflict() -> Self {
@@ -274,6 +284,8 @@ impl ContentOperationError {
         match self.code {
             ContentOperationErrorCode::InvalidInput => "content_invalid_input",
             ContentOperationErrorCode::ConversationNotFound => "content_conversation_not_found",
+            ContentOperationErrorCode::TaskNotFound => "content_task_not_found",
+            ContentOperationErrorCode::AuditEventNotFound => "content_audit_event_not_found",
             ContentOperationErrorCode::IdempotencyConflict => "content_idempotency_conflict",
             ContentOperationErrorCode::IdempotencyRecordInconsistent => {
                 "content_idempotency_record_inconsistent"

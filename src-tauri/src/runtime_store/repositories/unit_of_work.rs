@@ -1,13 +1,16 @@
 use crate::runtime_store::config::ContentStorageLimits;
 use crate::runtime_store::connection::RuntimeStoreConnection;
 use crate::runtime_store::deadline::{ensure_before, remaining};
-use crate::runtime_store::error::ContentOperationError;
+use crate::runtime_store::error::{ContentOperationError, ContentOperationErrorCode};
 use crate::runtime_store::migrations::{schema_fingerprint, EXPECTED_SCHEMA_FINGERPRINT};
+use crate::runtime_store::models::{
+    AuditEventRecord, AuditEventType, AuditOutcome, AuditSubjectType, ContentActor,
+};
 use crate::runtime_store::path_policy::{
     database_artifact_sizes, enforce_sidecar_permissions, revalidate_database,
     PreparedStoragePaths, StorageArtifactSizes,
 };
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 #[cfg(test)]
 use std::path::Path;
 use std::time::Instant;
@@ -16,6 +19,7 @@ use std::time::Instant;
 pub(in crate::runtime_store) enum MutationKind {
     CreateConversation,
     AppendMessage,
+    RecordInertTask,
 }
 
 impl MutationKind {
@@ -23,6 +27,7 @@ impl MutationKind {
         match self {
             Self::CreateConversation => limits.create_growth_envelope_bytes,
             Self::AppendMessage => limits.append_growth_envelope_bytes,
+            Self::RecordInertTask => limits.task_record_growth_envelope_bytes,
         }
     }
 
@@ -30,20 +35,31 @@ impl MutationKind {
         match self {
             Self::CreateConversation => limits.wal_create_growth_bound_bytes,
             Self::AppendMessage => limits.wal_append_growth_bound_bytes,
+            Self::RecordInertTask => limits.wal_task_record_growth_bound_bytes,
         }
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct AuditEvent {
-    pub(super) event_type: String,
-    pub(super) actor_type: String,
-    pub(super) subject_type: String,
-    pub(super) subject_id: Option<String>,
-    pub(super) outcome: String,
-    pub(super) reason_code: Option<String>,
-    pub(super) correlation_id: Option<String>,
-    pub(super) created_at_ms: i64,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum SuccessAuditEvent<'a> {
+    ConversationCreated {
+        event_id: &'a str,
+        actor: ContentActor,
+        subject_id: &'a str,
+        created_at_ms: i64,
+    },
+    MessageAppended {
+        event_id: &'a str,
+        actor: ContentActor,
+        subject_id: &'a str,
+        created_at_ms: i64,
+    },
+    TaskRecorded {
+        event_id: &'a str,
+        actor: ContentActor,
+        subject_id: &'a str,
+        created_at_ms: i64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -73,52 +89,78 @@ pub(in crate::runtime_store) struct AdmissionSnapshot {
 pub(super) fn load_audit(
     connection: &Connection,
     event_id: &str,
-) -> Result<Option<AuditEvent>, ContentOperationError> {
-    connection
-        .query_row(
-            "SELECT event_type, actor_type, subject_type, subject_id, outcome,
-                    reason_code, correlation_id, created_at_ms
-             FROM audit_events
-             WHERE event_id = ?1",
-            [event_id],
-            |row| {
-                Ok(AuditEvent {
-                    event_type: row.get(0)?,
-                    actor_type: row.get(1)?,
-                    subject_type: row.get(2)?,
-                    subject_id: row.get(3)?,
-                    outcome: row.get(4)?,
-                    reason_code: row.get(5)?,
-                    correlation_id: row.get(6)?,
-                    created_at_ms: row.get(7)?,
-                })
-            },
-        )
-        .optional()
-        .map_err(|error| ContentOperationError::from_sqlite(&error))
+) -> Result<Option<AuditEventRecord>, ContentOperationError> {
+    super::audit_events::load(connection, event_id).map_err(|error| {
+        if error.code == ContentOperationErrorCode::IntegrityFailure {
+            ContentOperationError::idempotency_inconsistent()
+        } else {
+            error
+        }
+    })
 }
 
 pub(super) fn insert_success_audit(
     connection: &Connection,
-    event_id: &str,
-    event_type: &str,
-    actor_type: &str,
-    subject_type: &str,
-    subject_id: &str,
-    created_at_ms: i64,
+    event: SuccessAuditEvent<'_>,
 ) -> Result<(), ContentOperationError> {
+    let (event_id, event_type, actor, subject_type, subject_id, outcome, created_at_ms) =
+        match event {
+            SuccessAuditEvent::ConversationCreated {
+                event_id,
+                actor,
+                subject_id,
+                created_at_ms,
+            } => (
+                event_id,
+                AuditEventType::ConversationCreated,
+                actor,
+                AuditSubjectType::Conversation,
+                subject_id,
+                AuditOutcome::Success,
+                created_at_ms,
+            ),
+            SuccessAuditEvent::MessageAppended {
+                event_id,
+                actor,
+                subject_id,
+                created_at_ms,
+            } => (
+                event_id,
+                AuditEventType::MessageAppended,
+                actor,
+                AuditSubjectType::Message,
+                subject_id,
+                AuditOutcome::Success,
+                created_at_ms,
+            ),
+            SuccessAuditEvent::TaskRecorded {
+                event_id,
+                actor,
+                subject_id,
+                created_at_ms,
+            } => (
+                event_id,
+                AuditEventType::TaskRecorded,
+                actor,
+                AuditSubjectType::Task,
+                subject_id,
+                AuditOutcome::Success,
+                created_at_ms,
+            ),
+        };
     connection
         .execute(
             "INSERT INTO audit_events (
                  event_id, event_type, actor_type, subject_type, subject_id,
                  outcome, reason_code, correlation_id, created_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, 'success', NULL, ?1, ?6)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?1, ?7)",
             (
                 event_id,
-                event_type,
-                actor_type,
-                subject_type,
+                event_type.as_str(),
+                actor.as_str(),
+                subject_type.as_str(),
                 subject_id,
+                outcome.as_str(),
                 created_at_ms,
             ),
         )

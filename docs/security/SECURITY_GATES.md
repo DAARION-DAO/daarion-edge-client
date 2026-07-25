@@ -7,7 +7,7 @@ No gate is satisfied by documentation or module names alone. “Open” means im
 | Gate | Current state | Required evidence to close | Owner/phase |
 | --- | --- | --- | --- |
 | Local-only inference | REPOSITORY PASS — MERGED / FRESH-MAIN VERIFIED | Phase 1A has only `LocalOnly`; loopback/redirect/proxy controls; mandatory `/api/status` cloud-disabled proof; exact stable `/api/tags` → `/api/show` → `/api/tags` local-model evidence; immediate pre-chat revalidation; post-preparation verification; service-owned probe/chat/preparation deadlines and cancellation; bounded streaming; zero-chat sentinel tests; truthful UI; and no main-webview shell authority. Reviewed head `9e8c5d9…` was merged as `62a1d514…` and verified from fresh main. No real Ollama/model smoke or cryptographic daemon/artifact attestation is claimed. | Edge / 1A |
-| Durable runtime state | OPEN — PHASE 1B.2 MERGED / FRESH-MAIN VERIFIED | Phase 1B.1 and Phase 1B.2 are merged and fresh-main verified. Phase 1B.2 adds exactly five private Rust conversations/messages operations with atomic subject-plus-audit writes, global operation-ID replay/conflict handling, bounded deterministic reads, a fail-closed 16-MiB reserve and WAL controls. Repository evidence passed 36 repository, 100 runtime-store, 67 inference and 216 full Rust tests; 20 create and 20 maximum-message append measurements stayed within the 8-/32-MiB aggregate and 2-/4-MiB WAL bounds. It adds no schema, dependency, public Tauri/frontend content authority, real-profile write or production operation. The broader gate remains open for tasks, retention/deletion/export/backup, desktop/platform evidence, full recovery/privacy closure and the pre-production SQLCipher decision. Phase 1B.3 is not authorized | Edge / 1B |
+| Durable runtime state | OPEN — PHASE 1B.3 DRAFT / LOCAL GATE PASS | Phase 1B.1 and Phase 1B.2 are merged and fresh-main verified. The Phase 1B.3 draft candidate adds exactly five crate-private Rust task/audit operations: one atomic inert-task-plus-typed-audit mutation and four bounded reads. Closed task/audit types, global operation-ID replay/conflict handling, fail-closed decoding, the immutable 16-MiB reserve and operation-specific WAL controls pass locally. Evidence includes 31 focused, 131 runtime-store, 67 inference and 247 full Rust tests; task growth passed 20/20 at a 41,200-byte maximum against 8-/2-MiB bounds, and the existing 40/40 growth regression is unchanged. It adds no execution semantics, schema, dependency, public Tauri/frontend authority, real-profile write or production operation. Independent exact-head review and merge are pending. The broader gate remains open for retention/deletion/export/backup, desktop/platform evidence, full recovery/privacy closure and the pre-production SQLCipher decision. | Edge / 1B |
 | Inert Supervisor | OPEN | Deterministic IDs, explicit bounded state machine, idempotency, cancellation and crash recovery; no tools/network/scheduling | Edge / 1C |
 | Production pairing | OPEN | Signed purpose-bound invitation, trusted issuer, membership/device binding, expiry, nonce/replay, single use, revocation and downgrade tests | Both / ADR 0004 |
 | Readiness projection | OPEN | Separate signed schema, minimal allowlist, producer identity, expiry/freshness, replay/revocation, cross-repo fixtures and privacy tests | Both / ADR 0005 + Phase 5 |
@@ -174,7 +174,9 @@ STORAGE_STATUS_TAURI_COMMANDS = 1
 FRONTEND_CONTENT_AUTHORITY = 0
 DURABLE_RUNTIME_STATE = PARTIALLY_IMPLEMENTED
 PHASE_1B = NOT COMPLETE
-PHASE_1B3 = NOT AUTHORIZED
+PHASE_1B3 = IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
+PHASE_1B3_IMPLEMENTATION = NOT MERGED
+PHASE_1B4 = NOT AUTHORIZED
 REAL_DESKTOP_RESTART = NOT VERIFIED
 CROSS_PLATFORM_RUNTIME = NOT VERIFIED
 REMOTE_CI = NOT PRESENT / NOT CLAIMED
@@ -194,7 +196,9 @@ SCHEMA_CHANGE = NONE
 DEPENDENCY_CHANGE = NONE
 EXECUTABLE_GROWTH_PROOF = PASS / 40 RUNS / 0 FAILURES
 RUNTIME_STORE_WARNING_LOCATIONS = 0
-PHASE_1B3 = NOT AUTHORIZED
+PHASE_1B3 = IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
+PHASE_1B3_IMPLEMENTATION = NOT MERGED
+PHASE_1B4 = NOT AUTHORIZED
 REMOTE_PRODUCTION_WRITES = 0
 REAL_USER_PROFILE_WRITES = 0
 DEPLOYMENTS = 0

@@ -201,8 +201,13 @@ Numbers are reservations for planning, not accepted decisions.
   write was added. Private conversation and message storage are
   `IMPLEMENTED_AND_VERIFIED`; durable runtime state remains
   `PARTIALLY_IMPLEMENTED`.
-- Phase 1B.3: `NOT AUTHORIZED`; task services and later durable-state behavior
-  remain out of scope.
+- Phase 1B.3: `IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS /
+  INDEPENDENT_REVIEW_PENDING`. The candidate contains exactly five private Rust
+  operations: one inert-task mutation, two task reads and two typed audit reads.
+  It adds no executable task semantics, migration, dependency, public
+  Tauri/frontend authority, production write or real-profile write. It is not
+  merged.
+- Phase 1B.4: `NOT AUTHORIZED`.
 - Phase 1C and later: `NO_GO`.
 - Production readiness: `NO_GO`.
 
@@ -268,10 +273,16 @@ FRONTEND_CONTENT_AUTHORITY =
 0
 
 PHASE_1B3 =
+IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
+
+PHASE_1B3_IMPLEMENTATION =
+NOT MERGED
+
+PHASE_1B4 =
 NOT AUTHORIZED
 
 NEXT_AUTHORIZED_ACTION =
-SEPARATE PHASE 1B.3 AUDIT / PLAN / HUMAN AUTHORIZATION
+INDEPENDENT EXACT-HEAD PHASE 1B.3 REVIEW
 
 REAL_DESKTOP_RESTART =
 NOT VERIFIED

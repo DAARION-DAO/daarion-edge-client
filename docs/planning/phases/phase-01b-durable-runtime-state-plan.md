@@ -364,7 +364,10 @@ Slices 1B.1 through 1B.5 each require separate authorization.
 Phase 1B.1 subsequently received that separate authorization and is now merged
 and fresh-main verified. This historical decision record does not authorize
 Phase 1B.2 or any later slice. Phase 1B.2 subsequently received its own
-separate authorization and verification; Phase 1B.3 remains unauthorized.
+separate authorization and verification. Phase 1B.3 also received a separate
+exact-base implementation authorization and now has a local-gate-passing draft
+candidate; independent exact-head review and merge remain pending. This record
+does not authorize Phase 1B.4.
 
 ## 3. Current repository inventory
 
@@ -971,6 +974,12 @@ does not authorize all slices.
 - Expected files: task/audit repositories, allowlisted enums/errors, tests.
 - Tests: matrix 9, 14–16, 23, 26–27 plus metadata redaction cases.
 - Entry gate: 1B.2 verified and Phase 1C state semantics remain explicitly deferred.
+- Current state: `IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS /
+  INDEPENDENT_REVIEW_PENDING`. Exactly five crate-private Rust operations
+  provide one inert `created` task mutation, two task reads and two typed audit
+  reads. The candidate has no execution/transition semantics, migration,
+  dependency, Tauri/frontend authority, production write or real-profile
+  write. It is not merged.
 - Stop: executable task semantics, free-form audit metadata, secret/content logging.
 - Rollback: remove callers while retaining compatible rows; schema fixes are forward-only.
 - Non-goals: transitions, planner/executor/verifier, retries, tools, scheduling.
@@ -1193,10 +1202,16 @@ PHASE_1B =
 NOT COMPLETE
 
 PHASE_1B3 =
+IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
+
+PHASE_1B3_IMPLEMENTATION =
+NOT MERGED
+
+PHASE_1B4 =
 NOT AUTHORIZED
 
 NEXT_AUTHORIZED_ACTION =
-SEPARATE PHASE 1B.3 AUDIT / PLAN / HUMAN AUTHORIZATION
+INDEPENDENT EXACT-HEAD PHASE 1B.3 REVIEW
 
 REAL_DESKTOP_RESTART =
 NOT VERIFIED
