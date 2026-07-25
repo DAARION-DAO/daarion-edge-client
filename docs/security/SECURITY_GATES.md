@@ -7,7 +7,7 @@ No gate is satisfied by documentation or module names alone. “Open” means im
 | Gate | Current state | Required evidence to close | Owner/phase |
 | --- | --- | --- | --- |
 | Local-only inference | REPOSITORY PASS — MERGED / FRESH-MAIN VERIFIED | Phase 1A has only `LocalOnly`; loopback/redirect/proxy controls; mandatory `/api/status` cloud-disabled proof; exact stable `/api/tags` → `/api/show` → `/api/tags` local-model evidence; immediate pre-chat revalidation; post-preparation verification; service-owned probe/chat/preparation deadlines and cancellation; bounded streaming; zero-chat sentinel tests; truthful UI; and no main-webview shell authority. Reviewed head `9e8c5d9…` was merged as `62a1d514…` and verified from fresh main. No real Ollama/model smoke or cryptographic daemon/artifact attestation is claimed. | Edge / 1A |
-| Durable runtime state | OPEN — PHASE 1B.1 MERGED / FRESH-MAIN VERIFIED | Reviewed head `5d894f42a967c9360d86382c1aab9e603472e0c8` passed independent R6 with accepted nonblocking findings, merged as `cd903fb18d1618bbe0787d2397948622849ef9d4` at `2026-07-24T11:44:00Z`, and passed fresh-main verification. The verified slice includes the five-table bootstrap and one safe storage-status projection, not content persistence services. Fresh main passed 64/64 storage, 67/67 inference and 180/180 full Rust tests, Cargo check/Clippy, 29/29 primary fixtures, 13/13 defense fixtures, 46 structural checks, production build over 1,763 modules and zero production npm vulnerabilities. Remote CI was absent and is not claimed. The broader gate remains open for public content services, retention/deletion/export/backup, desktop/platform evidence, full recovery/privacy closure and the pre-production SQLCipher decision. Phase 1B.2 is not authorized | Edge / 1B |
+| Durable runtime state | OPEN — PHASE 1B.2 LOCAL GATE PASS / INDEPENDENT REVIEW PENDING | Phase 1B.1 remains merged and fresh-main verified. The Phase 1B.2 draft candidate adds exactly five private Rust conversations/messages operations with atomic subject-plus-audit writes, global operation-ID replay/conflict handling, bounded reads, a fail-closed 16-MiB reserve and WAL controls. Its local gate passed 36 repository, 100 runtime-store, 67 inference and 216 full Rust tests; 20 create and 20 maximum-message append measurements stayed within the 8-/32-MiB aggregate and 2-/4-MiB WAL bounds. It adds no schema, dependency, public Tauri/frontend content authority, real-profile write or production operation. The candidate is not merged and still requires independent exact-head review plus separate ready/merge authorization. The broader gate remains open for tasks, retention/deletion/export/backup, desktop/platform evidence, full recovery/privacy closure and the pre-production SQLCipher decision. Phase 1B.3 is not authorized | Edge / 1B |
 | Inert Supervisor | OPEN | Deterministic IDs, explicit bounded state machine, idempotency, cancellation and crash recovery; no tools/network/scheduling | Edge / 1C |
 | Production pairing | OPEN | Signed purpose-bound invitation, trusted issuer, membership/device binding, expiry, nonce/replay, single use, revocation and downgrade tests | Both / ADR 0004 |
 | Readiness projection | OPEN | Separate signed schema, minimal allowlist, producer identity, expiry/freshness, replay/revocation, cross-repo fixtures and privacy tests | Both / ADR 0005 + Phase 5 |
@@ -115,7 +115,7 @@ queue/backup limits, explicit plaintext export, and desktop macOS/Windows/Linux
 validation are fixed in the plan. Android remains a separately authorized gate;
 iOS is unsupported and unclaimed.
 
-The merged and fresh-main-verified Phase 1B.1 slice adds only `rusqlite` 0.40.1,
+The merged and fresh-main-verified Phase 1B.1 slice adds `rusqlite` 0.40.1,
 bundled SQLite 3.53.2, the empty five-table migration, private Rust service, one
 no-argument status command, typed client, and Dashboard card. It has no content
 CRUD, backup/export, remote sync, Supervisor, memory extraction, or generic SQL
@@ -129,10 +129,31 @@ defense in depth. Arbitrary TypeScript data-flow proof is not claimed.
 Independent exact-head R6 passed with accepted nonblocking findings, followed
 by controlled merge and fresh-main verification.
 
+The separately authorized Phase 1B.2 candidate now implements five private
+Rust operations: create/get/list conversations and append/list messages. Both
+mutations couple the subject, global operation-ID evidence and one privacy-safe
+audit event in the same `BEGIN IMMEDIATE` transaction. Canonical request replay
+returns the original result; conflicts and inconsistent evidence fail closed
+without leaking raw SQLite details. The candidate enforces the reviewed
+4-GiB hard limit, immutable 16-MiB operational reserve, 8-/32-MiB operation
+envelopes, 128-page autocheckpoint, 10-MiB physical-WAL ceiling and 2-/4-MiB
+WAL bounds. Physical WAL allocation is treated conservatively as current WAL
+capacity; arbitrary live-frame reclamation is not claimed.
+
+The local gate passed 36/36 new repository tests, 100/100 runtime-store tests,
+67/67 inference tests and 216/216 full Rust tests. The executable proof ran 20
+maximum-title creates and 20 maximum-content appends with zero failures:
+maximum create aggregate/WAL growth was 32,960/32,960 bytes and maximum append
+aggregate/WAL growth was 313,120/313,120 bytes. Cargo check, Clippy, frontend
+contracts, the 1,763-module production build, zero-vulnerability production
+npm audit, secret scan and scoped formatting passed. Runtime-store warning
+locations remain zero.
+
 SQLCipher remains a separate pre-production decision. The durable-state gate
 stays open through later separately authorized Phase 1B slices, desktop target
 evidence, deletion/export, and full recovery/privacy closure. The merged
-Phase 1B.1 repository slice is not production readiness.
+Phase 1B.1 repository slice and the unmerged Phase 1B.2 candidate are not
+production readiness.
 
 ```text
 PHASE_1B_1 = MERGED / FRESH_MAIN_VERIFIED
@@ -143,10 +164,27 @@ STORAGE_BOOTSTRAP = IMPLEMENTED_AND_VERIFIED
 STORAGE_RUNTIME_PROJECTION = IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY
 DURABLE_RUNTIME_STATE = PARTIALLY_IMPLEMENTED
 PHASE_1B = NOT COMPLETE
-PHASE_1B_2 = NOT AUTHORIZED
+PHASE_1B_2_AT_PHASE_1B1_MERGE = NOT AUTHORIZED
 REAL_DESKTOP_RESTART_FLOW = NOT VERIFIED
 CROSS_PLATFORM_RUNTIME = NOT VERIFIED
 REMOTE_CI = NOT PRESENT / NOT CLAIMED
+REMOTE_PRODUCTION_WRITES = 0
+REAL_USER_PROFILE_WRITES = 0
+DEPLOYMENTS = 0
+```
+
+Current unmerged Phase 1B.2 gate:
+
+```text
+PHASE_1B_2 = IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS
+INDEPENDENT_EXACT_HEAD_REVIEW = PENDING
+MERGED = NO
+PUBLIC_CONTENT_TAURI_COMMANDS = 0
+SCHEMA_CHANGE = NONE
+DEPENDENCY_CHANGE = NONE
+EXECUTABLE_GROWTH_PROOF = PASS / 40 RUNS / 0 FAILURES
+RUNTIME_STORE_WARNING_LOCATIONS = 0
+PHASE_1B_3 = NOT AUTHORIZED
 REMOTE_PRODUCTION_WRITES = 0
 REAL_USER_PROFILE_WRITES = 0
 DEPLOYMENTS = 0
@@ -157,7 +195,8 @@ debt, not global adapter approval. `src/lib/storageRuntimeClient.ts` remains
 the sole executable frontend owner of `get_storage_runtime_status`; its command
 constant is private and it exports no raw Tauri binding. Rust exposes one
 read-only status command with no user-deserialized arguments. No Phase 1B.2
-CRUD/API authority exists.
+Tauri/frontend CRUD/API authority exists; the content service remains
+crate-private Rust only.
 
 Fresh-main evidence and schema invariants:
 

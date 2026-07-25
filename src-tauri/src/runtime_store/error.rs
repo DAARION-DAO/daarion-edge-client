@@ -166,3 +166,132 @@ impl fmt::Display for RuntimeStoreError {
 }
 
 impl std::error::Error for RuntimeStoreError {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ContentOperationErrorCode {
+    InvalidInput,
+    ConversationNotFound,
+    IdempotencyConflict,
+    IdempotencyRecordInconsistent,
+    CapacityExceeded,
+    BusyTimeout,
+    DeadlineExceeded,
+    Unavailable,
+    IntegrityFailure,
+    Internal,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ContentOperationError {
+    pub(crate) code: ContentOperationErrorCode,
+}
+
+impl ContentOperationError {
+    pub(crate) const fn new(code: ContentOperationErrorCode) -> Self {
+        Self { code }
+    }
+
+    pub(crate) const fn invalid_input() -> Self {
+        Self::new(ContentOperationErrorCode::InvalidInput)
+    }
+
+    pub(crate) const fn conversation_not_found() -> Self {
+        Self::new(ContentOperationErrorCode::ConversationNotFound)
+    }
+
+    pub(crate) const fn idempotency_conflict() -> Self {
+        Self::new(ContentOperationErrorCode::IdempotencyConflict)
+    }
+
+    pub(crate) const fn idempotency_inconsistent() -> Self {
+        Self::new(ContentOperationErrorCode::IdempotencyRecordInconsistent)
+    }
+
+    pub(crate) const fn capacity_exceeded() -> Self {
+        Self::new(ContentOperationErrorCode::CapacityExceeded)
+    }
+
+    pub(crate) const fn deadline_exceeded() -> Self {
+        Self::new(ContentOperationErrorCode::DeadlineExceeded)
+    }
+
+    pub(crate) const fn unavailable() -> Self {
+        Self::new(ContentOperationErrorCode::Unavailable)
+    }
+
+    pub(crate) const fn integrity_failure() -> Self {
+        Self::new(ContentOperationErrorCode::IntegrityFailure)
+    }
+
+    pub(crate) const fn internal() -> Self {
+        Self::new(ContentOperationErrorCode::Internal)
+    }
+
+    pub(crate) fn from_runtime(error: RuntimeStoreError) -> Self {
+        let code = match error.kind {
+            RuntimeStoreErrorKind::BusyTimeout | RuntimeStoreErrorKind::Locked => {
+                ContentOperationErrorCode::BusyTimeout
+            }
+            RuntimeStoreErrorKind::DeadlineExceeded => ContentOperationErrorCode::DeadlineExceeded,
+            RuntimeStoreErrorKind::IntegrityFailed
+            | RuntimeStoreErrorKind::MigrationMismatch
+            | RuntimeStoreErrorKind::NewerSchema => ContentOperationErrorCode::IntegrityFailure,
+            RuntimeStoreErrorKind::ResourceLimit => ContentOperationErrorCode::CapacityExceeded,
+            RuntimeStoreErrorKind::PathInvalid
+            | RuntimeStoreErrorKind::PermissionDenied
+            | RuntimeStoreErrorKind::Unavailable => ContentOperationErrorCode::Unavailable,
+            RuntimeStoreErrorKind::MigrationFailed | RuntimeStoreErrorKind::Internal => {
+                ContentOperationErrorCode::Internal
+            }
+        };
+        Self::new(code)
+    }
+
+    pub(crate) fn from_sqlite(error: &rusqlite::Error) -> Self {
+        match error.sqlite_error_code() {
+            Some(ErrorCode::DatabaseBusy) | Some(ErrorCode::DatabaseLocked) => {
+                Self::new(ContentOperationErrorCode::BusyTimeout)
+            }
+            Some(ErrorCode::OperationInterrupted) => Self::deadline_exceeded(),
+            Some(ErrorCode::DatabaseCorrupt) | Some(ErrorCode::NotADatabase) => {
+                Self::integrity_failure()
+            }
+            Some(ErrorCode::DiskFull) | Some(ErrorCode::TooBig) => Self::capacity_exceeded(),
+            Some(ErrorCode::ReadOnly) | Some(ErrorCode::PermissionDenied) => Self::unavailable(),
+            _ => Self::internal(),
+        }
+    }
+
+    pub(crate) const fn poisons_content_intake(self) -> bool {
+        matches!(
+            self.code,
+            ContentOperationErrorCode::IdempotencyRecordInconsistent
+                | ContentOperationErrorCode::IntegrityFailure
+        )
+    }
+
+    const fn safe_code(self) -> &'static str {
+        match self.code {
+            ContentOperationErrorCode::InvalidInput => "content_invalid_input",
+            ContentOperationErrorCode::ConversationNotFound => "content_conversation_not_found",
+            ContentOperationErrorCode::IdempotencyConflict => "content_idempotency_conflict",
+            ContentOperationErrorCode::IdempotencyRecordInconsistent => {
+                "content_idempotency_record_inconsistent"
+            }
+            ContentOperationErrorCode::CapacityExceeded => "content_capacity_exceeded",
+            ContentOperationErrorCode::BusyTimeout => "content_busy_timeout",
+            ContentOperationErrorCode::DeadlineExceeded => "content_deadline_exceeded",
+            ContentOperationErrorCode::Unavailable => "content_unavailable",
+            ContentOperationErrorCode::IntegrityFailure => "content_integrity_failure",
+            ContentOperationErrorCode::Internal => "content_internal",
+        }
+    }
+}
+
+impl fmt::Display for ContentOperationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.safe_code())
+    }
+}
+
+impl std::error::Error for ContentOperationError {}
