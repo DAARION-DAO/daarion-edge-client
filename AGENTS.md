@@ -16,11 +16,13 @@ These instructions apply to this repository unless a more specific nested `AGENT
   `docs/architecture/SYSTEM_CONTEXT_AND_OWNERSHIP.md`, and
   `docs/planning/SOVEREIGN_AGENT_MASTER_ROADMAP.md` before sovereign-agent work.
 - The baseline is a read-only source snapshot, not production verification.
-- Phase 1A and Phase 1B.1 are merged and verified on fresh `main`.
-  Phase 1B remains incomplete.
-- Phase 1B.2 is limited to audit and planning until its exact-head plan review
-  and a separate human implementation authorization complete. Phase 1B.2
-  implementation, Phase 1B.3, and later work remain `NO_GO`.
+- Phase 1A, Phase 1B.1, and Phase 1B.2 are merged and verified on fresh
+  `main`; Phase 1B.2 canonical merge is
+  `ec99bf70d6ada94bc1caae9886cca25ad42852f9`. Phase 1B remains incomplete.
+- Phase 1B.2 implements only five private Rust conversation/message operations
+  with no public content Tauri command or frontend content authority.
+  Phase 1B.3 is `NOT AUTHORIZED`; it and later work remain `NO_GO` until
+  separately audited, planned, reviewed, and human-authorized.
 - Pairing and readiness projections require separate future threat-driven ADRs;
   current parsing, SQL, types, and documentation do not close their security
   gates.

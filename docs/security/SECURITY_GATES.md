@@ -7,7 +7,7 @@ No gate is satisfied by documentation or module names alone. “Open” means im
 | Gate | Current state | Required evidence to close | Owner/phase |
 | --- | --- | --- | --- |
 | Local-only inference | REPOSITORY PASS — MERGED / FRESH-MAIN VERIFIED | Phase 1A has only `LocalOnly`; loopback/redirect/proxy controls; mandatory `/api/status` cloud-disabled proof; exact stable `/api/tags` → `/api/show` → `/api/tags` local-model evidence; immediate pre-chat revalidation; post-preparation verification; service-owned probe/chat/preparation deadlines and cancellation; bounded streaming; zero-chat sentinel tests; truthful UI; and no main-webview shell authority. Reviewed head `9e8c5d9…` was merged as `62a1d514…` and verified from fresh main. No real Ollama/model smoke or cryptographic daemon/artifact attestation is claimed. | Edge / 1A |
-| Durable runtime state | OPEN — PHASE 1B.2 LOCAL GATE PASS / INDEPENDENT REVIEW PENDING | Phase 1B.1 remains merged and fresh-main verified. The Phase 1B.2 draft candidate adds exactly five private Rust conversations/messages operations with atomic subject-plus-audit writes, global operation-ID replay/conflict handling, bounded reads, a fail-closed 16-MiB reserve and WAL controls. Its local gate passed 36 repository, 100 runtime-store, 67 inference and 216 full Rust tests; 20 create and 20 maximum-message append measurements stayed within the 8-/32-MiB aggregate and 2-/4-MiB WAL bounds. It adds no schema, dependency, public Tauri/frontend content authority, real-profile write or production operation. The candidate is not merged and still requires independent exact-head review plus separate ready/merge authorization. The broader gate remains open for tasks, retention/deletion/export/backup, desktop/platform evidence, full recovery/privacy closure and the pre-production SQLCipher decision. Phase 1B.3 is not authorized | Edge / 1B |
+| Durable runtime state | OPEN — PHASE 1B.2 MERGED / FRESH-MAIN VERIFIED | Phase 1B.1 and Phase 1B.2 are merged and fresh-main verified. Phase 1B.2 adds exactly five private Rust conversations/messages operations with atomic subject-plus-audit writes, global operation-ID replay/conflict handling, bounded deterministic reads, a fail-closed 16-MiB reserve and WAL controls. Repository evidence passed 36 repository, 100 runtime-store, 67 inference and 216 full Rust tests; 20 create and 20 maximum-message append measurements stayed within the 8-/32-MiB aggregate and 2-/4-MiB WAL bounds. It adds no schema, dependency, public Tauri/frontend content authority, real-profile write or production operation. The broader gate remains open for tasks, retention/deletion/export/backup, desktop/platform evidence, full recovery/privacy closure and the pre-production SQLCipher decision. Phase 1B.3 is not authorized | Edge / 1B |
 | Inert Supervisor | OPEN | Deterministic IDs, explicit bounded state machine, idempotency, cancellation and crash recovery; no tools/network/scheduling | Edge / 1C |
 | Production pairing | OPEN | Signed purpose-bound invitation, trusted issuer, membership/device binding, expiry, nonce/replay, single use, revocation and downgrade tests | Both / ADR 0004 |
 | Readiness projection | OPEN | Separate signed schema, minimal allowlist, producer identity, expiry/freshness, replay/revocation, cross-repo fixtures and privacy tests | Both / ADR 0005 + Phase 5 |
@@ -129,19 +129,21 @@ defense in depth. Arbitrary TypeScript data-flow proof is not claimed.
 Independent exact-head R6 passed with accepted nonblocking findings, followed
 by controlled merge and fresh-main verification.
 
-The separately authorized Phase 1B.2 candidate now implements five private
+The separately authorized, merged, and fresh-main-verified Phase 1B.2 slice
+implements five private
 Rust operations: create/get/list conversations and append/list messages. Both
 mutations couple the subject, global operation-ID evidence and one privacy-safe
 audit event in the same `BEGIN IMMEDIATE` transaction. Canonical request replay
 returns the original result; conflicts and inconsistent evidence fail closed
-without leaking raw SQLite details. The candidate enforces the reviewed
+without leaking raw SQLite details. The merged slice enforces the reviewed
 4-GiB hard limit, immutable 16-MiB operational reserve, 8-/32-MiB operation
 envelopes, 128-page autocheckpoint, 10-MiB physical-WAL ceiling and 2-/4-MiB
 WAL bounds. Physical WAL allocation is treated conservatively as current WAL
 capacity; arbitrary live-frame reclamation is not claimed.
 
-The local gate passed 36/36 new repository tests, 100/100 runtime-store tests,
-67/67 inference tests and 216/216 full Rust tests. The executable proof ran 20
+The repository gate passed 36/36 new repository tests, 100/100 runtime-store
+tests, 67/67 inference tests and 216/216 full Rust tests. The executable proof
+ran 20
 maximum-title creates and 20 maximum-content appends with zero failures:
 maximum create aggregate/WAL growth was 32,960/32,960 bytes and maximum append
 aggregate/WAL growth was 313,120/313,120 bytes. Cargo check, Clippy, frontend
@@ -152,20 +154,28 @@ locations remain zero.
 SQLCipher remains a separate pre-production decision. The durable-state gate
 stays open through later separately authorized Phase 1B slices, desktop target
 evidence, deletion/export, and full recovery/privacy closure. The merged
-Phase 1B.1 repository slice and the unmerged Phase 1B.2 candidate are not
-production readiness.
+Phase 1B.1 and Phase 1B.2 repository slices are not production readiness.
 
 ```text
 PHASE_1B_1 = MERGED / FRESH_MAIN_VERIFIED
-MERGED_REVIEWED_HEAD = 5d894f42a967c9360d86382c1aab9e603472e0c8
-MERGE_COMMIT = cd903fb18d1618bbe0787d2397948622849ef9d4
-MERGED_AT = 2026-07-24T11:44:00Z
+PHASE_1B2 = MERGED / FRESH_MAIN_VERIFIED
+MERGED_IMPLEMENTATION_HEAD = c2fdcc5a234779c7ad886ee5aa0d0762c938a59d
+MERGE_COMMIT = ec99bf70d6ada94bc1caae9886cca25ad42852f9
+MERGED_AT = 2026-07-25T14:27:32Z
 STORAGE_BOOTSTRAP = IMPLEMENTED_AND_VERIFIED
 STORAGE_RUNTIME_PROJECTION = IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY
+PRIVATE_CONVERSATION_STORAGE = IMPLEMENTED_AND_VERIFIED
+PRIVATE_MESSAGE_STORAGE = IMPLEMENTED_AND_VERIFIED
+CONTENT_OPERATIONS = 5
+CONTENT_MUTATIONS = 2
+CONTENT_READS = 3
+PUBLIC_CONTENT_TAURI_COMMANDS = 0
+STORAGE_STATUS_TAURI_COMMANDS = 1
+FRONTEND_CONTENT_AUTHORITY = 0
 DURABLE_RUNTIME_STATE = PARTIALLY_IMPLEMENTED
 PHASE_1B = NOT COMPLETE
-PHASE_1B_2_AT_PHASE_1B1_MERGE = NOT AUTHORIZED
-REAL_DESKTOP_RESTART_FLOW = NOT VERIFIED
+PHASE_1B3 = NOT AUTHORIZED
+REAL_DESKTOP_RESTART = NOT VERIFIED
 CROSS_PLATFORM_RUNTIME = NOT VERIFIED
 REMOTE_CI = NOT PRESENT / NOT CLAIMED
 REMOTE_PRODUCTION_WRITES = 0
@@ -173,18 +183,18 @@ REAL_USER_PROFILE_WRITES = 0
 DEPLOYMENTS = 0
 ```
 
-Current unmerged Phase 1B.2 gate:
+Current Phase 1B.2 merged evidence:
 
 ```text
-PHASE_1B_2 = IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS
-INDEPENDENT_EXACT_HEAD_REVIEW = PENDING
-MERGED = NO
+PHASE_1B2 = MERGED / FRESH_MAIN_VERIFIED
 PUBLIC_CONTENT_TAURI_COMMANDS = 0
+STORAGE_STATUS_TAURI_COMMANDS = 1
+FRONTEND_CONTENT_AUTHORITY = 0
 SCHEMA_CHANGE = NONE
 DEPENDENCY_CHANGE = NONE
 EXECUTABLE_GROWTH_PROOF = PASS / 40 RUNS / 0 FAILURES
 RUNTIME_STORE_WARNING_LOCATIONS = 0
-PHASE_1B_3 = NOT AUTHORIZED
+PHASE_1B3 = NOT AUTHORIZED
 REMOTE_PRODUCTION_WRITES = 0
 REAL_USER_PROFILE_WRITES = 0
 DEPLOYMENTS = 0
@@ -198,13 +208,29 @@ read-only status command with no user-deserialized arguments. No Phase 1B.2
 Tauri/frontend CRUD/API authority exists; the content service remains
 crate-private Rust only.
 
-Fresh-main evidence and schema invariants:
+Phase 1B.2 fresh-main evidence and schema invariants:
 
 ```text
 RUST_TOOLCHAIN = 1.95.0 PINNED
-STORAGE_TESTS = 64/64 PASS
+REPOSITORY_TESTS = 36/36 PASS
+RUNTIME_STORE_TESTS = 100/100 PASS
 INFERENCE_TESTS = 67/67 PASS
-FULL_RUST_TESTS = 180/180 PASS
+FULL_RUST_TESTS = 216/216 PASS
+HARD_DATABASE_LIMIT = 4294967296 bytes
+IMMUTABLE_RESERVE = 16777216 bytes
+NORMAL_MUTATION_USABLE_LIMIT = 4278190080 bytes
+CREATE_OPERATION_ENVELOPE = 8388608 bytes
+APPEND_OPERATION_ENVELOPE = 33554432 bytes
+WAL_AUTOCHECKPOINT = 128 pages
+PHYSICAL_WAL_CEILING = 10485760 bytes
+CREATE_WAL_BOUND = 2097152 bytes
+APPEND_WAL_BOUND = 4194304 bytes
+CREATE_MAX_AGGREGATE_GROWTH = 32960 bytes
+CREATE_MAX_WAL_GROWTH = 32960 bytes
+APPEND_MAX_AGGREGATE_GROWTH = 313120 bytes
+APPEND_MAX_WAL_GROWTH = 313120 bytes
+SQLITE_PAGE_SIZE = 4096 bytes
+EXECUTABLE_GROWTH_PROOF = 40/40 PASS
 CARGO_CHECK = PASS
 CARGO_CLIPPY = PASS
 RUNTIME_STORE_WARNING_LOCATIONS = 0
@@ -214,7 +240,8 @@ STRUCTURAL_CHECKS = 46 PASS
 PRODUCTION_BUILD = PASS / 1,763 MODULES
 PRODUCTION_NPM_AUDIT = 0 VULNERABILITIES
 NPM_DEV_INCLUSIVE_ADVISORIES = 11 INHERITED / OUTSIDE PRODUCTION DEPENDENCY SET
-INHERITED_RUSTSEC_WARNING_RUSTFMT_DEBT = UNCHANGED
+INHERITED_RUSTSEC = UNCHANGED
+INHERITED_RUSTFMT_DEBT = 94 FILES / UNCHANGED
 MIGRATION_SHA = 62341c5015e70605bc3d57f9152c9e6a571739beaec33a2a7574b3e9a482575d
 STRUCTURAL_FINGERPRINT = 37f9060cd050c615e2576809266ad9535e05c105f57a0a168bcf488f1f14ed77
 TABLES = 5
