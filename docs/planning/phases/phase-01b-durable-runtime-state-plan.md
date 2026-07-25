@@ -1,6 +1,6 @@
 # Phase 1B — Durable Runtime State Plan
 
-Status: **APPROVED PLAN / PHASE 1B.1 MERGED AND FRESH-MAIN VERIFIED / PHASE 1B.2 NOT AUTHORIZED**
+Status: **APPROVED PLAN / PHASE 1B.1 MERGED / PHASE 1B.2 LOCAL GATE PASS AND INDEPENDENT REVIEW PENDING**
 
 Starting `main`: `62a1d514b93925e8b7098c6db19f8751a70a7bf8`
 
@@ -9,9 +9,12 @@ Phase 1B.1 received separate human authorization from main `eb0d7def…`. Its
 final independently reviewed head
 `5d894f42a967c9360d86382c1aab9e603472e0c8` was merged as
 `cd903fb18d1618bbe0787d2397948622849ef9d4` at
-`2026-07-24T11:44:00Z` and was fresh-main verified. That merge does not
-authorize Phase 1B.2, public content CRUD, or completion of the wider Phase 1B
-contract.
+`2026-07-24T11:44:00Z` and was fresh-main verified. Phase 1B.2 later received
+its own audit, corrected planning package and explicit human implementation
+authorization from canonical main `986e5a36204924dbec5b32999ea50650755891ef`.
+Its implementation candidate has passed the local gate and awaits independent
+exact-head review. It is not merged, adds no public content CRUD, and does not
+complete the wider Phase 1B contract.
 
 ## 1. Objective
 
@@ -947,6 +950,14 @@ does not authorize all slices.
   and tests; no generic IPC.
 - Tests: matrix 9–13, 16, 17, 23, 26–28.
 - Entry gate: 1B.1 fresh-main verified and slice 1B.2 separately authorized.
+- Current state: `IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS /
+  INDEPENDENT_EXACT_HEAD_REVIEW_PENDING / NOT_MERGED`. The bounded candidate
+  provides exactly five crate-private Rust operations (two mutations and three
+  reads), atomic operation-ID/audit coupling, and fail-closed aggregate/WAL
+  admission with no schema, dependency, frontend or Tauri content authority.
+  Its local evidence is 36/36 repository, 100/100 runtime-store, 67/67
+  inference and 216/216 full Rust tests plus 20 create and 20 append physical
+  growth measurements with zero bound failures.
 - Stop: orphan/ordering/privacy failure or any need to call a model/tool/network.
 - Rollback: disable consumers and revert code only while preserving the schema;
   use a forward migration for any shipped schema correction.
@@ -1110,10 +1121,13 @@ an unverified backup, or deletes user content.
 
 This classification applies to the Phase 1B plan. Phase 1B.1 was separately
 authorized, implemented, independently reviewed, merged and fresh-main
-verified; it does not complete Phase 1B.
+verified. Phase 1B.2 was separately authorized and implemented as an unmerged
+candidate with a passing local gate; its independent exact-head review and
+separate ready/merge decision remain pending. Neither slice completes Phase
+1B.
 HD-01 through HD-09 close the planning decisions on storage authority,
 integration, encryption risk, retention, limits, SQLite operations, export, and
-platform scope. Phase 1B.2 and every later implementation slice remain `NO_GO`
+platform scope. Phase 1B.3 and every later implementation slice remain `NO_GO`
 until separately audited, planned and explicitly authorized.
 
 ```text
@@ -1151,10 +1165,16 @@ PHASE_1B =
 NOT COMPLETE
 
 PHASE_1B_2 =
+IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
+
+PHASE_1B_2_MERGED =
+NO
+
+PHASE_1B_3 =
 NOT AUTHORIZED
 
-NEXT_POTENTIAL_PHASE =
-PHASE_1B_2 / REQUIRES_SEPARATE_AUDIT_PLAN_AND_AUTHORIZATION
+NEXT_AUTHORIZED_ACTION =
+PHASE_1B_2 INDEPENDENT EXACT-HEAD REVIEW
 
 REAL_DESKTOP_RESTART_FLOW =
 NOT VERIFIED

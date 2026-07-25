@@ -1,10 +1,11 @@
-use crate::runtime_store::config::RuntimeStoreConfig;
+use crate::runtime_store::config::{ContentStorageLimits, RuntimeStoreConfig};
 use crate::runtime_store::control::InitializationAttempt;
 use crate::runtime_store::deadline::{ensure_before, remaining, SqliteInterruptGuard};
 use crate::runtime_store::error::RuntimeStoreError;
 use crate::runtime_store::path_policy::{
-    database_total_size, enforce_sidecar_permissions, prepare_storage_paths_until,
-    revalidate_database, validate_database_after_open, PreparedStoragePaths,
+    capture_sidecar_identities, database_total_size, enforce_sidecar_permissions,
+    prepare_storage_paths_until, revalidate_database, validate_database_after_open,
+    PreparedStoragePaths,
 };
 use crate::runtime_store::types::PersistenceState;
 use rusqlite::limits::Limit;
@@ -16,6 +17,9 @@ pub(crate) struct RuntimeStoreConnection {
     pub(crate) persistence_state: PersistenceState,
     pub(crate) database_warning_threshold_bytes: u64,
     pub(crate) database_hard_limit_bytes: u64,
+    pub(crate) content_limits: ContentStorageLimits,
+    pub(crate) content_integrity_failed: bool,
+    pub(crate) busy_timeout: std::time::Duration,
 }
 
 impl RuntimeStoreConnection {
@@ -84,6 +88,7 @@ impl RuntimeStoreConnection {
         validate_pragmas(&connection, config)?;
         ensure_initialization_running(deadline, attempt)?;
         enforce_sidecar_permissions(&paths.database_path)?;
+        capture_sidecar_identities(&mut paths)?;
         ensure_initialization_running(deadline, attempt)?;
 
         let persistence_state = if paths.existed_before_open {
@@ -98,6 +103,9 @@ impl RuntimeStoreConnection {
                 persistence_state,
                 database_warning_threshold_bytes: config.database_warning_threshold_bytes,
                 database_hard_limit_bytes: config.database_hard_limit_bytes,
+                content_limits: config.content_limits,
+                content_integrity_failed: false,
+                busy_timeout: config.busy_timeout,
             },
             watchdog,
         ))
@@ -212,7 +220,10 @@ fn configure_pragmas(
              PRAGMA synchronous=FULL;
              PRAGMA secure_delete=ON;
              PRAGMA trusted_schema=OFF;
-             PRAGMA temp_store=MEMORY;",
+             PRAGMA temp_store=MEMORY;
+             PRAGMA wal_autocheckpoint=128;
+             BEGIN IMMEDIATE;
+             ROLLBACK;",
         )
         .map_err(|error| RuntimeStoreError::from_sqlite(&error))
 }
@@ -228,8 +239,12 @@ fn validate_pragmas(
     let trusted_schema: i64 = pragma_value(connection, "trusted_schema")?;
     let temp_store: i64 = pragma_value(connection, "temp_store")?;
     let busy_timeout_ms: i64 = pragma_value(connection, "busy_timeout")?;
+    let page_size: i64 = pragma_value(connection, "page_size")?;
+    let wal_autocheckpoint: i64 = pragma_value(connection, "wal_autocheckpoint")?;
     let expected_busy_timeout = i64::try_from(config.busy_timeout.as_millis())
         .map_err(|_| RuntimeStoreError::internal())?;
+    let expected_page_size = i64::from(config.content_limits.required_page_size_bytes);
+    let expected_wal_autocheckpoint = i64::from(config.content_limits.wal_autocheckpoint_pages);
     if foreign_keys != 1
         || journal_mode != "wal"
         || synchronous != 2
@@ -237,6 +252,8 @@ fn validate_pragmas(
         || trusted_schema != 0
         || temp_store != 2
         || busy_timeout_ms != expected_busy_timeout
+        || page_size != expected_page_size
+        || wal_autocheckpoint != expected_wal_autocheckpoint
     {
         return Err(RuntimeStoreError::internal());
     }

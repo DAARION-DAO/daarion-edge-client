@@ -7,6 +7,44 @@ pub(crate) const MIGRATION_DEADLINE: Duration = Duration::from_secs(120);
 pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const DATABASE_WARNING_THRESHOLD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 pub(crate) const DATABASE_HARD_LIMIT_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+pub(crate) const OPERATIONAL_RESERVE_BYTES: u64 = 16 * 1024 * 1024;
+pub(crate) const CREATE_GROWTH_ENVELOPE_BYTES: u64 = 8 * 1024 * 1024;
+pub(crate) const APPEND_GROWTH_ENVELOPE_BYTES: u64 = 32 * 1024 * 1024;
+pub(crate) const WAL_AUTOCHECKPOINT_PAGES: u32 = 128;
+pub(crate) const WAL_HARD_CEILING_BYTES: u64 = 10 * 1024 * 1024;
+pub(crate) const WAL_CREATE_GROWTH_BOUND_BYTES: u64 = 2 * 1024 * 1024;
+pub(crate) const WAL_APPEND_GROWTH_BOUND_BYTES: u64 = 4 * 1024 * 1024;
+pub(crate) const CHECKPOINT_RECOVERY_OVERHEAD_BYTES: u64 = 2 * 1024 * 1024;
+pub(crate) const REQUIRED_PAGE_SIZE_BYTES: u32 = 4096;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ContentStorageLimits {
+    pub(crate) operational_reserve_bytes: u64,
+    pub(crate) create_growth_envelope_bytes: u64,
+    pub(crate) append_growth_envelope_bytes: u64,
+    pub(crate) wal_hard_ceiling_bytes: u64,
+    pub(crate) wal_create_growth_bound_bytes: u64,
+    pub(crate) wal_append_growth_bound_bytes: u64,
+    pub(crate) checkpoint_recovery_overhead_bytes: u64,
+    pub(crate) required_page_size_bytes: u32,
+    pub(crate) wal_autocheckpoint_pages: u32,
+}
+
+impl ContentStorageLimits {
+    const fn production() -> Self {
+        Self {
+            operational_reserve_bytes: OPERATIONAL_RESERVE_BYTES,
+            create_growth_envelope_bytes: CREATE_GROWTH_ENVELOPE_BYTES,
+            append_growth_envelope_bytes: APPEND_GROWTH_ENVELOPE_BYTES,
+            wal_hard_ceiling_bytes: WAL_HARD_CEILING_BYTES,
+            wal_create_growth_bound_bytes: WAL_CREATE_GROWTH_BOUND_BYTES,
+            wal_append_growth_bound_bytes: WAL_APPEND_GROWTH_BOUND_BYTES,
+            checkpoint_recovery_overhead_bytes: CHECKPOINT_RECOVERY_OVERHEAD_BYTES,
+            required_page_size_bytes: REQUIRED_PAGE_SIZE_BYTES,
+            wal_autocheckpoint_pages: WAL_AUTOCHECKPOINT_PAGES,
+        }
+    }
+}
 
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -87,6 +125,7 @@ pub(crate) struct RuntimeStoreConfig {
     pub(crate) busy_timeout: Duration,
     pub(crate) database_warning_threshold_bytes: u64,
     pub(crate) database_hard_limit_bytes: u64,
+    pub(crate) content_limits: ContentStorageLimits,
     #[cfg(test)]
     pub(crate) initialization_test_hook: InitializationTestHook,
 }
@@ -100,6 +139,7 @@ impl RuntimeStoreConfig {
             busy_timeout: BUSY_TIMEOUT,
             database_warning_threshold_bytes: DATABASE_WARNING_THRESHOLD_BYTES,
             database_hard_limit_bytes: DATABASE_HARD_LIMIT_BYTES,
+            content_limits: ContentStorageLimits::production(),
             #[cfg(test)]
             initialization_test_hook: InitializationTestHook::None,
         }
@@ -114,6 +154,7 @@ impl RuntimeStoreConfig {
             busy_timeout: Duration::from_millis(150),
             database_warning_threshold_bytes: DATABASE_WARNING_THRESHOLD_BYTES,
             database_hard_limit_bytes: DATABASE_HARD_LIMIT_BYTES,
+            content_limits: ContentStorageLimits::production(),
             initialization_test_hook: InitializationTestHook::None,
         }
     }

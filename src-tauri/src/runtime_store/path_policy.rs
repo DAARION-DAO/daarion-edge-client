@@ -46,6 +46,24 @@ pub(crate) struct PreparedStoragePaths {
     runtime_root: PathBuf,
     runtime_root_identity: DirectoryIdentity,
     identity_before_open: Option<FileIdentity>,
+    wal_identity: Option<FileIdentity>,
+    shm_identity: Option<FileIdentity>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct StorageArtifactSizes {
+    pub(crate) database_bytes: u64,
+    pub(crate) wal_bytes: u64,
+    pub(crate) shm_bytes: u64,
+}
+
+impl StorageArtifactSizes {
+    pub(crate) fn total_bytes(self) -> Result<u64, RuntimeStoreError> {
+        self.database_bytes
+            .checked_add(self.wal_bytes)
+            .and_then(|value| value.checked_add(self.shm_bytes))
+            .ok_or_else(RuntimeStoreError::resource_limit)
+    }
 }
 
 pub(crate) fn prepare_storage_paths_until(
@@ -112,6 +130,8 @@ pub(crate) fn prepare_storage_paths_until(
         runtime_root: canonical_runtime_root,
         runtime_root_identity,
         identity_before_open,
+        wal_identity: None,
+        shm_identity: None,
     })
 }
 
@@ -147,6 +167,35 @@ pub(crate) fn revalidate_database(paths: &PreparedStoragePaths) -> Result<(), Ru
     if identity_after_permissions != current_identity {
         return Err(RuntimeStoreError::path_invalid());
     }
+    revalidate_sidecar_identity(
+        &sidecar_path(&paths.database_path, "-wal"),
+        paths.wal_identity.as_ref(),
+    )?;
+    revalidate_sidecar_identity(
+        &sidecar_path(&paths.database_path, "-shm"),
+        paths.shm_identity.as_ref(),
+    )?;
+    Ok(())
+}
+
+pub(crate) fn capture_sidecar_identities(
+    paths: &mut PreparedStoragePaths,
+) -> Result<(), RuntimeStoreError> {
+    paths.wal_identity =
+        existing_regular_file_identity(&sidecar_path(&paths.database_path, "-wal"))?;
+    paths.shm_identity =
+        existing_regular_file_identity(&sidecar_path(&paths.database_path, "-shm"))?;
+    Ok(())
+}
+
+fn revalidate_sidecar_identity(
+    path: &Path,
+    expected: Option<&FileIdentity>,
+) -> Result<(), RuntimeStoreError> {
+    let current = existing_regular_file_identity(path)?;
+    if current.as_ref() != expected {
+        return Err(RuntimeStoreError::path_invalid());
+    }
     Ok(())
 }
 
@@ -176,31 +225,34 @@ pub(crate) fn enforce_sidecar_permissions(database_path: &Path) -> Result<(), Ru
 }
 
 pub(crate) fn database_total_size(database_path: &Path) -> Result<u64, RuntimeStoreError> {
-    let mut total = 0_u64;
-    for path in [
-        database_path.to_path_buf(),
-        sidecar_path(database_path, "-wal"),
-        sidecar_path(database_path, "-shm"),
-    ] {
-        match fs::symlink_metadata(&path) {
-            Ok(metadata) => {
-                if metadata.file_type().is_symlink() || !metadata.is_file() {
-                    return Err(RuntimeStoreError::path_invalid());
-                }
-                existing_regular_file_identity(&path)?
-                    .ok_or_else(RuntimeStoreError::path_invalid)?;
-                total = total
-                    .checked_add(metadata.len())
-                    .ok_or_else(RuntimeStoreError::resource_limit)?;
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(RuntimeStoreError::from_io(&error)),
-        }
-    }
-    Ok(total)
+    database_artifact_sizes(database_path)?.total_bytes()
 }
 
-fn sidecar_path(database_path: &Path, suffix: &str) -> PathBuf {
+pub(crate) fn database_artifact_sizes(
+    database_path: &Path,
+) -> Result<StorageArtifactSizes, RuntimeStoreError> {
+    Ok(StorageArtifactSizes {
+        database_bytes: regular_file_size(database_path)?,
+        wal_bytes: regular_file_size(&sidecar_path(database_path, "-wal"))?,
+        shm_bytes: regular_file_size(&sidecar_path(database_path, "-shm"))?,
+    })
+}
+
+fn regular_file_size(path: &Path) -> Result<u64, RuntimeStoreError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                return Err(RuntimeStoreError::path_invalid());
+            }
+            existing_regular_file_identity(path)?.ok_or_else(RuntimeStoreError::path_invalid)?;
+            Ok(metadata.len())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
+        Err(error) => Err(RuntimeStoreError::from_io(&error)),
+    }
+}
+
+pub(crate) fn sidecar_path(database_path: &Path, suffix: &str) -> PathBuf {
     let mut value = OsString::from(database_path.as_os_str());
     value.push(suffix);
     PathBuf::from(value)

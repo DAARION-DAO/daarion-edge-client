@@ -1,6 +1,6 @@
 # Sovereign Agent Capability Status Matrix
 
-Status: **PHASE 1A MERGED / PHASE 1B.1 MERGED AND FRESH-MAIN VERIFIED — 2026-07-24**
+Status: **PHASE 1A MERGED / PHASE 1B.1 MERGED / PHASE 1B.2 LOCAL GATE PASS AND INDEPENDENT REVIEW PENDING — 2026-07-25**
 
 The status describes executable evidence in the audited snapshots, not target architecture, live deployment, or product aspiration.
 
@@ -35,7 +35,7 @@ The status describes executable evidence in the audited snapshots, not target ar
 | Web cloud chat/embeddings | Web cloud boundary | `IMPLEMENTED_BUT_UNVERIFIED` | `ai-agent-chat` calls cloud gateway after auth checks; live provider not called | Separate cloud feature verification |
 | Storage bootstrap | Edge | `IMPLEMENTED_AND_VERIFIED` | Reviewed head `5d894f42a967c9360d86382c1aab9e603472e0c8` merged as `cd903fb18d1618bbe0787d2397948622849ef9d4` at `2026-07-24T11:44:00Z` and passed fresh-main verification: one Rust-owned SQLite 3.53.2 connection on a bounded worker, immutable version-1 migration, exactly five empty application tables, seven explicit indexes, seven SQLite autoindexes, no `sqlite_sequence`, and no migration 2. Migration SHA and structural fingerprint remain exact | Later Phase 1B content services require separate authorization |
 | Storage runtime projection | Edge | `IMPLEMENTED_AND_VERIFIED` | One no-user-argument read-only Rust status command, typed frontend adapter, private command constant, no raw Tauri export, and mounted Dashboard card passed 29/29 primary boundary fixtures, 13/13 defense-in-depth fixtures and 46 structural checks on fresh main. Remote CI was not present; repository verification is local exact-head evidence | Real desktop restart and cross-platform runtime remain unverified |
-| Durable runtime state | Edge | `PARTIALLY_IMPLEMENTED` | Phase 1B.1 is `MERGED / FRESH_MAIN_VERIFIED`, but it provides only verified bootstrap and status projection. Fresh main passed Rust 1.95.0, 64/64 storage, 67/67 inference, 180/180 full Rust tests, Cargo check/Clippy, production build over 1,763 modules and zero production npm vulnerabilities. Public conversation/message/task/audit CRUD, retention, deletion/export/backup, full recovery/privacy closure, six-level memory and Phase 1B.2 authority remain absent. `PHASE_1B = NOT COMPLETE`; `PHASE_1B_2 = NOT AUTHORIZED` | `PHASE_1B_2 / REQUIRES_SEPARATE_AUDIT_PLAN_AND_AUTHORIZATION` |
+| Durable runtime state | Edge | `PARTIALLY_IMPLEMENTED` | Phase 1B.1 is merged and fresh-main verified. Phase 1B.2 now has a private Rust-only five-operation conversations/messages implementation in a draft PR with local gate pass and independent exact-head review pending: 36 repository, 100 runtime-store, 67 inference and 216 full Rust tests pass; 20 create plus 20 append growth proofs stay within the immutable 16-MiB reserve and 2-/4-MiB WAL bounds. It adds no Tauri/frontend content API, migration, dependency or production write. This is not merged evidence. Tasks, retention, deletion/export/backup, full recovery/privacy closure, six-level memory and Phase 1B.3 remain absent/unauthorized. `PHASE_1B = NOT COMPLETE` | `PHASE_1B_2 / INDEPENDENT_EXACT_HEAD_REVIEW` |
 | Six-level memory | Edge | `MISSING` | No working/conversation/episodic/semantic/procedural/graph implementation | Phase 2 after foundation |
 | Agent Supervisor | Edge | `MISSING` | Agent-shaped modules do not form a traced deterministic Supervisor | Phase 1C |
 | Bounded Loop Runtime | Edge | `MISSING` | No versioned definition, durable run/checkpoint model, limits or resume | Phase 3 |
@@ -54,16 +54,18 @@ The status describes executable evidence in the audited snapshots, not target ar
 ## Interpretation rules
 
 - A module name, README statement, enum, UI state, or test fixture alone cannot raise a capability status.
-- `IMPLEMENTED_AND_VERIFIED` is limited to the cited Phase 1A and Phase 1B.1
-  repository checks and fresh-main readbacks. It does not imply a live Ollama
+- `IMPLEMENTED_AND_VERIFIED` is limited to the cited merged Phase 1A and Phase
+  1B.1 repository checks and fresh-main readbacks. Phase 1B.2 remains
+  `PARTIALLY_IMPLEMENTED` until exact-head review, separate ready/merge
+  authorization and fresh-main verification. None of these states imply a live Ollama
   run, real desktop storage restart, cross-platform execution, packaging proof,
   deployment truth or production readiness.
 - A live/deployed result must be recorded separately from repository evidence.
 - Status changes require evidence, date, command/result or deployed proof, and documentation update.
-- Phase 1B.1 merged repository evidence does not claim that conversation,
-  message, task, or audit persistence APIs exist. The empty schema and safe
-  storage-status projection are not complete memory or a completed Phase 1B
-  release.
+- Phase 1B.2 candidate evidence claims only five private Rust
+  conversation/message operations. It does not claim public content CRUD,
+  task services, memory, retention, deletion/export/backup or a completed
+  Phase 1B release.
 
 Current Phase 1B.1 evidence boundary:
 
@@ -76,10 +78,34 @@ STORAGE_BOOTSTRAP = IMPLEMENTED_AND_VERIFIED
 STORAGE_RUNTIME_PROJECTION = IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY
 DURABLE_RUNTIME_STATE = PARTIALLY_IMPLEMENTED
 PHASE_1B = NOT COMPLETE
-PHASE_1B_2 = NOT AUTHORIZED
+PHASE_1B_2_AT_PHASE_1B1_MERGE = NOT AUTHORIZED
 REAL_DESKTOP_RESTART_FLOW = NOT VERIFIED
 CROSS_PLATFORM_RUNTIME = NOT VERIFIED
 REMOTE_CI = NOT PRESENT / NOT CLAIMED
+REMOTE_PRODUCTION_WRITES = 0
+REAL_USER_PROFILE_WRITES = 0
+DEPLOYMENTS = 0
+```
+
+Current Phase 1B.2 candidate boundary:
+
+```text
+PHASE_1B_2 = IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS
+INDEPENDENT_EXACT_HEAD_REVIEW = PENDING
+MERGED = NO
+CONTENT_OPERATIONS = 5 PRIVATE RUST ONLY
+CONTENT_MUTATIONS = 2
+CONTENT_READS = 3
+PUBLIC_CONTENT_TAURI_COMMANDS = 0
+SCHEMA_CHANGE = NONE
+DEPENDENCY_CHANGE = NONE
+HARD_RESERVE = 16 MiB IMMUTABLE
+GROWTH_PROOF = 20 CREATE + 20 APPEND / 0 FAILURES
+RUNTIME_STORE_TESTS = 100/100 PASS
+INFERENCE_TESTS = 67/67 PASS
+FULL_RUST_TESTS = 216/216 PASS
+PHASE_1B = NOT COMPLETE
+PHASE_1B_3 = NOT AUTHORIZED
 REMOTE_PRODUCTION_WRITES = 0
 REAL_USER_PROFILE_WRITES = 0
 DEPLOYMENTS = 0

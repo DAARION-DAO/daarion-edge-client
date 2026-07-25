@@ -2,8 +2,16 @@ use crate::runtime_store::config::{RuntimeStoreConfig, STORAGE_QUEUE_CAPACITY};
 use crate::runtime_store::connection::RuntimeStoreConnection;
 use crate::runtime_store::control::RuntimeStoreControl;
 use crate::runtime_store::deadline::ensure_before;
-use crate::runtime_store::error::{RuntimeStoreError, RuntimeStoreErrorKind};
+use crate::runtime_store::error::{
+    ContentOperationError, ContentOperationErrorCode, RuntimeStoreError, RuntimeStoreErrorKind,
+};
 use crate::runtime_store::migrations::{migrate_and_validate_until, CURRENT_SCHEMA_VERSION};
+use crate::runtime_store::models::{
+    AppendMessageRequest, ConversationPage, ConversationRecord, CreateConversationRequest,
+    GetConversationRequest, ListConversationsRequest, ListMessagesRequest, MessagePage,
+    MessageRecord,
+};
+use crate::runtime_store::repositories;
 use crate::runtime_store::types::{StorageRuntimeErrorCode, StorageRuntimeStatus};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 #[cfg(test)]
@@ -43,6 +51,36 @@ enum RuntimeStoreRequest {
     },
     ReadStatus {
         reply: SyncSender<StorageRuntimeStatus>,
+    },
+    #[allow(dead_code)]
+    CreateConversation {
+        request: CreateConversationRequest,
+        deadline: Instant,
+        reply: SyncSender<Result<ConversationRecord, ContentOperationError>>,
+    },
+    #[allow(dead_code)]
+    GetConversation {
+        request: GetConversationRequest,
+        deadline: Instant,
+        reply: SyncSender<Result<ConversationRecord, ContentOperationError>>,
+    },
+    #[allow(dead_code)]
+    ListConversations {
+        request: ListConversationsRequest,
+        deadline: Instant,
+        reply: SyncSender<Result<ConversationPage, ContentOperationError>>,
+    },
+    #[allow(dead_code)]
+    AppendMessage {
+        request: AppendMessageRequest,
+        deadline: Instant,
+        reply: SyncSender<Result<MessageRecord, ContentOperationError>>,
+    },
+    #[allow(dead_code)]
+    ListMessages {
+        request: ListMessagesRequest,
+        deadline: Instant,
+        reply: SyncSender<Result<MessagePage, ContentOperationError>>,
     },
     #[cfg(test)]
     Hold {
@@ -318,6 +356,106 @@ impl RuntimeStoreManager {
             Ok(status) => status,
             Err(_) => self.disable_with_fresh_failure(RuntimeStoreError::internal()),
         }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn create_conversation(
+        &self,
+        request: CreateConversationRequest,
+    ) -> Result<ConversationRecord, ContentOperationError> {
+        request.validate()?;
+        let deadline = Instant::now() + self.ordinary_deadline();
+        let (reply, response) = mpsc::sync_channel(1);
+        self.send_with_deadline(
+            RuntimeStoreRequest::CreateConversation {
+                request,
+                deadline,
+                reply,
+            },
+            deadline,
+        )
+        .map_err(ContentOperationError::from_runtime)?;
+        receive_content_response(response, deadline)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn get_conversation(
+        &self,
+        request: GetConversationRequest,
+    ) -> Result<ConversationRecord, ContentOperationError> {
+        request.validate()?;
+        let deadline = Instant::now() + self.ordinary_deadline();
+        let (reply, response) = mpsc::sync_channel(1);
+        self.send_with_deadline(
+            RuntimeStoreRequest::GetConversation {
+                request,
+                deadline,
+                reply,
+            },
+            deadline,
+        )
+        .map_err(ContentOperationError::from_runtime)?;
+        receive_content_response(response, deadline)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn list_conversations(
+        &self,
+        request: ListConversationsRequest,
+    ) -> Result<ConversationPage, ContentOperationError> {
+        request.validate()?;
+        let deadline = Instant::now() + self.ordinary_deadline();
+        let (reply, response) = mpsc::sync_channel(1);
+        self.send_with_deadline(
+            RuntimeStoreRequest::ListConversations {
+                request,
+                deadline,
+                reply,
+            },
+            deadline,
+        )
+        .map_err(ContentOperationError::from_runtime)?;
+        receive_content_response(response, deadline)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn append_message(
+        &self,
+        request: AppendMessageRequest,
+    ) -> Result<MessageRecord, ContentOperationError> {
+        request.validate()?;
+        let deadline = Instant::now() + self.ordinary_deadline();
+        let (reply, response) = mpsc::sync_channel(1);
+        self.send_with_deadline(
+            RuntimeStoreRequest::AppendMessage {
+                request,
+                deadline,
+                reply,
+            },
+            deadline,
+        )
+        .map_err(ContentOperationError::from_runtime)?;
+        receive_content_response(response, deadline)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn list_messages(
+        &self,
+        request: ListMessagesRequest,
+    ) -> Result<MessagePage, ContentOperationError> {
+        request.validate()?;
+        let deadline = Instant::now() + self.ordinary_deadline();
+        let (reply, response) = mpsc::sync_channel(1);
+        self.send_with_deadline(
+            RuntimeStoreRequest::ListMessages {
+                request,
+                deadline,
+                reply,
+            },
+            deadline,
+        )
+        .map_err(ContentOperationError::from_runtime)?;
+        receive_content_response(response, deadline)
     }
 
     pub(crate) fn production_shutdown(&self) -> Result<(), RuntimeStoreError> {
@@ -935,6 +1073,82 @@ fn run_worker(
                     return WorkerExit::ChannelDisconnected;
                 }
             }
+            RuntimeStoreRequest::CreateConversation {
+                request,
+                deadline,
+                reply,
+            } => {
+                let result = run_content_operation(
+                    connection.as_mut(),
+                    deadline,
+                    shared_status,
+                    last_start_time_ms,
+                    |opened| {
+                        repositories::create_conversation(opened, &request, deadline)
+                            .map(|execution| execution.record)
+                    },
+                );
+                let _ = reply.try_send(result);
+            }
+            RuntimeStoreRequest::GetConversation {
+                request,
+                deadline,
+                reply,
+            } => {
+                let result = run_content_operation(
+                    connection.as_mut(),
+                    deadline,
+                    shared_status,
+                    last_start_time_ms,
+                    |opened| repositories::get_conversation(opened, &request, deadline),
+                );
+                let _ = reply.try_send(result);
+            }
+            RuntimeStoreRequest::ListConversations {
+                request,
+                deadline,
+                reply,
+            } => {
+                let result = run_content_operation(
+                    connection.as_mut(),
+                    deadline,
+                    shared_status,
+                    last_start_time_ms,
+                    |opened| repositories::list_conversations(opened, &request, deadline),
+                );
+                let _ = reply.try_send(result);
+            }
+            RuntimeStoreRequest::AppendMessage {
+                request,
+                deadline,
+                reply,
+            } => {
+                let result = run_content_operation(
+                    connection.as_mut(),
+                    deadline,
+                    shared_status,
+                    last_start_time_ms,
+                    |opened| {
+                        repositories::append_message(opened, &request, deadline)
+                            .map(|execution| execution.record)
+                    },
+                );
+                let _ = reply.try_send(result);
+            }
+            RuntimeStoreRequest::ListMessages {
+                request,
+                deadline,
+                reply,
+            } => {
+                let result = run_content_operation(
+                    connection.as_mut(),
+                    deadline,
+                    shared_status,
+                    last_start_time_ms,
+                    |opened| repositories::list_messages(opened, &request, deadline),
+                );
+                let _ = reply.try_send(result);
+            }
             #[cfg(test)]
             RuntimeStoreRequest::Hold { duration, reply } => {
                 thread::sleep(duration);
@@ -1053,6 +1267,9 @@ fn build_healthy_status(
     opened: &RuntimeStoreConnection,
     last_start_time_ms: u64,
 ) -> Result<StorageRuntimeStatus, RuntimeStoreError> {
+    if opened.content_integrity_failed {
+        return Err(RuntimeStoreError::integrity_failed());
+    }
     let database_size_bytes = opened.database_size_bytes()?;
     if database_size_bytes > opened.database_hard_limit_bytes {
         return Err(RuntimeStoreError::resource_limit());
@@ -1066,6 +1283,64 @@ fn build_healthy_status(
         opened.database_warning_threshold_bytes,
         opened.database_hard_limit_bytes,
     ))
+}
+
+fn run_content_operation<T>(
+    opened: Option<&mut RuntimeStoreConnection>,
+    deadline: Instant,
+    shared_status: &RwLock<StorageRuntimeStatus>,
+    last_start_time_ms: u64,
+    operation: impl FnOnce(&mut RuntimeStoreConnection) -> Result<T, ContentOperationError>,
+) -> Result<T, ContentOperationError> {
+    let opened = opened.ok_or_else(ContentOperationError::unavailable)?;
+    let watchdog =
+        crate::runtime_store::deadline::SqliteInterruptGuard::start(&opened.connection, deadline)
+            .map_err(ContentOperationError::from_runtime)?;
+    let result = operation(opened);
+    let expired = watchdog
+        .finish()
+        .map_err(ContentOperationError::from_runtime)?;
+    let result = if expired {
+        Err(ContentOperationError::deadline_exceeded())
+    } else {
+        result
+    };
+
+    let poison = opened.content_integrity_failed
+        || result
+            .as_ref()
+            .err()
+            .is_some_and(|error| error.poisons_content_intake());
+    if poison {
+        opened.content_integrity_failed = true;
+        store_status(
+            shared_status,
+            failure_status(RuntimeStoreError::integrity_failed(), last_start_time_ms),
+        );
+    } else if result.as_ref().err().is_some_and(|error| {
+        matches!(
+            error.code,
+            ContentOperationErrorCode::Unavailable | ContentOperationErrorCode::Internal
+        )
+    }) {
+        store_status(
+            shared_status,
+            failure_status(RuntimeStoreError::unavailable(), last_start_time_ms),
+        );
+    }
+    result
+}
+
+#[allow(dead_code)]
+fn receive_content_response<T>(
+    response: Receiver<Result<T, ContentOperationError>>,
+    deadline: Instant,
+) -> Result<T, ContentOperationError> {
+    match response.recv_timeout(remaining_or_zero(deadline)) {
+        Ok(result) => result,
+        Err(RecvTimeoutError::Timeout) => Err(ContentOperationError::deadline_exceeded()),
+        Err(RecvTimeoutError::Disconnected) => Err(ContentOperationError::unavailable()),
+    }
 }
 
 fn current_shared_status(

@@ -166,7 +166,9 @@ Numbers are reservations for planning, not accepted decisions.
 - Phase 1B planning: `APPROVED / HUMAN_DECISIONS_RECORDED`; the docs-only
   plan and Rust 1.95.0 toolchain unblock are merged.
 - Phase 1B implementation: `PARTIALLY_IMPLEMENTED`; Phase 1B.1 is merged and
-  fresh-main verified, while Phase 1B.2 content services remain unauthorized.
+  fresh-main verified. The separately authorized Phase 1B.2 candidate is
+  implemented in a draft PR, has passed its local gate and awaits independent
+  exact-head review; it is not merged evidence.
 - Phase 1B.1: `MERGED / FRESH_MAIN_VERIFIED`. The final independently reviewed
   head `5d894f42a967c9360d86382c1aab9e603472e0c8` was merged as
   `cd903fb18d1618bbe0787d2397948622849ef9d4` at
@@ -186,9 +188,19 @@ Numbers are reservations for planning, not accepted decisions.
 - Phase 1B.1 limitations: the real desktop restart flow and cross-platform
   runtime are not verified. Remote CI is not present and is not claimed. Remote
   production writes, real user-profile writes and deployments were all 0.
-- Phase 1B.2: `NOT AUTHORIZED`; no conversation/message/task/audit API exists.
-  The next possible action is a separate Phase 1B.2 audit, plan and explicit
-  authorization—not implementation under the Phase 1B.1 merge.
+- Phase 1B.2: `IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS /
+  INDEPENDENT_REVIEW_PENDING`. Exactly five private Rust operations cover
+  create/get/list conversations and append/list messages. Two mutations bind
+  subject, global operation-ID evidence and audit in one transaction. The
+  16-MiB reserve, 8-/32-MiB aggregate envelopes and 2-/4-MiB WAL bounds passed
+  20 create plus 20 append measurements. The local gate passed 36 repository,
+  100 runtime-store, 67 inference and 216 full Rust tests, Cargo check/Clippy,
+  frontend contracts, production build, production npm audit and secret scan.
+  No schema, dependency, Tauri/frontend content API, production or real-profile
+  write was added. Merge requires independent exact-head review and a separate
+  ready/merge authorization.
+- Phase 1B.3: `NOT AUTHORIZED`; task services and later durable-state behavior
+  remain out of scope.
 - Phase 1C and later: `NO_GO`.
 - Production readiness: `NO_GO`.
 
@@ -227,10 +239,16 @@ PHASE_1B =
 NOT COMPLETE
 
 PHASE_1B_2 =
+IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
+
+PHASE_1B_2_MERGED =
+NO
+
+PHASE_1B_3 =
 NOT AUTHORIZED
 
-NEXT_POTENTIAL_PHASE =
-PHASE_1B_2 / REQUIRES_SEPARATE_AUDIT_PLAN_AND_AUTHORIZATION
+NEXT_AUTHORIZED_ACTION =
+PHASE_1B_2 INDEPENDENT EXACT-HEAD REVIEW
 
 REAL_DESKTOP_RESTART_FLOW =
 NOT VERIFIED
@@ -249,6 +267,27 @@ REAL_USER_PROFILE_WRITES =
 
 DEPLOYMENTS =
 0
+```
+
+Phase 1B.2 local candidate evidence:
+
+```text
+CONTENT_OPERATIONS = 5 PRIVATE RUST ONLY
+CONTENT_MUTATIONS = 2
+CONTENT_READS = 3
+PUBLIC_CONTENT_TAURI_COMMANDS = 0
+SCHEMA_CHANGE = NONE
+DEPENDENCY_CHANGE = NONE
+HARD_RESERVE = 16 MiB IMMUTABLE
+CREATE_MAX_AGGREGATE_GROWTH = 32,960 bytes
+CREATE_MAX_WAL_GROWTH = 32,960 bytes
+APPEND_MAX_AGGREGATE_GROWTH = 313,120 bytes
+APPEND_MAX_WAL_GROWTH = 313,120 bytes
+EXECUTABLE_GROWTH_PROOF = 40/40 PASS
+RUNTIME_STORE_TESTS = 100/100 PASS
+INFERENCE_TESTS = 67/67 PASS
+FULL_RUST_TESTS = 216/216 PASS
+RUNTIME_STORE_WARNING_LOCATIONS = 0
 ```
 
 Fresh-main evidence and schema invariants:
