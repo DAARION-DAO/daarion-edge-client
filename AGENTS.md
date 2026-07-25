@@ -16,9 +16,11 @@ These instructions apply to this repository unless a more specific nested `AGENT
   `docs/architecture/SYSTEM_CONTEXT_AND_OWNERSHIP.md`, and
   `docs/planning/SOVEREIGN_AGENT_MASTER_ROADMAP.md` before sovereign-agent work.
 - The baseline is a read-only source snapshot, not production verification.
-- Phase 1A local-only inference is the only eligible next runtime milestone. It
-  still requires its own plan and human review. Phase 1B and later work remains
-  `NO_GO` until separately authorized.
+- Phase 1A and Phase 1B.1 are merged and verified on fresh `main`.
+  Phase 1B remains incomplete.
+- Phase 1B.2 is limited to audit and planning until its exact-head plan review
+  and a separate human implementation authorization complete. Phase 1B.2
+  implementation, Phase 1B.3, and later work remain `NO_GO`.
 - Pairing and readiness projections require separate future threat-driven ADRs;
   current parsing, SQL, types, and documentation do not close their security
   gates.
