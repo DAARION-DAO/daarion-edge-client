@@ -166,9 +166,8 @@ Numbers are reservations for planning, not accepted decisions.
 - Phase 1B planning: `APPROVED / HUMAN_DECISIONS_RECORDED`; the docs-only
   plan and Rust 1.95.0 toolchain unblock are merged.
 - Phase 1B implementation: `PARTIALLY_IMPLEMENTED`; Phase 1B.1 is merged and
-  fresh-main verified. The separately authorized Phase 1B.2 candidate is
-  implemented in a draft PR, has passed its local gate and awaits independent
-  exact-head review; it is not merged evidence.
+  fresh-main verified. The separately authorized Phase 1B.2 slice is also
+  merged and fresh-main verified; the broader Phase 1B remains incomplete.
 - Phase 1B.1: `MERGED / FRESH_MAIN_VERIFIED`. The final independently reviewed
   head `5d894f42a967c9360d86382c1aab9e603472e0c8` was merged as
   `cd903fb18d1618bbe0787d2397948622849ef9d4` at
@@ -188,8 +187,10 @@ Numbers are reservations for planning, not accepted decisions.
 - Phase 1B.1 limitations: the real desktop restart flow and cross-platform
   runtime are not verified. Remote CI is not present and is not claimed. Remote
   production writes, real user-profile writes and deployments were all 0.
-- Phase 1B.2: `IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS /
-  INDEPENDENT_REVIEW_PENDING`. Exactly five private Rust operations cover
+- Phase 1B.2: `MERGED / FRESH_MAIN_VERIFIED`. Reviewed implementation head
+  `c2fdcc5a234779c7ad886ee5aa0d0762c938a59d` was merged as
+  `ec99bf70d6ada94bc1caae9886cca25ad42852f9` at
+  `2026-07-25T14:27:32Z`. Exactly five private Rust operations cover
   create/get/list conversations and append/list messages. Two mutations bind
   subject, global operation-ID evidence and audit in one transaction. The
   16-MiB reserve, 8-/32-MiB aggregate envelopes and 2-/4-MiB WAL bounds passed
@@ -197,8 +198,9 @@ Numbers are reservations for planning, not accepted decisions.
   100 runtime-store, 67 inference and 216 full Rust tests, Cargo check/Clippy,
   frontend contracts, production build, production npm audit and secret scan.
   No schema, dependency, Tauri/frontend content API, production or real-profile
-  write was added. Merge requires independent exact-head review and a separate
-  ready/merge authorization.
+  write was added. Private conversation and message storage are
+  `IMPLEMENTED_AND_VERIFIED`; durable runtime state remains
+  `PARTIALLY_IMPLEMENTED`.
 - Phase 1B.3: `NOT AUTHORIZED`; task services and later durable-state behavior
   remain out of scope.
 - Phase 1C and later: `NO_GO`.
@@ -238,19 +240,40 @@ PARTIALLY_IMPLEMENTED
 PHASE_1B =
 NOT COMPLETE
 
-PHASE_1B_2 =
-IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
+PHASE_1B2 =
+MERGED / FRESH_MAIN_VERIFIED
 
-PHASE_1B_2_MERGED =
-NO
+MERGED_IMPLEMENTATION_HEAD =
+c2fdcc5a234779c7ad886ee5aa0d0762c938a59d
 
-PHASE_1B_3 =
+PHASE_1B2_MERGE_COMMIT =
+ec99bf70d6ada94bc1caae9886cca25ad42852f9
+
+PHASE_1B2_MERGED_AT =
+2026-07-25T14:27:32Z
+
+PRIVATE_CONVERSATION_STORAGE =
+IMPLEMENTED_AND_VERIFIED
+
+PRIVATE_MESSAGE_STORAGE =
+IMPLEMENTED_AND_VERIFIED
+
+PUBLIC_CONTENT_TAURI_COMMANDS =
+0
+
+STORAGE_STATUS_TAURI_COMMANDS =
+1
+
+FRONTEND_CONTENT_AUTHORITY =
+0
+
+PHASE_1B3 =
 NOT AUTHORIZED
 
 NEXT_AUTHORIZED_ACTION =
-PHASE_1B_2 INDEPENDENT EXACT-HEAD REVIEW
+SEPARATE PHASE 1B.3 AUDIT / PLAN / HUMAN AUTHORIZATION
 
-REAL_DESKTOP_RESTART_FLOW =
+REAL_DESKTOP_RESTART =
 NOT VERIFIED
 
 CROSS_PLATFORM_RUNTIME =
@@ -269,7 +292,7 @@ DEPLOYMENTS =
 0
 ```
 
-Phase 1B.2 local candidate evidence:
+Phase 1B.2 merged and fresh-main-verified evidence:
 
 ```text
 CONTENT_OPERATIONS = 5 PRIVATE RUST ONLY
@@ -283,20 +306,31 @@ CREATE_MAX_AGGREGATE_GROWTH = 32,960 bytes
 CREATE_MAX_WAL_GROWTH = 32,960 bytes
 APPEND_MAX_AGGREGATE_GROWTH = 313,120 bytes
 APPEND_MAX_WAL_GROWTH = 313,120 bytes
+HARD_DATABASE_LIMIT = 4294967296 bytes
+IMMUTABLE_RESERVE = 16777216 bytes
+NORMAL_MUTATION_USABLE_LIMIT = 4278190080 bytes
+CREATE_OPERATION_ENVELOPE = 8388608 bytes
+APPEND_OPERATION_ENVELOPE = 33554432 bytes
+WAL_AUTOCHECKPOINT = 128 pages
+PHYSICAL_WAL_CEILING = 10485760 bytes
+CREATE_WAL_BOUND = 2097152 bytes
+APPEND_WAL_BOUND = 4194304 bytes
 EXECUTABLE_GROWTH_PROOF = 40/40 PASS
+REPOSITORY_TESTS = 36/36 PASS
 RUNTIME_STORE_TESTS = 100/100 PASS
 INFERENCE_TESTS = 67/67 PASS
 FULL_RUST_TESTS = 216/216 PASS
 RUNTIME_STORE_WARNING_LOCATIONS = 0
 ```
 
-Fresh-main evidence and schema invariants:
+Phase 1B.2 fresh-main evidence and schema invariants:
 
 ```text
 RUST_TOOLCHAIN = 1.95.0 PINNED
-STORAGE_TESTS = 64/64 PASS
+REPOSITORY_TESTS = 36/36 PASS
+RUNTIME_STORE_TESTS = 100/100 PASS
 INFERENCE_TESTS = 67/67 PASS
-FULL_RUST_TESTS = 180/180 PASS
+FULL_RUST_TESTS = 216/216 PASS
 CARGO_CHECK = PASS
 CARGO_CLIPPY = PASS
 RUNTIME_STORE_WARNING_LOCATIONS = 0
@@ -306,7 +340,8 @@ STRUCTURAL_CHECKS = 46 PASS
 PRODUCTION_BUILD = PASS / 1,763 MODULES
 PRODUCTION_NPM_AUDIT = 0 VULNERABILITIES
 NPM_DEV_INCLUSIVE_ADVISORIES = 11 INHERITED / OUTSIDE PRODUCTION DEPENDENCY SET
-INHERITED_RUSTSEC_WARNING_RUSTFMT_DEBT = UNCHANGED
+INHERITED_RUSTSEC = UNCHANGED
+INHERITED_RUSTFMT_DEBT = 94 FILES / UNCHANGED
 MIGRATION_SHA = 62341c5015e70605bc3d57f9152c9e6a571739beaec33a2a7574b3e9a482575d
 STRUCTURAL_FINGERPRINT = 37f9060cd050c615e2576809266ad9535e05c105f57a0a168bcf488f1f14ed77
 TABLES = 5

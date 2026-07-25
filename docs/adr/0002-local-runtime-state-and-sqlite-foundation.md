@@ -1,6 +1,6 @@
 # ADR 0002: Local Runtime State and SQLite Foundation
 
-- Status: Accepted; implementation partial; Phase 1B.1 merged and fresh-main verified
+- Status: Accepted; implementation partial; Phase 1B.1 and Phase 1B.2 merged and fresh-main verified
 - Date: 2026-07-04
 - Scope: first durable Edge runtime-state store
 
@@ -40,24 +40,41 @@ The audited Edge snapshot has no durable task/conversation/audit store. Messagin
 ## Verification gate
 
 See [Durable runtime state gate](../security/SECURITY_GATES.md). The separately
-authorized Phase 1B.1 vertical slice is merged and fresh-main verified. It
-implements only bootstrap and a safe read-only status projection: exact
-`rusqlite` 0.40.1, bundled SQLite 3.53.2, the five-table empty schema, one
-bounded Rust owner, explicit bounded application shutdown, deadline-interrupt
-and hard-link-aware path controls, strict UUID-v4 schema constraints, and
-restart/reopen tests.
+authorized Phase 1B.1 and Phase 1B.2 vertical slices are merged and fresh-main
+verified. Phase 1B.1 implements bootstrap and a safe read-only status
+projection: exact `rusqlite` 0.40.1, bundled SQLite 3.53.2, the five-table
+schema, one bounded Rust owner, explicit bounded application shutdown,
+deadline-interrupt and hard-link-aware path controls, strict UUID-v4 schema
+constraints, and restart/reopen tests.
+
+Phase 1B.2 adds exactly five crate-private Rust operations for create/get/list
+conversations and append/list messages. Its two mutations couple the subject,
+global operation-ID evidence, and one privacy-safe audit event in one immediate
+SQLite transaction. Reads are bounded and deterministic. Fail-closed 4-GiB
+allocation, immutable 16-MiB reserve, operation-growth, and WAL admission
+controls passed the executable evidence described below. There is still no
+public content Tauri command or frontend content authority.
 
 ```text
 PHASE_1B_1 = MERGED / FRESH_MAIN_VERIFIED
-MERGED_REVIEWED_HEAD = 5d894f42a967c9360d86382c1aab9e603472e0c8
-MERGE_COMMIT = cd903fb18d1618bbe0787d2397948622849ef9d4
-MERGED_AT = 2026-07-24T11:44:00Z
+PHASE_1B2 = MERGED / FRESH_MAIN_VERIFIED
+MERGED_IMPLEMENTATION_HEAD = c2fdcc5a234779c7ad886ee5aa0d0762c938a59d
+MERGE_COMMIT = ec99bf70d6ada94bc1caae9886cca25ad42852f9
+MERGED_AT = 2026-07-25T14:27:32Z
 STORAGE_BOOTSTRAP = IMPLEMENTED_AND_VERIFIED
 STORAGE_RUNTIME_PROJECTION = IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY
+PRIVATE_CONVERSATION_STORAGE = IMPLEMENTED_AND_VERIFIED
+PRIVATE_MESSAGE_STORAGE = IMPLEMENTED_AND_VERIFIED
+CONTENT_OPERATIONS = 5
+CONTENT_MUTATIONS = 2
+CONTENT_READS = 3
+PUBLIC_CONTENT_TAURI_COMMANDS = 0
+STORAGE_STATUS_TAURI_COMMANDS = 1
+FRONTEND_CONTENT_AUTHORITY = 0
 DURABLE_RUNTIME_STATE = PARTIALLY_IMPLEMENTED
 PHASE_1B = NOT COMPLETE
-PHASE_1B_2 = NOT AUTHORIZED
-REAL_DESKTOP_RESTART_FLOW = NOT VERIFIED
+PHASE_1B3 = NOT AUTHORIZED
+REAL_DESKTOP_RESTART = NOT VERIFIED
 CROSS_PLATFORM_RUNTIME = NOT VERIFIED
 REMOTE_CI = NOT PRESENT / NOT CLAIMED
 REMOTE_PRODUCTION_WRITES = 0
@@ -65,13 +82,17 @@ REAL_USER_PROFILE_WRITES = 0
 DEPLOYMENTS = 0
 ```
 
-Fresh-main verification passed 64/64 storage, 67/67 inference and 180/180
-full Rust tests with Rust 1.95.0, plus Cargo check/Clippy, 29/29 primary
-boundary fixtures, 13/13 defense-in-depth fixtures, 46 structural checks,
-production build over 1,763 modules, and zero production npm vulnerabilities.
-Runtime-store warning locations were 0. Dev-inclusive npm audit retained 11
-inherited advisories outside the production dependency set. Inherited RustSec,
-warning and rustfmt debt were unchanged. No remote CI was present.
+Phase 1B.2 repository verification passed 36/36 new repository tests, 100/100
+runtime-store tests, 67/67 inference tests and 216/216 full Rust tests with Rust
+1.95.0, plus Cargo check/Clippy, 29/29 primary boundary fixtures, 13/13
+defense-in-depth fixtures, 46 structural checks, the production build over
+1,763 modules, and zero production npm vulnerabilities. The executable growth
+proof passed 40/40 runs: maximum create aggregate/WAL growth was
+32,960/32,960 bytes and maximum append aggregate/WAL growth was
+313,120/313,120 bytes. Runtime-store warning locations were 0. Dev-inclusive
+npm audit retained 11 inherited advisories outside the production dependency
+set. Inherited RustSec, warning and 94-file rustfmt debt were unchanged. No
+remote CI was present.
 
 The verified schema invariants are:
 
@@ -85,7 +106,7 @@ SQLITE_SEQUENCE = 0
 MIGRATION_2 = ABSENT
 ```
 
-This first slice does not implement public runtime-state CRUD, backup/export,
-retention/deletion services, six-level memory, Phase 1B.2, or
+These slices do not implement public content CRUD, task services, backup/export,
+retention/deletion services, six-level memory, Phase 1B.3, or
 production/platform acceptance. The full ADR implementation therefore remains
 partial.

@@ -1,6 +1,6 @@
 # Phase 1B — Durable Runtime State Plan
 
-Status: **APPROVED PLAN / PHASE 1B.1 MERGED / PHASE 1B.2 LOCAL GATE PASS AND INDEPENDENT REVIEW PENDING**
+Status: **APPROVED PLAN / PHASE 1B.1 AND PHASE 1B.2 MERGED AND FRESH-MAIN VERIFIED**
 
 Starting `main`: `62a1d514b93925e8b7098c6db19f8751a70a7bf8`
 
@@ -12,9 +12,11 @@ final independently reviewed head
 `2026-07-24T11:44:00Z` and was fresh-main verified. Phase 1B.2 later received
 its own audit, corrected planning package and explicit human implementation
 authorization from canonical main `986e5a36204924dbec5b32999ea50650755891ef`.
-Its implementation candidate has passed the local gate and awaits independent
-exact-head review. It is not merged, adds no public content CRUD, and does not
-complete the wider Phase 1B contract.
+Its reviewed implementation head
+`c2fdcc5a234779c7ad886ee5aa0d0762c938a59d` was merged as
+`ec99bf70d6ada94bc1caae9886cca25ad42852f9` at
+`2026-07-25T14:27:32Z` and fresh-main verified. It adds no public content CRUD
+and does not complete the wider Phase 1B contract.
 
 ## 1. Objective
 
@@ -361,7 +363,8 @@ Slices 1B.1 through 1B.5 each require separate authorization.
 
 Phase 1B.1 subsequently received that separate authorization and is now merged
 and fresh-main verified. This historical decision record does not authorize
-Phase 1B.2 or any later slice.
+Phase 1B.2 or any later slice. Phase 1B.2 subsequently received its own
+separate authorization and verification; Phase 1B.3 remains unauthorized.
 
 ## 3. Current repository inventory
 
@@ -950,12 +953,11 @@ does not authorize all slices.
   and tests; no generic IPC.
 - Tests: matrix 9–13, 16, 17, 23, 26–28.
 - Entry gate: 1B.1 fresh-main verified and slice 1B.2 separately authorized.
-- Current state: `IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS /
-  INDEPENDENT_EXACT_HEAD_REVIEW_PENDING / NOT_MERGED`. The bounded candidate
-  provides exactly five crate-private Rust operations (two mutations and three
-  reads), atomic operation-ID/audit coupling, and fail-closed aggregate/WAL
-  admission with no schema, dependency, frontend or Tauri content authority.
-  Its local evidence is 36/36 repository, 100/100 runtime-store, 67/67
+- Current state: `MERGED / FRESH_MAIN_VERIFIED`. The bounded slice provides
+  exactly five crate-private Rust operations (two mutations and three reads),
+  atomic operation-ID/audit coupling, and fail-closed aggregate/WAL admission
+  with no schema, dependency, frontend or Tauri content authority. Its
+  repository evidence is 36/36 repository, 100/100 runtime-store, 67/67
   inference and 216/216 full Rust tests plus 20 create and 20 append physical
   growth measurements with zero bound failures.
 - Stop: orphan/ordering/privacy failure or any need to call a model/tool/network.
@@ -1121,10 +1123,9 @@ an unverified backup, or deletes user content.
 
 This classification applies to the Phase 1B plan. Phase 1B.1 was separately
 authorized, implemented, independently reviewed, merged and fresh-main
-verified. Phase 1B.2 was separately authorized and implemented as an unmerged
-candidate with a passing local gate; its independent exact-head review and
-separate ready/merge decision remain pending. Neither slice completes Phase
-1B.
+verified. Phase 1B.2 was separately authorized, implemented, independently
+reviewed, merged and fresh-main verified. Phase 1B remains incomplete; neither
+slice completes its wider contract.
 HD-01 through HD-09 close the planning decisions on storage authority,
 integration, encryption risk, retention, limits, SQLite operations, export, and
 platform scope. Phase 1B.3 and every later implementation slice remain `NO_GO`
@@ -1143,14 +1144,17 @@ PARTIALLY_IMPLEMENTED
 PHASE_1B_1 =
 MERGED / FRESH_MAIN_VERIFIED
 
-MERGED_REVIEWED_HEAD =
-5d894f42a967c9360d86382c1aab9e603472e0c8
+PHASE_1B2 =
+MERGED / FRESH_MAIN_VERIFIED
 
-MERGE_COMMIT =
-cd903fb18d1618bbe0787d2397948622849ef9d4
+MERGED_IMPLEMENTATION_HEAD =
+c2fdcc5a234779c7ad886ee5aa0d0762c938a59d
 
-MERGED_AT =
-2026-07-24T11:44:00Z
+PHASE_1B2_MERGE_COMMIT =
+ec99bf70d6ada94bc1caae9886cca25ad42852f9
+
+PHASE_1B2_MERGED_AT =
+2026-07-25T14:27:32Z
 
 STORAGE_BOOTSTRAP =
 IMPLEMENTED_AND_VERIFIED
@@ -1158,25 +1162,43 @@ IMPLEMENTED_AND_VERIFIED
 STORAGE_RUNTIME_PROJECTION =
 IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY
 
+PRIVATE_CONVERSATION_STORAGE =
+IMPLEMENTED_AND_VERIFIED
+
+PRIVATE_MESSAGE_STORAGE =
+IMPLEMENTED_AND_VERIFIED
+
+CONTENT_OPERATIONS =
+5
+
+CONTENT_MUTATIONS =
+2
+
+CONTENT_READS =
+3
+
+PUBLIC_CONTENT_TAURI_COMMANDS =
+0
+
+STORAGE_STATUS_TAURI_COMMANDS =
+1
+
+FRONTEND_CONTENT_AUTHORITY =
+0
+
 DURABLE_RUNTIME_STATE =
 PARTIALLY_IMPLEMENTED
 
 PHASE_1B =
 NOT COMPLETE
 
-PHASE_1B_2 =
-IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
-
-PHASE_1B_2_MERGED =
-NO
-
-PHASE_1B_3 =
+PHASE_1B3 =
 NOT AUTHORIZED
 
 NEXT_AUTHORIZED_ACTION =
-PHASE_1B_2 INDEPENDENT EXACT-HEAD REVIEW
+SEPARATE PHASE 1B.3 AUDIT / PLAN / HUMAN AUTHORIZATION
 
-REAL_DESKTOP_RESTART_FLOW =
+REAL_DESKTOP_RESTART =
 NOT VERIFIED
 
 CROSS_PLATFORM_RUNTIME =
@@ -1195,13 +1217,29 @@ DEPLOYMENTS =
 0
 ```
 
-Fresh-main evidence and schema invariants:
+Phase 1B.2 fresh-main evidence and schema invariants:
 
 ```text
 RUST_TOOLCHAIN = 1.95.0 PINNED
-STORAGE_TESTS = 64/64 PASS
+REPOSITORY_TESTS = 36/36 PASS
+RUNTIME_STORE_TESTS = 100/100 PASS
 INFERENCE_TESTS = 67/67 PASS
-FULL_RUST_TESTS = 180/180 PASS
+FULL_RUST_TESTS = 216/216 PASS
+HARD_DATABASE_LIMIT = 4294967296 bytes
+IMMUTABLE_RESERVE = 16777216 bytes
+NORMAL_MUTATION_USABLE_LIMIT = 4278190080 bytes
+CREATE_OPERATION_ENVELOPE = 8388608 bytes
+APPEND_OPERATION_ENVELOPE = 33554432 bytes
+WAL_AUTOCHECKPOINT = 128 pages
+PHYSICAL_WAL_CEILING = 10485760 bytes
+CREATE_WAL_BOUND = 2097152 bytes
+APPEND_WAL_BOUND = 4194304 bytes
+CREATE_MAX_AGGREGATE_GROWTH = 32960 bytes
+CREATE_MAX_WAL_GROWTH = 32960 bytes
+APPEND_MAX_AGGREGATE_GROWTH = 313120 bytes
+APPEND_MAX_WAL_GROWTH = 313120 bytes
+SQLITE_PAGE_SIZE = 4096 bytes
+EXECUTABLE_GROWTH_PROOF = 40/40 PASS
 CARGO_CHECK = PASS
 CARGO_CLIPPY = PASS
 RUNTIME_STORE_WARNING_LOCATIONS = 0
@@ -1211,7 +1249,8 @@ STRUCTURAL_CHECKS = 46 PASS
 PRODUCTION_BUILD = PASS / 1,763 MODULES
 PRODUCTION_NPM_AUDIT = 0 VULNERABILITIES
 NPM_DEV_INCLUSIVE_ADVISORIES = 11 INHERITED / OUTSIDE PRODUCTION DEPENDENCY SET
-INHERITED_RUSTSEC_WARNING_RUSTFMT_DEBT = UNCHANGED
+INHERITED_RUSTSEC = UNCHANGED
+INHERITED_RUSTFMT_DEBT = 94 FILES / UNCHANGED
 MIGRATION_SHA = 62341c5015e70605bc3d57f9152c9e6a571739beaec33a2a7574b3e9a482575d
 STRUCTURAL_FINGERPRINT = 37f9060cd050c615e2576809266ad9535e05c105f57a0a168bcf488f1f14ed77
 TABLES = 5
