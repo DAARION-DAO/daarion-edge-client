@@ -1,6 +1,6 @@
 # Sovereign Agent Capability Status Matrix
 
-Status: **PHASE 1A MERGED / PHASE 1B.1 MERGED / PHASE 1B.2 MERGED AND FRESH-MAIN VERIFIED — 2026-07-25**
+Status: **PHASE 1A MERGED / PHASE 1B.1–1B.3 MERGED AND FRESH-MAIN VERIFIED — 2026-07-26**
 
 The status describes executable evidence in the audited snapshots, not target architecture, live deployment, or product aspiration.
 
@@ -35,8 +35,13 @@ The status describes executable evidence in the audited snapshots, not target ar
 | Web cloud chat/embeddings | Web cloud boundary | `IMPLEMENTED_BUT_UNVERIFIED` | `ai-agent-chat` calls cloud gateway after auth checks; live provider not called | Separate cloud feature verification |
 | Storage bootstrap | Edge | `IMPLEMENTED_AND_VERIFIED` | Reviewed head `5d894f42a967c9360d86382c1aab9e603472e0c8` merged as `cd903fb18d1618bbe0787d2397948622849ef9d4` at `2026-07-24T11:44:00Z` and passed fresh-main verification: one Rust-owned SQLite 3.53.2 connection on a bounded worker, immutable version-1 migration, exactly five application tables, seven explicit indexes, seven SQLite autoindexes, no `sqlite_sequence`, and no migration 2. Migration SHA and structural fingerprint remain exact | Later task/deletion/export slices require separate authorization |
 | Storage runtime projection | Edge | `IMPLEMENTED_AND_VERIFIED` | One no-user-argument read-only Rust status command, typed frontend adapter, private command constant, no raw Tauri export, and mounted Dashboard card passed 29/29 primary boundary fixtures, 13/13 defense-in-depth fixtures and 46 structural checks on fresh main. Remote CI was not present; repository verification is local exact-head evidence | Real desktop restart and cross-platform runtime remain unverified |
-| Durable runtime state | Edge | `PARTIALLY_IMPLEMENTED` | Phase 1B.1 and Phase 1B.2 are merged and fresh-main verified. The Phase 1B.3 draft candidate adds five crate-private Rust operations: one atomic inert-task record mutation, two task reads and two typed audit reads. It stores only inert `created` rows, uses `task.recorded`, keeps task execution absent, and replaces the accepted stringly success-audit writer with a closed operation-specific boundary. The local gate passes 31 focused, 131 runtime-store, 67 inference and 247 full Rust tests; 20/20 task growth measurements remain within the 8-/2-MiB bounds and the existing 40/40 growth regression remains unchanged. It adds no Tauri/frontend authority, migration, dependency, production write or real-profile write. Independent exact-head review and merge remain pending; retention, deletion/export/backup, full recovery/privacy closure and six-level memory remain absent. `PHASE_1B = NOT COMPLETE` | Complete independent Phase 1B.3 review; do not start Phase 1B.4 |
-| Six-level memory | Edge | `MISSING` | No working/conversation/episodic/semantic/procedural/graph implementation | Phase 2 after foundation |
+| Inert task storage | Edge | `IMPLEMENTED_AND_VERIFIED` | Merged Phase 1B.3 records one atomic inert task with optional conversation ownership, fixed `created` state, opaque closed task-kind grammar, global operation-ID replay/conflict handling, deterministic restart readback, and `task.recorded` audit. No task is executed or transitioned | Phase 1B.4 requires separate audit, plan, and human authorization |
+| Typed audit persistence | Edge | `IMPLEMENTED_AND_VERIFIED` | The task mutation constructs one operation-specific `task.recorded` event atomically; typed event/actor/subject/outcome decoding and semantic validation fail closed. Generic audit append authority is absent | Retention/deletion/export/recovery remain open |
+| Typed audit readback | Edge | `IMPLEMENTED_AND_VERIFIED` | Exact and paginated typed audit reads persist across restart. Operation-local missing-record code is `content_audit_event_not_found` | Public audit IPC remains absent |
+| Task execution | Edge | `MISSING` | Phase 1B.3 stores inert data only: state is `created`; update, transition, cancellation, retry, deletion, scheduling, planner/executor/verifier and Supervisor behavior are absent | Phase 1C remains not authorized |
+| Public task/audit API | Edge | `MISSING` | Five Phase 1B.3 operations remain crate-private Rust services; public task/audit Tauri commands and frontend task/audit authority are both zero | Separate future authorization and threat review |
+| Durable runtime state | Edge | `PARTIALLY_IMPLEMENTED` | Phase 1B.1 through Phase 1B.3 are merged and fresh-main verified. PR #33 reviewed head `79b14d80…` merged as `dfad7d477…` and provides exactly five crate-private inert-task/typed-audit operations. Fresh-main evidence passed 31 focused, 131 runtime-store, 67 inference and 247 full Rust tests; 20/20 task growth stayed within bounds and the existing 40/40 create/append regression stayed unchanged. No Tauri/frontend authority, migration, dependency, production write or real-profile write was added. Retention, deletion/export/backup, full recovery/privacy closure and six-level memory remain absent. `PHASE_1B = NOT COMPLETE` | Do not start Phase 1B.4 without a separate audit, plan, and human authorization |
+| Six-level agent memory | Edge | `PARTIALLY_IMPLEMENTED` | The merged SQLite foundation provides durable conversation/message plus inert task/audit state, but working, episodic, semantic, procedural and graph memory behavior, extraction, embeddings, retention, deletion/export and recovery remain absent | Phase 2 after the incomplete Phase 1B foundation |
 | Agent Supervisor | Edge | `MISSING` | Agent-shaped modules do not form a traced deterministic Supervisor | Phase 1C |
 | Bounded Loop Runtime | Edge | `MISSING` | No versioned definition, durable run/checkpoint model, limits or resume | Phase 3 |
 | Tool permission broker | Edge | `SECURITY_GATED` | Shell/network/worker surfaces exist without unified typed broker | Phase 4 |
@@ -54,8 +59,8 @@ The status describes executable evidence in the audited snapshots, not target ar
 ## Interpretation rules
 
 - A module name, README statement, enum, UI state, or test fixture alone cannot raise a capability status.
-- `IMPLEMENTED_AND_VERIFIED` is limited to the cited merged Phase 1A, Phase
-  1B.1, and bounded Phase 1B.2 repository checks and fresh-main readbacks. The
+- `IMPLEMENTED_AND_VERIFIED` is limited to the cited merged Phase 1A and bounded
+  Phase 1B.1 through Phase 1B.3 repository checks and fresh-main readbacks. The
   broader durable-runtime-state capability remains `PARTIALLY_IMPLEMENTED`.
   None of these states imply a live Ollama run, real desktop storage restart,
   cross-platform execution, packaging proof, deployment truth or production
@@ -63,9 +68,10 @@ The status describes executable evidence in the audited snapshots, not target ar
 - A live/deployed result must be recorded separately from repository evidence.
 - Status changes require evidence, date, command/result or deployed proof, and documentation update.
 - Phase 1B.2 merged evidence claims only five private Rust
-  conversation/message operations. It does not claim public content CRUD, task
-  services, memory, retention, deletion/export/backup or a completed Phase 1B
-  release.
+  conversation/message operations. Phase 1B.3 adds five private Rust inert-task
+  and typed-audit operations, not task execution or public task/audit authority.
+  Neither slice claims memory, retention, deletion/export/backup or a completed
+  Phase 1B release.
 
 Current Phase 1B.1 evidence boundary:
 
@@ -112,9 +118,28 @@ INFERENCE_TESTS = 67/67 PASS
 FULL_RUST_TESTS = 216/216 PASS
 DURABLE_RUNTIME_STATE = PARTIALLY_IMPLEMENTED
 PHASE_1B = NOT COMPLETE
-PHASE_1B3 = IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
-PHASE_1B3_IMPLEMENTATION = NOT MERGED
+PHASE_1B3 = MERGED / FRESH_MAIN_VERIFIED
+PHASE_1B3_IMPLEMENTATION = MERGED
+PHASE_1B3_MERGED_IMPLEMENTATION_HEAD = 79b14d80a851042a64eff8ef8e4c84f3d6f64e5e
+PHASE_1B3_ORIGINAL_IMPLEMENTATION_COMMIT = e62dd44d2bfb88ce7c5ccccad92efcf2e319c45b
+PHASE_1B3_MERGE_COMMIT = dfad7d47745355e09fc8d169568ca6cab4acc48b
+PHASE_1B3_MERGED_AT = 2026-07-26T09:26:50Z
+INERT_TASK_STORAGE = IMPLEMENTED_AND_VERIFIED
+TYPED_AUDIT_PERSISTENCE = IMPLEMENTED_AND_VERIFIED
+TYPED_AUDIT_READBACK = IMPLEMENTED_AND_VERIFIED
+PRIVATE_PHASE_1B3_OPERATIONS = 5
+TASK_MUTATIONS = 1
+TASK_READS = 2
+AUDIT_READS = 2
+TASK_STATE = created only
+TASK_EVENT_TYPE = task.recorded
+TASK_IDEMPOTENCY_KEY = SQL NULL / DEFERRED
+TASK_EXECUTION = ABSENT
+PUBLIC_TASK_TAURI_COMMANDS = 0
+PUBLIC_AUDIT_TAURI_COMMANDS = 0
+FRONTEND_TASK_AUDIT_AUTHORITY = 0
 PHASE_1B4 = NOT AUTHORIZED
+PHASE_1C = NOT AUTHORIZED
 REAL_DESKTOP_RESTART = NOT VERIFIED
 CROSS_PLATFORM_RUNTIME = NOT VERIFIED
 REMOTE_CI = NOT PRESENT / NOT CLAIMED

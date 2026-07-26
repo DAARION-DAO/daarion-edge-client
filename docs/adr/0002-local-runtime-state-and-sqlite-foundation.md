@@ -1,6 +1,6 @@
 # ADR 0002: Local Runtime State and SQLite Foundation
 
-- Status: Accepted; implementation partial; Phase 1B.1 and Phase 1B.2 merged and fresh-main verified
+- Status: Accepted; implementation partial; Phase 1B.1 through Phase 1B.3 merged and fresh-main verified
 - Date: 2026-07-04
 - Scope: first durable Edge runtime-state store
 
@@ -40,8 +40,8 @@ The audited Edge snapshot has no durable task/conversation/audit store. Messagin
 ## Verification gate
 
 See [Durable runtime state gate](../security/SECURITY_GATES.md). The separately
-authorized Phase 1B.1 and Phase 1B.2 vertical slices are merged and fresh-main
-verified. Phase 1B.1 implements bootstrap and a safe read-only status
+authorized Phase 1B.1 through Phase 1B.3 vertical slices are merged and
+fresh-main verified. Phase 1B.1 implements bootstrap and a safe read-only status
 projection: exact `rusqlite` 0.40.1, bundled SQLite 3.53.2, the five-table
 schema, one bounded Rust owner, explicit bounded application shutdown,
 deadline-interrupt and hard-link-aware path controls, strict UUID-v4 schema
@@ -58,9 +58,15 @@ public content Tauri command or frontend content authority.
 ```text
 PHASE_1B_1 = MERGED / FRESH_MAIN_VERIFIED
 PHASE_1B2 = MERGED / FRESH_MAIN_VERIFIED
-MERGED_IMPLEMENTATION_HEAD = c2fdcc5a234779c7ad886ee5aa0d0762c938a59d
-MERGE_COMMIT = ec99bf70d6ada94bc1caae9886cca25ad42852f9
-MERGED_AT = 2026-07-25T14:27:32Z
+PHASE_1B3 = MERGED / FRESH_MAIN_VERIFIED
+PHASE_1B3_IMPLEMENTATION = MERGED
+PHASE_1B2_MERGED_IMPLEMENTATION_HEAD = c2fdcc5a234779c7ad886ee5aa0d0762c938a59d
+PHASE_1B2_MERGE_COMMIT = ec99bf70d6ada94bc1caae9886cca25ad42852f9
+PHASE_1B2_MERGED_AT = 2026-07-25T14:27:32Z
+PHASE_1B3_ORIGINAL_IMPLEMENTATION_COMMIT = e62dd44d2bfb88ce7c5ccccad92efcf2e319c45b
+PHASE_1B3_MERGED_IMPLEMENTATION_HEAD = 79b14d80a851042a64eff8ef8e4c84f3d6f64e5e
+PHASE_1B3_MERGE_COMMIT = dfad7d47745355e09fc8d169568ca6cab4acc48b
+PHASE_1B3_MERGED_AT = 2026-07-26T09:26:50Z
 STORAGE_BOOTSTRAP = IMPLEMENTED_AND_VERIFIED
 STORAGE_RUNTIME_PROJECTION = IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY
 PRIVATE_CONVERSATION_STORAGE = IMPLEMENTED_AND_VERIFIED
@@ -68,14 +74,27 @@ PRIVATE_MESSAGE_STORAGE = IMPLEMENTED_AND_VERIFIED
 CONTENT_OPERATIONS = 5
 CONTENT_MUTATIONS = 2
 CONTENT_READS = 3
+INERT_TASK_STORAGE = IMPLEMENTED_AND_VERIFIED
+TYPED_AUDIT_PERSISTENCE = IMPLEMENTED_AND_VERIFIED
+TYPED_AUDIT_READBACK = IMPLEMENTED_AND_VERIFIED
+PRIVATE_PHASE_1B3_OPERATIONS = 5
+TASK_MUTATIONS = 1
+TASK_READS = 2
+AUDIT_READS = 2
+TASK_STATE = created only
+TASK_EVENT_TYPE = task.recorded
+TASK_IDEMPOTENCY_KEY = SQL NULL / DEFERRED
+TASK_EXECUTION = ABSENT
+GENERIC_AUDIT_APPEND = 0
 PUBLIC_CONTENT_TAURI_COMMANDS = 0
+PUBLIC_TASK_TAURI_COMMANDS = 0
+PUBLIC_AUDIT_TAURI_COMMANDS = 0
 STORAGE_STATUS_TAURI_COMMANDS = 1
 FRONTEND_CONTENT_AUTHORITY = 0
 DURABLE_RUNTIME_STATE = PARTIALLY_IMPLEMENTED
 PHASE_1B = NOT COMPLETE
-PHASE_1B3 = IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
-PHASE_1B3_IMPLEMENTATION = NOT MERGED
 PHASE_1B4 = NOT AUTHORIZED
+PHASE_1C = NOT AUTHORIZED
 REAL_DESKTOP_RESTART = NOT VERIFIED
 CROSS_PLATFORM_RUNTIME = NOT VERIFIED
 REMOTE_CI = NOT PRESENT / NOT CLAIMED
@@ -96,6 +115,15 @@ npm audit retained 11 inherited advisories outside the production dependency
 set. Inherited RustSec, warning and 94-file rustfmt debt were unchanged. No
 remote CI was present.
 
+PR #33 fresh-main verification passed 31/31 focused Phase 1B.3 tests, 131/131
+runtime-store tests, 67/67 inference tests and 247/247 full Rust tests. Task
+growth passed 20/20 with maximum aggregate/WAL growth of 41,200/41,200 bytes;
+the existing create/append regression passed 40/40 with maxima of 32,960 and
+313,120 bytes. Cargo check, Clippy, scoped rustfmt for all 11 changed Rust
+files, storage contracts, the 1,763-module production build, zero-vulnerability
+production npm audit and secret scan passed. These are PR #33 fresh-main
+results, not checks rerun by the post-merge documentation reconciliation.
+
 The verified schema invariants are:
 
 ```text
@@ -108,12 +136,13 @@ SQLITE_SEQUENCE = 0
 MIGRATION_2 = ABSENT
 ```
 
-The Phase 1B.3 draft candidate adds exactly five crate-private Rust operations:
-one atomic inert-task record mutation, two task reads, and two typed audit
-reads. It retains `created` as data-only state, writes `task.recorded`, leaves
-`tasks.idempotency_key` NULL, and closes the previously accepted stringly audit
-writer boundary. Local evidence is complete, but independent exact-head review
-and merge have not occurred.
+The merged Phase 1B.3 slice adds exactly five crate-private Rust operations: one
+atomic inert-task record mutation, two task reads, and two typed audit reads. It
+retains `created` as data-only state, writes `task.recorded`, leaves
+`tasks.idempotency_key` SQL `NULL`, and closes the previously accepted stringly
+audit writer boundary. Operation-local missing-record errors are
+`content_task_not_found` and `content_audit_event_not_found`; neither poisons
+content intake.
 
 These slices do not implement public content CRUD, executable task semantics,
 backup/export, retention/deletion services, six-level memory, Phase 1B.4, or
