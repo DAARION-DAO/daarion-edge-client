@@ -159,8 +159,8 @@ Capacity and writer-busy rejection likewise leave no partial task or audit.
 
 The existing private error model adds only:
 
-- `TaskNotFound` / `runtime_store_task_not_found`;
-- `AuditEventNotFound` / `runtime_store_audit_event_not_found`.
+- `TaskNotFound` / `content_task_not_found`;
+- `AuditEventNotFound` / `content_audit_event_not_found`.
 
 No raw SQLite error, path, task kind, content, title, prompt, payload,
 environment value, or audit metadata is exposed through these errors or normal
