@@ -167,6 +167,7 @@ Numbers are reservations for planning, not accepted decisions.
   plan and Rust 1.95.0 toolchain unblock are merged.
 - Phase 1B implementation: `PARTIALLY_IMPLEMENTED`; Phase 1B.1 is merged and
   fresh-main verified. The separately authorized Phase 1B.2 slice is also
+  merged and fresh-main verified. The separately authorized Phase 1B.3 slice is
   merged and fresh-main verified; the broader Phase 1B remains incomplete.
 - Phase 1B.1: `MERGED / FRESH_MAIN_VERIFIED`. The final independently reviewed
   head `5d894f42a967c9360d86382c1aab9e603472e0c8` was merged as
@@ -201,14 +202,21 @@ Numbers are reservations for planning, not accepted decisions.
   write was added. Private conversation and message storage are
   `IMPLEMENTED_AND_VERIFIED`; durable runtime state remains
   `PARTIALLY_IMPLEMENTED`.
-- Phase 1B.3: `IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS /
-  INDEPENDENT_REVIEW_PENDING`. The candidate contains exactly five private Rust
-  operations: one inert-task mutation, two task reads and two typed audit reads.
-  It adds no executable task semantics, migration, dependency, public
-  Tauri/frontend authority, production write or real-profile write. It is not
-  merged.
+- Phase 1B.3: `MERGED / FRESH_MAIN_VERIFIED`. Original implementation commit
+  `e62dd44d2bfb88ce7c5ccccad92efcf2e319c45b` and corrected reviewed head
+  `79b14d80a851042a64eff8ef8e4c84f3d6f64e5e` were merged as
+  `dfad7d47745355e09fc8d169568ca6cab4acc48b` at
+  `2026-07-26T09:26:50Z`. Exactly five private Rust operations provide one
+  inert-task mutation, two task reads and two typed audit reads. Task state is
+  `created` only, the event is `task.recorded`, and the task idempotency column
+  remains SQL `NULL`. The slice adds no executable task semantics, migration,
+  dependency, public Tauri/frontend authority, production write or real-profile
+  write. Fresh-main evidence passed 31 focused, 131 runtime-store, 67 inference
+  and 247 full Rust tests, 20/20 task-growth measurements, and the existing
+  40/40 create/append growth regression.
 - Phase 1B.4: `NOT AUTHORIZED`.
-- Phase 1C and later: `NO_GO`.
+- Phase 1C: `NOT AUTHORIZED`.
+- Later phases: `NO_GO`.
 - Production readiness: `NO_GO`.
 
 ```text
@@ -273,16 +281,55 @@ FRONTEND_CONTENT_AUTHORITY =
 0
 
 PHASE_1B3 =
-IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
+MERGED / FRESH_MAIN_VERIFIED
 
 PHASE_1B3_IMPLEMENTATION =
-NOT MERGED
+MERGED
+
+PHASE_1B3_ORIGINAL_IMPLEMENTATION_COMMIT =
+e62dd44d2bfb88ce7c5ccccad92efcf2e319c45b
+
+PHASE_1B3_MERGED_IMPLEMENTATION_HEAD =
+79b14d80a851042a64eff8ef8e4c84f3d6f64e5e
+
+PHASE_1B3_MERGE_COMMIT =
+dfad7d47745355e09fc8d169568ca6cab4acc48b
+
+PHASE_1B3_MERGED_AT =
+2026-07-26T09:26:50Z
+
+INERT_TASK_STORAGE =
+IMPLEMENTED_AND_VERIFIED
+
+TYPED_AUDIT_PERSISTENCE =
+IMPLEMENTED_AND_VERIFIED
+
+TYPED_AUDIT_READBACK =
+IMPLEMENTED_AND_VERIFIED
+
+PRIVATE_PHASE_1B3_OPERATIONS =
+5
+
+TASK_EXECUTION =
+ABSENT
+
+PUBLIC_TASK_TAURI_COMMANDS =
+0
+
+PUBLIC_AUDIT_TAURI_COMMANDS =
+0
+
+FRONTEND_TASK_AUDIT_AUTHORITY =
+0
 
 PHASE_1B4 =
 NOT AUTHORIZED
 
-NEXT_AUTHORIZED_ACTION =
-INDEPENDENT EXACT-HEAD PHASE 1B.3 REVIEW
+NEXT_POTENTIAL_PHASE =
+PHASE 1B.4 / REQUIRES SEPARATE AUDIT, PLAN AND HUMAN AUTHORIZATION
+
+PHASE_1C =
+NOT AUTHORIZED
 
 REAL_DESKTOP_RESTART =
 NOT VERIFIED

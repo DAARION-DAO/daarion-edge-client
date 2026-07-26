@@ -7,7 +7,7 @@ No gate is satisfied by documentation or module names alone. “Open” means im
 | Gate | Current state | Required evidence to close | Owner/phase |
 | --- | --- | --- | --- |
 | Local-only inference | REPOSITORY PASS — MERGED / FRESH-MAIN VERIFIED | Phase 1A has only `LocalOnly`; loopback/redirect/proxy controls; mandatory `/api/status` cloud-disabled proof; exact stable `/api/tags` → `/api/show` → `/api/tags` local-model evidence; immediate pre-chat revalidation; post-preparation verification; service-owned probe/chat/preparation deadlines and cancellation; bounded streaming; zero-chat sentinel tests; truthful UI; and no main-webview shell authority. Reviewed head `9e8c5d9…` was merged as `62a1d514…` and verified from fresh main. No real Ollama/model smoke or cryptographic daemon/artifact attestation is claimed. | Edge / 1A |
-| Durable runtime state | OPEN — PHASE 1B.3 DRAFT / LOCAL GATE PASS | Phase 1B.1 and Phase 1B.2 are merged and fresh-main verified. The Phase 1B.3 draft candidate adds exactly five crate-private Rust task/audit operations: one atomic inert-task-plus-typed-audit mutation and four bounded reads. Closed task/audit types, global operation-ID replay/conflict handling, fail-closed decoding, the immutable 16-MiB reserve and operation-specific WAL controls pass locally. Evidence includes 31 focused, 131 runtime-store, 67 inference and 247 full Rust tests; task growth passed 20/20 at a 41,200-byte maximum against 8-/2-MiB bounds, and the existing 40/40 growth regression is unchanged. It adds no execution semantics, schema, dependency, public Tauri/frontend authority, real-profile write or production operation. Independent exact-head review and merge are pending. The broader gate remains open for retention/deletion/export/backup, desktop/platform evidence, full recovery/privacy closure and the pre-production SQLCipher decision. | Edge / 1B |
+| Durable runtime state | OPEN — PHASE 1B.1–1B.3 MERGED / FRESH-MAIN VERIFIED | Phase 1B.3 reviewed head `79b14d80…` merged as `dfad7d477…` and adds exactly five crate-private Rust task/audit operations: one atomic inert-task-plus-typed-audit mutation and four bounded reads. Closed task/audit types, global operation-ID replay/conflict handling, fail-closed decoding, the immutable 16-MiB reserve and operation-specific WAL controls passed fresh-main verification. Evidence includes 31 focused, 131 runtime-store, 67 inference and 247 full Rust tests; task growth passed 20/20 at a 41,200-byte maximum against 8-/2-MiB bounds, and the existing 40/40 growth regression is unchanged. It adds no execution semantics, schema, dependency, public Tauri/frontend authority, real-profile write or production operation. The broader gate remains open for retention/deletion/export/backup, desktop/platform evidence, full recovery/privacy closure and the pre-production SQLCipher decision. | Edge / 1B |
 | Inert Supervisor | OPEN | Deterministic IDs, explicit bounded state machine, idempotency, cancellation and crash recovery; no tools/network/scheduling | Edge / 1C |
 | Production pairing | OPEN | Signed purpose-bound invitation, trusted issuer, membership/device binding, expiry, nonce/replay, single use, revocation and downgrade tests | Both / ADR 0004 |
 | Readiness projection | OPEN | Separate signed schema, minimal allowlist, producer identity, expiry/freshness, replay/revocation, cross-repo fixtures and privacy tests | Both / ADR 0005 + Phase 5 |
@@ -151,17 +151,34 @@ contracts, the 1,763-module production build, zero-vulnerability production
 npm audit, secret scan and scoped formatting passed. Runtime-store warning
 locations remain zero.
 
+The separately authorized Phase 1B.3 slice was merged as
+`dfad7d47745355e09fc8d169568ca6cab4acc48b` and passed fresh-main verification.
+Its only mutation records an inert `created` task and constructs the typed
+`task.recorded` event in the same transaction. Generic audit append remains
+absent. Task kind is closed, opaque data and is never executed. Exact and
+paginated task/audit reads use fail-closed typed decoding; operation-local
+missing-record codes are `content_task_not_found` and
+`content_audit_event_not_found`, so these reads do not poison content intake.
+There are zero public task/audit Tauri commands and zero frontend task/audit
+authority.
+
 SQLCipher remains a separate pre-production decision. The durable-state gate
 stays open through later separately authorized Phase 1B slices, desktop target
 evidence, deletion/export, and full recovery/privacy closure. The merged
-Phase 1B.1 and Phase 1B.2 repository slices are not production readiness.
+Phase 1B.1 through Phase 1B.3 repository slices are not production readiness.
 
 ```text
 PHASE_1B_1 = MERGED / FRESH_MAIN_VERIFIED
 PHASE_1B2 = MERGED / FRESH_MAIN_VERIFIED
-MERGED_IMPLEMENTATION_HEAD = c2fdcc5a234779c7ad886ee5aa0d0762c938a59d
-MERGE_COMMIT = ec99bf70d6ada94bc1caae9886cca25ad42852f9
-MERGED_AT = 2026-07-25T14:27:32Z
+PHASE_1B3 = MERGED / FRESH_MAIN_VERIFIED
+PHASE_1B3_IMPLEMENTATION = MERGED
+PHASE_1B2_MERGED_IMPLEMENTATION_HEAD = c2fdcc5a234779c7ad886ee5aa0d0762c938a59d
+PHASE_1B2_MERGE_COMMIT = ec99bf70d6ada94bc1caae9886cca25ad42852f9
+PHASE_1B2_MERGED_AT = 2026-07-25T14:27:32Z
+PHASE_1B3_ORIGINAL_IMPLEMENTATION_COMMIT = e62dd44d2bfb88ce7c5ccccad92efcf2e319c45b
+PHASE_1B3_MERGED_IMPLEMENTATION_HEAD = 79b14d80a851042a64eff8ef8e4c84f3d6f64e5e
+PHASE_1B3_MERGE_COMMIT = dfad7d47745355e09fc8d169568ca6cab4acc48b
+PHASE_1B3_MERGED_AT = 2026-07-26T09:26:50Z
 STORAGE_BOOTSTRAP = IMPLEMENTED_AND_VERIFIED
 STORAGE_RUNTIME_PROJECTION = IMPLEMENTED_AND_VERIFIED_IN_REPOSITORY
 PRIVATE_CONVERSATION_STORAGE = IMPLEMENTED_AND_VERIFIED
@@ -172,11 +189,26 @@ CONTENT_READS = 3
 PUBLIC_CONTENT_TAURI_COMMANDS = 0
 STORAGE_STATUS_TAURI_COMMANDS = 1
 FRONTEND_CONTENT_AUTHORITY = 0
+INERT_TASK_STORAGE = IMPLEMENTED_AND_VERIFIED
+TYPED_AUDIT_PERSISTENCE = IMPLEMENTED_AND_VERIFIED
+TYPED_AUDIT_READBACK = IMPLEMENTED_AND_VERIFIED
+PRIVATE_PHASE_1B3_OPERATIONS = 5
+TASK_MUTATIONS = 1
+TASK_READS = 2
+AUDIT_READS = 2
+TASK_STATE = created only
+TASK_EVENT_TYPE = task.recorded
+TASK_IDEMPOTENCY_KEY = SQL NULL / DEFERRED
+TASK_EXECUTION = ABSENT
+STRINGLY_AUDIT_WRITE_AUTHORITY = 0
+GENERIC_AUDIT_APPEND = 0
+PUBLIC_TASK_TAURI_COMMANDS = 0
+PUBLIC_AUDIT_TAURI_COMMANDS = 0
+FRONTEND_TASK_AUDIT_AUTHORITY = 0
 DURABLE_RUNTIME_STATE = PARTIALLY_IMPLEMENTED
 PHASE_1B = NOT COMPLETE
-PHASE_1B3 = IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
-PHASE_1B3_IMPLEMENTATION = NOT MERGED
 PHASE_1B4 = NOT AUTHORIZED
+PHASE_1C = NOT AUTHORIZED
 REAL_DESKTOP_RESTART = NOT VERIFIED
 CROSS_PLATFORM_RUNTIME = NOT VERIFIED
 REMOTE_CI = NOT PRESENT / NOT CLAIMED
@@ -185,7 +217,7 @@ REAL_USER_PROFILE_WRITES = 0
 DEPLOYMENTS = 0
 ```
 
-Current Phase 1B.2 merged evidence:
+Current Phase 1B merged evidence:
 
 ```text
 PHASE_1B2 = MERGED / FRESH_MAIN_VERIFIED
@@ -196,12 +228,38 @@ SCHEMA_CHANGE = NONE
 DEPENDENCY_CHANGE = NONE
 EXECUTABLE_GROWTH_PROOF = PASS / 40 RUNS / 0 FAILURES
 RUNTIME_STORE_WARNING_LOCATIONS = 0
-PHASE_1B3 = IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
-PHASE_1B3_IMPLEMENTATION = NOT MERGED
+PHASE_1B3 = MERGED / FRESH_MAIN_VERIFIED
+PHASE_1B3_IMPLEMENTATION = MERGED
 PHASE_1B4 = NOT AUTHORIZED
+PHASE_1C = NOT AUTHORIZED
 REMOTE_PRODUCTION_WRITES = 0
 REAL_USER_PROFILE_WRITES = 0
 DEPLOYMENTS = 0
+```
+
+PR #33 fresh-main verification recorded:
+
+```text
+PHASE_1B3_FOCUSED_TESTS = 31/31 PASS
+RUNTIME_STORE_TESTS = 131/131 PASS
+INFERENCE_TESTS = 67/67 PASS
+FULL_RUST_TESTS = 247/247 PASS
+TASK_GROWTH_PROOF = 20/20 PASS
+TASK_MAX_AGGREGATE_GROWTH = 41,200 bytes
+TASK_MAX_WAL_GROWTH = 41,200 bytes
+CREATE_APPEND_GROWTH_REGRESSION = 40/40 PASS
+CREATE_MAX_GROWTH = 32,960 bytes
+APPEND_MAX_GROWTH = 313,120 bytes
+CARGO_CHECK = PASS
+CARGO_CLIPPY = PASS
+SCOPED_RUSTFMT = 11/11 CHANGED RUST FILES PASS
+STORAGE_CONTRACT = 29/29 PRIMARY / 13/13 DEFENSE_IN_DEPTH / 46 STRUCTURAL
+PRODUCTION_BUILD = PASS / 1,763 MODULES
+PRODUCTION_NPM_AUDIT = 0 VULNERABILITIES
+SECRET_SCAN = PASS
+RUSTSEC_BASELINE = 13 VULNERABILITIES / 22 WARNINGS / INHERITED
+NPM_DEV_INCLUSIVE_FINDINGS = 11 INHERITED
+REPOSITORY_RUSTFMT_DEBT = 94 LEGACY FILES
 ```
 
 The frozen nine-path Tauri-core importer baseline is grandfathered technical

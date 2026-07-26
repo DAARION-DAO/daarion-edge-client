@@ -26,11 +26,11 @@ The Edge Client operates across three distinct functional layers:
 * **Sovereign Agent Onboarding**: Provides an interactive workspace (via the Genesis Wizard) for personal agent creation, wallet management, and localized prompt directives.
 * **Local Compute Integration**: Automatically detects and catalogs local compute capacity, identifying available hardware resources (CPU cores, RAM total, and GPU acceleration APIs like Apple Metal or CUDA).
 * **Local Inference Foundation**: Uses a provider-neutral, local-only inference boundary with Ollama as the first desktop provider. Canonical model IDs are resolved through the bundled registry, requests are bounded and cancellable, and no remote fallback is enabled. Ollama-managed model artifacts are not an embedded GGUF or `llama.cpp` runtime, and cross-platform live execution remains subject to verification.
-* **Local Storage Runtime Foundation**: Owns a versioned five-table SQLite store on one bounded Rust worker and exposes only a redacted read-only status projection to the Dashboard. Merged and fresh-main-verified Phase 1B.2 adds five private Rust operations for ordered conversation/message persistence, atomic operation-ID/audit coupling, bounded reads, and fail-closed capacity/WAL admission. It adds no public content Tauri command or frontend content authority. Task services, deletion/export/backup, full memory, cloud sync, real desktop restart proof, and cross-platform runtime proof remain outside the verified slice.
+* **Local Storage Runtime Foundation**: Owns a versioned five-table SQLite store on one bounded Rust worker and exposes only a redacted read-only status projection to the Dashboard. Merged and fresh-main-verified Phase 1B.2 adds five private Rust operations for ordered conversation/message persistence, atomic operation-ID/audit coupling, bounded reads, and fail-closed capacity/WAL admission. Merged and fresh-main-verified Phase 1B.3 adds one inert `created` task mutation, two task reads, and two typed audit reads behind the same private Rust boundary. It adds no public content/task/audit Tauri command or frontend authority. Task execution/transitions, deletion/export/recovery, full memory, cloud sync, real desktop restart proof, cross-platform runtime proof, and transport remain outside the verified slice.
 
-Repository status: Phase 1B.2 is merged and fresh-main verified at
-`ec99bf70d6ada94bc1caae9886cca25ad42852f9`; Phase 1B remains incomplete and
-Phase 1B.3 is not authorized.
+Repository status: Phase 1B.3 is merged and fresh-main verified at
+`dfad7d47745355e09fc8d169568ca6cab4acc48b`; Phase 1B remains incomplete.
+Phase 1B.4 and Phase 1C are not authorized.
 
 ### ⚙️ L3 — Worker Node (Gated)
 * **Compute Contribution**: Enables the option to lease local compute resources to the network for processing deterministic edge tasks (`ping_math` and `text_hash`).

@@ -16,18 +16,19 @@ These instructions apply to this repository unless a more specific nested `AGENT
   `docs/architecture/SYSTEM_CONTEXT_AND_OWNERSHIP.md`, and
   `docs/planning/SOVEREIGN_AGENT_MASTER_ROADMAP.md` before sovereign-agent work.
 - The baseline is a read-only source snapshot, not production verification.
-- Phase 1A, Phase 1B.1, and Phase 1B.2 are merged and verified on fresh
-  `main`; Phase 1B.2 canonical merge is
-  `ec99bf70d6ada94bc1caae9886cca25ad42852f9`. Phase 1B remains incomplete.
+- Phase 1A and Phase 1B.1 through Phase 1B.3 are merged and verified on fresh
+  `main`; Phase 1B.3 canonical merge is
+  `dfad7d47745355e09fc8d169568ca6cab4acc48b`. Phase 1B remains incomplete.
 - Phase 1B.2 implements only five private Rust conversation/message operations
   with no public content Tauri command or frontend content authority.
   Phase 1B.3 was separately authorized from the exact planning merge
-  `3fbdef767d5ca26d198f6e16faba705790e66db9`. Its bounded private Rust
-  implementation candidate contains one inert task mutation, two task reads,
-  and two typed audit reads; the local repository gate passes and independent
-  exact-head review is pending. It is not merged and adds no task execution,
+  `3fbdef767d5ca26d198f6e16faba705790e66db9`. Its merged bounded private Rust
+  architecture contains one inert task mutation, two task reads, and two typed
+  audit reads. These five operations add no task execution, state transition,
   public Tauri/frontend authority, migration, dependency, production write, or
-  real-profile write. Phase 1B.4 and Phase 1C remain `NOT AUTHORIZED`.
+  real-profile write. Any Phase 1B.4 work requires a fresh audit, written plan,
+  and explicit human authorization. Phase 1B.4 and Phase 1C remain
+  `NOT AUTHORIZED`.
 - Pairing and readiness projections require separate future threat-driven ADRs;
   current parsing, SQL, types, and documentation do not close their security
   gates.

@@ -1,6 +1,6 @@
 # Phase 1B — Durable Runtime State Plan
 
-Status: **APPROVED PLAN / PHASE 1B.1 AND PHASE 1B.2 MERGED AND FRESH-MAIN VERIFIED**
+Status: **APPROVED PLAN / PHASE 1B.1 THROUGH PHASE 1B.3 MERGED AND FRESH-MAIN VERIFIED / PHASE 1B NOT COMPLETE**
 
 Starting `main`: `62a1d514b93925e8b7098c6db19f8751a70a7bf8`
 
@@ -16,7 +16,12 @@ Its reviewed implementation head
 `c2fdcc5a234779c7ad886ee5aa0d0762c938a59d` was merged as
 `ec99bf70d6ada94bc1caae9886cca25ad42852f9` at
 `2026-07-25T14:27:32Z` and fresh-main verified. It adds no public content CRUD
-and does not complete the wider Phase 1B contract.
+and does not complete the wider Phase 1B contract. Phase 1B.3 then received its
+own audit, plan, and explicit implementation authorization. Original
+implementation commit `e62dd44d2bfb88ce7c5ccccad92efcf2e319c45b` and corrected
+reviewed head `79b14d80a851042a64eff8ef8e4c84f3d6f64e5e` were merged as
+`dfad7d47745355e09fc8d169568ca6cab4acc48b` at
+`2026-07-26T09:26:50Z` and fresh-main verified. Phase 1B remains incomplete.
 
 ## 1. Objective
 
@@ -57,10 +62,12 @@ Status: **DOCUMENTED ARCHITECTURE / FUTURE STORES OUT OF SCOPE**
 
 This contract defines ownership across future storage classes without widening
 Phase 1B. The bounded Phase 1B.1 SQLite bootstrap and status projection are
-merged and fresh-main verified; remaining transactional content services need
-separate audit, planning and authorization. Semantic, graph, artifact, and
-remote stores remain architectural placeholders with no selected engine,
-dependency, schema, runtime, migration, or deployment.
+merged and fresh-main verified. Phase 1B.2 conversation/message persistence and
+Phase 1B.3 inert-task/typed-audit persistence are also merged and fresh-main
+verified. Deletion/export/recovery and every later slice still need separate
+audit, planning and authorization. Semantic, graph, artifact, and remote stores
+remain architectural placeholders with no selected engine, dependency, schema,
+runtime, migration, or deployment.
 
 ## SQLite — Authoritative Local Transactional State
 
@@ -351,7 +358,9 @@ Phase 1B claims desktop macOS, Windows, and Linux only after their required
 validation passes. Android is a separately authorized validation gate and
 cannot inherit a desktop pass. iOS is unsupported and unclaimed.
 
-### HD-09 — Authorization state at plan approval
+### HD-09 — Historical authorization state at plan approval
+
+`HISTORICAL_AUTHORIZATION_STATE_AT_PLAN_APPROVAL`
 
 ```text
 PHASE_1B_PLAN = APPROVED
@@ -362,12 +371,19 @@ PHASE_1B_1 = NOT_AUTHORIZED_BY_THIS_TASK
 Slices 1B.1 through 1B.5 each require separate authorization.
 
 Phase 1B.1 subsequently received that separate authorization and is now merged
-and fresh-main verified. This historical decision record does not authorize
-Phase 1B.2 or any later slice. Phase 1B.2 subsequently received its own
-separate authorization and verification. Phase 1B.3 also received a separate
-exact-base implementation authorization and now has a local-gate-passing draft
-candidate; independent exact-head review and merge remain pending. This record
-does not authorize Phase 1B.4.
+and fresh-main verified. This historical decision record did not authorize
+Phase 1B.2 or any later slice. Phase 1B.2 and Phase 1B.3 subsequently received
+their own separate authorization, implementation, review, merge, and fresh-main
+verification. This record does not authorize Phase 1B.4.
+
+Current readback:
+
+```text
+PHASE_1B3 = MERGED / FRESH_MAIN_VERIFIED
+PHASE_1B = NOT COMPLETE
+PHASE_1B4 = NOT AUTHORIZED
+PHASE_1C = NOT AUTHORIZED
+```
 
 ## 3. Current repository inventory
 
@@ -974,12 +990,12 @@ does not authorize all slices.
 - Expected files: task/audit repositories, allowlisted enums/errors, tests.
 - Tests: matrix 9, 14–16, 23, 26–27 plus metadata redaction cases.
 - Entry gate: 1B.2 verified and Phase 1C state semantics remain explicitly deferred.
-- Current state: `IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS /
-  INDEPENDENT_REVIEW_PENDING`. Exactly five crate-private Rust operations
-  provide one inert `created` task mutation, two task reads and two typed audit
-  reads. The candidate has no execution/transition semantics, migration,
-  dependency, Tauri/frontend authority, production write or real-profile
-  write. It is not merged.
+- Current state: `MERGED / FRESH_MAIN_VERIFIED`. Exactly five crate-private
+  Rust operations provide one inert `created` task mutation, two task reads and
+  two typed audit reads. The merged slice has no execution/transition
+  semantics, migration, dependency, Tauri/frontend authority, production write
+  or real-profile write. Operation-local missing-record codes are
+  `content_task_not_found` and `content_audit_event_not_found`.
 - Stop: executable task semantics, free-form audit metadata, secret/content logging.
 - Rollback: remove callers while retaining compatible rows; schema fixes are forward-only.
 - Non-goals: transitions, planner/executor/verifier, retries, tools, scheduling.
@@ -1130,15 +1146,17 @@ an unverified backup, or deletes user content.
 
 `GO / APPROVED PLAN`
 
-This classification applies to the Phase 1B plan. Phase 1B.1 was separately
-authorized, implemented, independently reviewed, merged and fresh-main
-verified. Phase 1B.2 was separately authorized, implemented, independently
-reviewed, merged and fresh-main verified. Phase 1B remains incomplete; neither
-slice completes its wider contract.
-HD-01 through HD-09 close the planning decisions on storage authority,
-integration, encryption risk, retention, limits, SQLite operations, export, and
-platform scope. Phase 1B.3 and every later implementation slice remain `NO_GO`
-until separately audited, planned and explicitly authorized.
+This classification applies to the Phase 1B plan. Phase 1B.1, Phase 1B.2, and
+Phase 1B.3 were each separately authorized, implemented, independently
+reviewed, merged, and fresh-main verified. Phase 1B remains incomplete; these
+slices do not complete its wider contract. HD-01 through HD-09 close the
+planning decisions on storage authority, integration, encryption risk,
+retention, limits, SQLite operations, export, and platform scope.
+
+The original plan-approval implementation state was historical `NO_GO` and did
+not itself authorize any slice. The current state supersedes that authorization
+snapshot: Phase 1B.3 is merged and fresh-main verified. Phase 1B.4 and Phase 1C
+remain `NOT AUTHORIZED`.
 
 ```text
 PHASE_1A =
@@ -1202,16 +1220,73 @@ PHASE_1B =
 NOT COMPLETE
 
 PHASE_1B3 =
-IMPLEMENTED_IN_DRAFT_PR / LOCAL_GATE_PASS / INDEPENDENT_REVIEW_PENDING
+MERGED / FRESH_MAIN_VERIFIED
 
 PHASE_1B3_IMPLEMENTATION =
-NOT MERGED
+MERGED
+
+PHASE_1B3_ORIGINAL_IMPLEMENTATION_COMMIT =
+e62dd44d2bfb88ce7c5ccccad92efcf2e319c45b
+
+PHASE_1B3_MERGED_IMPLEMENTATION_HEAD =
+79b14d80a851042a64eff8ef8e4c84f3d6f64e5e
+
+PHASE_1B3_MERGE_COMMIT =
+dfad7d47745355e09fc8d169568ca6cab4acc48b
+
+PHASE_1B3_MERGED_AT =
+2026-07-26T09:26:50Z
+
+INERT_TASK_STORAGE =
+IMPLEMENTED_AND_VERIFIED
+
+TYPED_AUDIT_PERSISTENCE =
+IMPLEMENTED_AND_VERIFIED
+
+TYPED_AUDIT_READBACK =
+IMPLEMENTED_AND_VERIFIED
+
+PRIVATE_PHASE_1B3_OPERATIONS =
+5
+
+TASK_MUTATIONS =
+1
+
+TASK_READS =
+2
+
+AUDIT_READS =
+2
+
+TASK_STATE =
+created only
+
+TASK_EVENT_TYPE =
+task.recorded
+
+TASK_IDEMPOTENCY_KEY =
+SQL NULL / DEFERRED
+
+TASK_EXECUTION =
+ABSENT
+
+PUBLIC_TASK_TAURI_COMMANDS =
+0
+
+PUBLIC_AUDIT_TAURI_COMMANDS =
+0
+
+FRONTEND_TASK_AUDIT_AUTHORITY =
+0
 
 PHASE_1B4 =
 NOT AUTHORIZED
 
-NEXT_AUTHORIZED_ACTION =
-INDEPENDENT EXACT-HEAD PHASE 1B.3 REVIEW
+PHASE_1C =
+NOT AUTHORIZED
+
+NEXT_POTENTIAL_PHASE =
+PHASE 1B.4 / REQUIRES SEPARATE AUDIT, PLAN AND HUMAN AUTHORIZATION
 
 REAL_DESKTOP_RESTART =
 NOT VERIFIED
