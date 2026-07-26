@@ -20,6 +20,8 @@ pub(crate) use lifecycle::RuntimeStoreLifecycle;
 pub(crate) use worker::RuntimeStoreManager;
 
 #[cfg(test)]
+mod phase_1b3_tests;
+#[cfg(test)]
 mod repository_tests;
 #[cfg(test)]
 mod tests;

@@ -21,15 +21,13 @@ These instructions apply to this repository unless a more specific nested `AGENT
   `ec99bf70d6ada94bc1caae9886cca25ad42852f9`. Phase 1B remains incomplete.
 - Phase 1B.2 implements only five private Rust conversation/message operations
   with no public content Tauri command or frontend content authority.
-  Phase 1B.3 has a source-grounded audit and bounded planning package with
-  `PLAN_RESULT = CONDITIONAL_GO`. Its final planning review is
-  `PASS_WITH_NONBLOCKING_FINDINGS`: 0 Critical, 0 High, 1 Medium, 2 Low, and
-  2 Info. The Medium stringly-audit-boundary residual is accepted only for
-  planning canonicalization and requires typed-boundary implementation and
-  executable proof before Phase 1B.3 can complete. Its implementation is
-  `NOT AUTHORIZED`; a separate human implementation authorization must name
-  the exact reviewed planning merge SHA. Phase 1B.4 and Phase 1C remain
-  `NOT AUTHORIZED`.
+  Phase 1B.3 was separately authorized from the exact planning merge
+  `3fbdef767d5ca26d198f6e16faba705790e66db9`. Its bounded private Rust
+  implementation candidate contains one inert task mutation, two task reads,
+  and two typed audit reads; the local repository gate passes and independent
+  exact-head review is pending. It is not merged and adds no task execution,
+  public Tauri/frontend authority, migration, dependency, production write, or
+  real-profile write. Phase 1B.4 and Phase 1C remain `NOT AUTHORIZED`.
 - Pairing and readiness projections require separate future threat-driven ADRs;
   current parsing, SQL, types, and documentation do not close their security
   gates.

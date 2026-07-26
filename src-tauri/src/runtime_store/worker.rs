@@ -7,9 +7,10 @@ use crate::runtime_store::error::{
 };
 use crate::runtime_store::migrations::{migrate_and_validate_until, CURRENT_SCHEMA_VERSION};
 use crate::runtime_store::models::{
-    AppendMessageRequest, ConversationPage, ConversationRecord, CreateConversationRequest,
-    GetConversationRequest, ListConversationsRequest, ListMessagesRequest, MessagePage,
-    MessageRecord,
+    AppendMessageRequest, AuditEventRecord, AuditPage, ConversationPage, ConversationRecord,
+    CreateConversationRequest, GetAuditEventRequest, GetConversationRequest, GetTaskRequest,
+    ListAuditEventsRequest, ListConversationsRequest, ListMessagesRequest, ListTasksRequest,
+    MessagePage, MessageRecord, RecordInertTaskRequest, TaskPage, TaskRecord,
 };
 use crate::runtime_store::repositories;
 use crate::runtime_store::types::{StorageRuntimeErrorCode, StorageRuntimeStatus};
@@ -81,6 +82,36 @@ enum RuntimeStoreRequest {
         request: ListMessagesRequest,
         deadline: Instant,
         reply: SyncSender<Result<MessagePage, ContentOperationError>>,
+    },
+    #[allow(dead_code)]
+    RecordInertTask {
+        request: RecordInertTaskRequest,
+        deadline: Instant,
+        reply: SyncSender<Result<TaskRecord, ContentOperationError>>,
+    },
+    #[allow(dead_code)]
+    GetTask {
+        request: GetTaskRequest,
+        deadline: Instant,
+        reply: SyncSender<Result<TaskRecord, ContentOperationError>>,
+    },
+    #[allow(dead_code)]
+    ListTasks {
+        request: ListTasksRequest,
+        deadline: Instant,
+        reply: SyncSender<Result<TaskPage, ContentOperationError>>,
+    },
+    #[allow(dead_code)]
+    GetAuditEvent {
+        request: GetAuditEventRequest,
+        deadline: Instant,
+        reply: SyncSender<Result<AuditEventRecord, ContentOperationError>>,
+    },
+    #[allow(dead_code)]
+    ListAuditEvents {
+        request: ListAuditEventsRequest,
+        deadline: Instant,
+        reply: SyncSender<Result<AuditPage, ContentOperationError>>,
     },
     #[cfg(test)]
     Hold {
@@ -448,6 +479,106 @@ impl RuntimeStoreManager {
         let (reply, response) = mpsc::sync_channel(1);
         self.send_with_deadline(
             RuntimeStoreRequest::ListMessages {
+                request,
+                deadline,
+                reply,
+            },
+            deadline,
+        )
+        .map_err(ContentOperationError::from_runtime)?;
+        receive_content_response(response, deadline)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn record_inert_task(
+        &self,
+        request: RecordInertTaskRequest,
+    ) -> Result<TaskRecord, ContentOperationError> {
+        request.validate()?;
+        let deadline = Instant::now() + self.ordinary_deadline();
+        let (reply, response) = mpsc::sync_channel(1);
+        self.send_with_deadline(
+            RuntimeStoreRequest::RecordInertTask {
+                request,
+                deadline,
+                reply,
+            },
+            deadline,
+        )
+        .map_err(ContentOperationError::from_runtime)?;
+        receive_content_response(response, deadline)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn get_task(
+        &self,
+        request: GetTaskRequest,
+    ) -> Result<TaskRecord, ContentOperationError> {
+        request.validate()?;
+        let deadline = Instant::now() + self.ordinary_deadline();
+        let (reply, response) = mpsc::sync_channel(1);
+        self.send_with_deadline(
+            RuntimeStoreRequest::GetTask {
+                request,
+                deadline,
+                reply,
+            },
+            deadline,
+        )
+        .map_err(ContentOperationError::from_runtime)?;
+        receive_content_response(response, deadline)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn list_tasks(
+        &self,
+        request: ListTasksRequest,
+    ) -> Result<TaskPage, ContentOperationError> {
+        request.validate()?;
+        let deadline = Instant::now() + self.ordinary_deadline();
+        let (reply, response) = mpsc::sync_channel(1);
+        self.send_with_deadline(
+            RuntimeStoreRequest::ListTasks {
+                request,
+                deadline,
+                reply,
+            },
+            deadline,
+        )
+        .map_err(ContentOperationError::from_runtime)?;
+        receive_content_response(response, deadline)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn get_audit_event(
+        &self,
+        request: GetAuditEventRequest,
+    ) -> Result<AuditEventRecord, ContentOperationError> {
+        request.validate()?;
+        let deadline = Instant::now() + self.ordinary_deadline();
+        let (reply, response) = mpsc::sync_channel(1);
+        self.send_with_deadline(
+            RuntimeStoreRequest::GetAuditEvent {
+                request,
+                deadline,
+                reply,
+            },
+            deadline,
+        )
+        .map_err(ContentOperationError::from_runtime)?;
+        receive_content_response(response, deadline)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn list_audit_events(
+        &self,
+        request: ListAuditEventsRequest,
+    ) -> Result<AuditPage, ContentOperationError> {
+        request.validate()?;
+        let deadline = Instant::now() + self.ordinary_deadline();
+        let (reply, response) = mpsc::sync_channel(1);
+        self.send_with_deadline(
+            RuntimeStoreRequest::ListAuditEvents {
                 request,
                 deadline,
                 reply,
@@ -1146,6 +1277,79 @@ fn run_worker(
                     shared_status,
                     last_start_time_ms,
                     |opened| repositories::list_messages(opened, &request, deadline),
+                );
+                let _ = reply.try_send(result);
+            }
+            RuntimeStoreRequest::RecordInertTask {
+                request,
+                deadline,
+                reply,
+            } => {
+                let result = run_content_operation(
+                    connection.as_mut(),
+                    deadline,
+                    shared_status,
+                    last_start_time_ms,
+                    |opened| {
+                        repositories::record_inert_task(opened, &request, deadline)
+                            .map(|execution| execution.record)
+                    },
+                );
+                let _ = reply.try_send(result);
+            }
+            RuntimeStoreRequest::GetTask {
+                request,
+                deadline,
+                reply,
+            } => {
+                let result = run_content_operation(
+                    connection.as_mut(),
+                    deadline,
+                    shared_status,
+                    last_start_time_ms,
+                    |opened| repositories::get_task(opened, &request, deadline),
+                );
+                let _ = reply.try_send(result);
+            }
+            RuntimeStoreRequest::ListTasks {
+                request,
+                deadline,
+                reply,
+            } => {
+                let result = run_content_operation(
+                    connection.as_mut(),
+                    deadline,
+                    shared_status,
+                    last_start_time_ms,
+                    |opened| repositories::list_tasks(opened, &request, deadline),
+                );
+                let _ = reply.try_send(result);
+            }
+            RuntimeStoreRequest::GetAuditEvent {
+                request,
+                deadline,
+                reply,
+            } => {
+                let result = run_content_operation(
+                    connection.as_mut(),
+                    deadline,
+                    shared_status,
+                    last_start_time_ms,
+                    |opened| repositories::get_audit_event(opened, &request, deadline),
+                );
+                let _ = reply.try_send(result);
+            }
+            RuntimeStoreRequest::ListAuditEvents {
+                request,
+                deadline,
+                reply,
+            } => {
+                let result = run_content_operation(
+                    connection.as_mut(),
+                    deadline,
+                    shared_status,
+                    last_start_time_ms,
+                    |opened| repositories::list_audit_events(opened, &request, deadline),
                 );
                 let _ = reply.try_send(result);
             }
