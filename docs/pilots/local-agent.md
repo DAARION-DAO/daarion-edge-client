@@ -33,7 +33,7 @@ node scripts/package-local-agent-windows.mjs
 
 This reuses the existing Tauri/NSIS installer technology. It explicitly builds `edge-local-agent`, packages the isolated pilot identity as a current-user install, and writes the installer and SHA-256 receipt under `dist-local-agent/windows-x64/`. The normal Edge executable is not renamed into a pilot. The package is unsigned; Windows trust prompts and employee-device acceptance remain separate checks. WebView2 may be downloaded by the installer if missing. Models are not bundled or downloaded.
 
-The `local-agent-windows.yml` workflow builds on Windows and checks installation, native device scanning, agent creation, restart persistence and uninstall on a disposable runner. It uploads an Actions artifact with a short retention period; it has no release/deployment step or write permission. It does not test a folder task through Windows UI, install models or call City. No Windows run or installer artifact exists until that workflow is actually executed. Do not dispatch the normal `release.yml`, which publishes releases.
+The `local-agent-windows.yml` workflow is prepared to build on Windows and check installation, native device scanning, agent creation, restart persistence and uninstall on a disposable runner. It uploads an Actions artifact with a short retention period; it has no release/deployment step or write permission. It does not test a folder task through Windows UI, install models or call City. The first authorized run was blocked before any step by GitHub's account billing lock, so there is still no Windows installer artifact. Do not dispatch the normal `release.yml`, which publishes releases.
 
 The previously published v0.2.2-3 setup/MSI remains a separate older Edge release. It predates the uncommitted local-agent pilot and must not be offered as this pilot's Windows download.
 
@@ -71,3 +71,15 @@ Once allowed, open the existing panel using **Відкрити міську па
 This connector is restricted to the existing local single-user operator panel. It does not authenticate employees through MicroDAO, reach other computers, grant access to core City agents or contribute compute. OpenFabric remains a candidate for the later network/compute boundary, and is not the transport used by this local AG-UI pilot.
 
 See [the joining report](../planning/phases/edge-city-join-pilot-completion.md) for the exact verified scope and remaining gates.
+
+### Contract for the parallel City workstream
+
+The operator relayed confirmation that Edge belongs in Agents as a separate `remote-ag-ui` agent, outside Core. The existing connector follows that separation. Its protocol contract is:
+
+- Method/route: `POST /agents/<agent_id>/ag-ui`, served by the pilot-owned loopback listener. The running session constructs the endpoint; it is not a fixed employee identity or a public service address.
+- Request: AG-UI `threadId`, `runId` and text messages. Response: `text/event-stream` with run/message events and a terminal success/error. Replayed task IDs are idempotent; conflicting replays are refused.
+- Authentication: `Authorization: Bearer <session credential>`. The app creates a fresh random session credential and supplies it directly to the existing encrypted endpoint-auth API after preflight. It is never displayed in chat, URLs, frontend state or build artifacts. Closing/disconnecting revokes the listener; reconnecting rotates the credential.
+- Verified boundary: native protocol tests and the earlier real local AG-UI/model exchange. Actual City registration remains unverified under its current endpoint policy.
+- Reachability gap: the listener accepts loopback connections only. A City server on another employee computer/node cannot reach it as currently implemented. A permitted transport/access path plus employee authentication is still required; selecting `remote-ag-ui` alone does not create that connectivity.
+
+This Windows packaging task does not change City policies, Core agents, credentials, server processes or network exposure.

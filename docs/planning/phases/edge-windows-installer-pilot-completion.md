@@ -8,7 +8,7 @@ FILES_CHANGED = 11 files relative to the inherited pilot; 25 prior uncommitted p
 TESTS_RUN = Packaging config/schema and JavaScript syntax PASS; TypeScript/frontend build PASS; native Mac build PASS; four focused Rust tests PASS, one live City/model test intentionally ignored; clippy exit 0 with no diagnostics in the changed native modules; inference contract PASS; inherited storage inventory check FAIL in both copies; Windows tests NOT RUN
 CORE_USER_PATH_SMOKE = Actual Mac native device scan PASS; existing agent and saved result visible; Windows installation and employee-device path NOT RUN
 P0 = None found in the scoped change review; no general security-audit claim
-P1 = No Windows artifact or install acceptance yet; full automatic model installation is still missing for the complete employee onboarding goal
+P1 = Windows execution blocked by GitHub account billing lock before any step started; no installer artifact or Windows acceptance yet
 P2_BACKLOG = Inherited fixed Tauri-importer inventory rejects the pilot; GPU/driver/model-fit validation is not implemented by this basic scan
 P3_BACKLOG = Signing/distribution polish and additional Windows architectures
 PRODUCTION_WRITES = NO
@@ -16,9 +16,17 @@ MIGRATIONS_APPLIED = NO
 DEPLOYMENT_PERFORMED = NO
 CURRENT_BRANCH = codex/edge-windows-installer-pilot
 STARTING_MAIN_SHA = eafb30d8548e2b1e3bc36fc34b2c8f0b36f633b7
-FINAL_HEAD_SHA = eafb30d8548e2b1e3bc36fc34b2c8f0b36f633b7; changes remain uncommitted
+FINAL_HEAD_SHA = Application/build source pushed at a633aeac3e24b638e152e32aeba6f8f73fa80cb9; this evidence-only follow-up is recorded in Git history
 PR = NONE
-NEXT_SINGLE_ACTION = Run the explicitly authorized isolated-branch Windows workflow and collect its artifact and smoke evidence
+NEXT_SINGLE_ACTION = Resolve the GitHub account billing lock, then rerun the existing Windows workflow
+
+## Authorized push and actual Windows attempt
+
+On 2026-09-05 the operator authorized committing/pushing this isolated branch to build and verify the Windows package without publishing a release. Commit `a633aeac3e24b638e152e32aeba6f8f73fa80cb9` was pushed and read back from the remote task branch. Canonical main stayed at `eafb30d8548e2b1e3bc36fc34b2c8f0b36f633b7`; no PR, merge or release was created.
+
+[Windows run 33975555586](https://github.com/DAARION-DAO/daarion-edge-client/actions/runs/33975555586) failed before starting any step. The `windows-pilot` job has an empty steps list; the run has zero artifacts. GitHub's check annotation says: "The job was not started because your account is locked due to a billing issue."
+
+Classification: **CI_INFRA_BLOCKED**, not a compilation/test failure and not Windows PASS. No repeated retry was attempted because the account condition had not changed. The prepared build and smoke scripts remain ready. Compilation, installer creation, installation, native Windows UI and restart checks did not run. No account billing setting, payment method or spending limit was changed.
 
 ## What was reused
 
@@ -43,7 +51,7 @@ The native readiness card reuses `get_device_capability_profile` for measured CP
 | `git diff --check`, changed-file secret/private-path scan | PASS. No new dependencies, production endpoint or credential. |
 | Workflow structure | Windows runner, read-only contents permission, artifact upload only; no secrets/release/deployment. Existing Pages runs only on main, release only on tags/manual dispatch. |
 | Windows build guard | Refuses execution on this Mac rather than producing a mislabeled artifact. |
-| PowerShell script, NSIS install, Windows UI | NOT RUN: no local Windows host, VM or PowerShell runtime. Source workflow is not pushed. |
+| PowerShell script, NSIS install, Windows UI | NOT RUN: branch is pushed, but GitHub stopped the job before its first step due to the account billing lock. No local Windows host/VM is available. |
 
 The locally rebuilt Mac app has an ad-hoc signed binary SHA-256 of `a8170453ba915a9e113660c09c0805b259ce0d27e0fff398a99ae4a8ef6c301d`. Its receipt remains in ignored local artifacts. It was used only to verify the shared scanner/UI code. The existing MicroDAO preview/download package was not replaced and still cannot offer a Windows pilot.
 
