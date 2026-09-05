@@ -27,6 +27,31 @@ impl ModelResolver {
         })
     }
 
+    // Session-only discovery for the isolated pilot; never writes the City registry.
+    pub(crate) fn from_pilot_tags(tags: Vec<(String, String)>) -> Self {
+        Self {
+            models: tags
+                .into_iter()
+                .filter(|(tag, _)| Self::is_valid_ollama_tag(tag))
+                .map(|(tag, family)| CandidateModel {
+                    id: format!("pilot-installed:{tag}"),
+                    family,
+                    tier: "installed".into(),
+                    role: "local-pilot".into(),
+                    stability: "experimental".into(),
+                    capabilities: vec!["text".into()],
+                    is_recommended: false,
+                    install_sources: vec![crate::models::registry::InstallSource {
+                        runtime: "ollama".into(),
+                        upstream_tag: tag,
+                        local_alias: String::new(),
+                        estimated_download_gb: 0.0,
+                    }],
+                })
+                .collect(),
+        }
+    }
+
     pub fn resolve(&self, canonical_model_id: &str) -> Result<ResolvedModel, InferenceError> {
         let models = self
             .models

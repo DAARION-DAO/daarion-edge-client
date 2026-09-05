@@ -4,6 +4,7 @@ version = "0.2.2-4"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
+default-run = "daarion-edge-client"
 rust-version = "1.95"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -48,3 +49,26 @@ tokio-tungstenite = "0.21.0"
 futures-util = "0.3.30"
 async-trait = "0.1.77"
 url = "2.5.0"
+cap-std = "=4.0.3"
+
+[dependencies.hyper]
+version = "=1.8.1"
+features = ["http1", "server"]
+optional = true
+
+[dependencies.hyper-util]
+version = "=0.1.20"
+features = ["tokio"]
+optional = true
+
+[dependencies.http-body-util]
+version = "=0.1.3"
+optional = true
+
+[features]
+local-agent-pilot = ["dep:hyper", "dep:hyper-util", "dep:http-body-util"]
+
+[[bin]]
+name = "edge-local-agent"
+path = "src/bin/edge-local-agent.rs"
+required-features = ["local-agent-pilot"]

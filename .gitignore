@@ -27,3 +27,7 @@ dist-ssr
 *.keystore
 *.jks
 keystore.properties
+
+# Isolated local-agent native pilot artifacts
+dist-local-agent/
+.pilot-evidence/

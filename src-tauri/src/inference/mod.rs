@@ -3,6 +3,6 @@ mod model_resolver;
 mod ndjson;
 mod ollama_provider;
 mod policy;
-mod provider;
+pub(crate) mod provider;
 mod service;
-mod types;
+pub(crate) mod types;

@@ -1,0 +1,46 @@
+name: Local agent pilot - Windows artifact
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/edge-windows-installer-pilot]
+
+permissions:
+  contents: read
+
+jobs:
+  windows-pilot:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Locked dependencies and repository toolchain
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw 'npm ci failed' }
+          rustup show active-toolchain
+          if ($LASTEXITCODE -ne 0) { throw 'Rust toolchain unavailable' }
+      - name: Frontend assets for the native test context
+        run: npm run build
+      - name: Pilot Rust tests on Windows
+        shell: pwsh
+        run: |
+          $env:TAURI_CONFIG = Get-Content src-tauri/tauri.local-agent.conf.json -Raw
+          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib --features local-agent-pilot local_agent::
+          if ($LASTEXITCODE -ne 0) { throw 'Windows pilot tests failed' }
+      - name: Build the pilot NSIS installer
+        run: node scripts/package-local-agent-windows.mjs
+      - name: Install, launch, restart and uninstall in disposable Windows
+        shell: pwsh
+        run: ./scripts/test-local-agent-windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: local-agent-pilot-windows-x64
+          path: dist-local-agent/windows-x64/
+          if-no-files-found: error
+          retention-days: 7

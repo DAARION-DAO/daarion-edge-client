@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { LocalAgentPilotPage } from "./pages/LocalAgentPilotPage";
 import { InstallPage } from "./pages/InstallPage";
 import { PilotOnboardingPage } from "./pages/PilotOnboardingPage";
 import "./index.css";
@@ -15,6 +16,7 @@ function Root() {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
+  if (window.location.hash === "#local-agent-pilot") return <LocalAgentPilotPage />;
   if (path === "/install") return <InstallPage />;
   if (path === "/worker-pilot") return <PilotOnboardingPage />;
   return <App />;

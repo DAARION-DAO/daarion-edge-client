@@ -101,3 +101,9 @@ npm run tauri build
 If the application crashes, closes unexpectedly, or exhibits a blank screen on startup, collect and submit the diagnostic log file:
 * **Windows**: `%APPDATA%\DAARION Edge\logs\boot.log`
 * **macOS / Linux**: `~/.daarion-edge/logs/boot.log`
+
+## Isolated local agent pilot
+
+The [local agent pilot](docs/pilots/local-agent.md) adds a separate native profile for a personal agent, explicit read-only folder access, optional installed local inference, and saved results. It does not enroll an employee into DAGI or change the main Edge startup flow. An opt-in [City connector](docs/pilots/local-agent.md#connect-the-existing-local-city-panel) adds an authenticated AG-UI endpoint for the existing operator panel. Its live registration is currently blocked by that panel’s endpoint allowlist. See the [City acceptance report](docs/planning/phases/edge-city-join-pilot-completion.md) before treating network or employee support as delivered.
+
+The pilot now exposes the existing basic native device scan. GPU/driver validation and automatic model installation are not integrated. A separate [Windows NSIS preparation](docs/planning/phases/edge-windows-installer-pilot-completion.md) reuses the current installer technology for this exact pilot. Windows compilation and install acceptance remain pending a real Windows workflow run; the older published Edge installer is not this pilot.

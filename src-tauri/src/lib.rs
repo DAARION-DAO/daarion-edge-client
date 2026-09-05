@@ -1,3 +1,14 @@
+#[cfg(any(feature = "local-agent-pilot", test))]
+mod local_agent;
+
+#[cfg(feature = "local-agent-pilot")]
+pub fn run() { local_agent::run(); }
+
+#[cfg(feature = "local-agent-pilot")]
+pub fn run_local_agent_pilot() {
+    local_agent::run();
+}
+
 mod agents;
 mod authorities;
 mod backend_health;
@@ -100,6 +111,7 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+#[cfg(not(feature = "local-agent-pilot"))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     boot_log("=== DAARION Edge boot sequence started ===");

@@ -20,6 +20,7 @@ const MAX_EVIDENCE_BYTES: usize = 1024 * 1024;
 pub struct OllamaProvider {
     endpoint: LocalEndpoint,
     client: Client,
+    pilot_cpu_only: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,12 +83,20 @@ struct OllamaChatBody<'a> {
     messages: &'a [crate::inference::types::ChatMessage],
     stream: bool,
     options: OllamaOptions,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    think: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    keep_alive: Option<u32>,
 }
 
 #[derive(Serialize)]
 struct OllamaOptions {
     num_predict: u32,
     temperature: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_gpu: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_ctx: Option<u32>,
 }
 
 impl OllamaProvider {
@@ -102,11 +111,37 @@ impl OllamaProvider {
                     "Local provider HTTP client could not be created".to_string(),
                 )
             })?;
-        Ok(Self { endpoint, client })
+        Ok(Self {
+            endpoint,
+            client,
+            pilot_cpu_only: false,
+        })
+    }
+
+    pub(crate) fn for_local_agent_pilot() -> Result<Self, InferenceError> {
+        let mut provider = Self::new(LocalEndpoint::parse("http://127.0.0.1:19435/")?)?;
+        provider.pilot_cpu_only = true;
+        Ok(provider)
     }
 
     pub fn new_default() -> Result<Self, InferenceError> {
         Self::new(LocalEndpoint::default_ollama()?)
+    }
+
+    fn chat_body<'a>(&self, request: &'a ProviderChatRequest) -> OllamaChatBody<'a> {
+        OllamaChatBody {
+            model: &request.provider_model_id,
+            messages: &request.messages,
+            stream: true,
+            options: OllamaOptions {
+                num_predict: request.max_tokens,
+                temperature: request.temperature,
+                num_gpu: self.pilot_cpu_only.then_some(0),
+                num_ctx: self.pilot_cpu_only.then_some(2048),
+            },
+            think: self.pilot_cpu_only.then_some(false),
+            keep_alive: self.pilot_cpu_only.then_some(0),
+        }
     }
 
     async fn checked_response(
@@ -185,9 +220,8 @@ impl OllamaProvider {
     }
 
     fn normalize_digest(digest: &str) -> Result<String, InferenceError> {
-        let Some(hex) = digest.strip_prefix("sha256:") else {
-            return Err(InferenceError::LocalModelUnverified);
-        };
+        // Ollama /api/tags returns a bare SHA-256 hex digest; older fixtures use a prefix.
+        let hex = digest.strip_prefix("sha256:").unwrap_or(digest);
         if hex.len() != 64 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return Err(InferenceError::LocalModelUnverified);
         }
@@ -574,15 +608,7 @@ impl InferenceProvider for OllamaProvider {
         #[cfg(not(mobile))]
         {
             control.ensure_active()?;
-            let body = OllamaChatBody {
-                model: &request.provider_model_id,
-                messages: &request.messages,
-                stream: true,
-                options: OllamaOptions {
-                    num_predict: request.max_tokens,
-                    temperature: request.temperature,
-                },
-            };
+            let body = self.chat_body(&request);
             let response = self
                 .checked_response(
                     self.client
@@ -1573,5 +1599,40 @@ mod tests {
             Err(InferenceError::ProviderProtocol(_))
         ));
         assert!(sink.0.lock().unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod pilot_option_tests {
+    use super::*;
+    #[test]
+    fn accepts_actual_ollama_digest_and_rejects_malformed_evidence() {
+        let bare = "a".repeat(64);
+        assert_eq!(OllamaProvider::normalize_digest(&bare).unwrap(), format!("sha256:{bare}"));
+        assert_eq!(OllamaProvider::normalize_digest(&format!("sha256:{bare}")).unwrap(), format!("sha256:{bare}"));
+        for invalid in ["".to_string(), "a".repeat(63), "a".repeat(65), "g".repeat(64), format!("sha1:{bare}"), format!(" {bare}")] {
+            assert!(OllamaProvider::normalize_digest(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn pilot_cpu_options_do_not_change_default_provider_requests() {
+        let request = ProviderChatRequest {
+            provider_model_id: "qwen3.5:9b".into(),
+            messages: vec![],
+            max_tokens: 180,
+            temperature: 0.0,
+        };
+        let default = OllamaProvider::new_default().unwrap();
+        let body = serde_json::to_value(default.chat_body(&request)).unwrap();
+        assert!(body.get("think").is_none());
+        assert!(body.get("keep_alive").is_none());
+        assert!(body["options"].get("num_gpu").is_none());
+        let pilot = OllamaProvider::for_local_agent_pilot().unwrap();
+        let body = serde_json::to_value(pilot.chat_body(&request)).unwrap();
+        assert_eq!(body["think"], false);
+        assert_eq!(body["keep_alive"], 0);
+        assert_eq!(body["options"]["num_gpu"], 0);
+        assert_eq!(body["options"]["num_ctx"], 2048);
     }
 }

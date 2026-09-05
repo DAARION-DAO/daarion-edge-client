@@ -16,6 +16,22 @@ pub const INFERENCE_EVENT_NAME: &str = "local-inference-event";
 pub struct InferenceRuntimeState(pub Arc<InferenceService>);
 
 impl InferenceRuntimeState {
+    pub(crate) fn for_local_agent_pilot(
+        tags: Vec<(String, String)>,
+    ) -> Result<Self, InferenceError> {
+        Ok(Self(Arc::new(InferenceService::new(
+            Arc::new(OllamaProvider::for_local_agent_pilot()?),
+            ModelResolver::from_pilot_tags(tags),
+            ServiceLimits {
+                max_concurrent_requests: 1,
+                max_tokens: 256,
+                request_timeout: std::time::Duration::from_secs(180),
+                probe_timeout: std::time::Duration::from_secs(15),
+                ..ServiceLimits::default()
+            },
+        )?)))
+    }
+
     pub fn new_default() -> Result<Self, InferenceError> {
         let provider = Arc::new(OllamaProvider::new_default()?);
         let resolver = ModelResolver::from_bundled_registry()?;
