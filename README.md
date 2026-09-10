@@ -101,3 +101,10 @@ npm run tauri build
 If the application crashes, closes unexpectedly, or exhibits a blank screen on startup, collect and submit the diagnostic log file:
 * **Windows**: `%APPDATA%\DAARION Edge\logs\boot.log`
 * **macOS / Linux**: `~/.daarion-edge/logs/boot.log`
+
+## Managed node observation
+
+The optional macOS `daarion-node` binary reuses Edge device identity and capability
+probes for a one-shot, signed HTTPS observation. It does not enable worker jobs or
+inference. See the [MVP02 contract and plan](docs/planning/phases/mvp02-node-agent-plan.md)
+and [verification](docs/planning/phases/mvp02-node-agent-completion.md).
