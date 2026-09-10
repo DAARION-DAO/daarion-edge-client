@@ -273,6 +273,19 @@ fn validate_secret_matches_identity(secret: &str, identity: &NodeIdentity) -> Re
     }
 }
 
+/// Headless managed-node entry: same device metadata and OS key store as Tauri.
+pub fn node_identity_at(app_dir: &Path) -> Result<NodeIdentity, String> {
+    system_identity_service().load_or_create_identity_at(app_dir)
+}
+
+/// Internal CLI caller supplies only its fixed, locally generated observation.
+pub fn sign_node_observation_at(app_dir: &Path, canonical: &str) -> Result<String, String> {
+    if canonical.len() > 16384 || !canonical.starts_with("daarion.node.observation.v1\n") {
+        return Err("Invalid node observation domain or size".into());
+    }
+    system_identity_service().sign_payload_at(app_dir, canonical)
+}
+
 pub fn load_or_create_identity(handle: &tauri::AppHandle) -> Result<NodeIdentity, String> {
     let app_dir = get_app_dir(handle);
     system_identity_service().load_or_create_identity_at(&app_dir)

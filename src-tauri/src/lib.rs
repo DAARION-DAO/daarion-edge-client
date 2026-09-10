@@ -1,7 +1,7 @@
 mod agents;
 mod authorities;
 mod backend_health;
-mod capabilities;
+pub mod capabilities;
 mod config;
 mod coordination;
 mod districts;
@@ -9,7 +9,7 @@ mod enrollment;
 mod evolution;
 mod genesis;
 mod heartbeat;
-mod identity;
+pub mod identity;
 mod inference;
 mod intelligence;
 mod market;
